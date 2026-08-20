@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { PatchSet } from '@/api/types';
+import type { GerritChange, PatchSet } from '@/api/types';
 
 const props = defineProps<{
   sets: PatchSet[];
   current: number | undefined;
   against: string | undefined;
+  gerrit: GerritChange | null;
 }>();
-const emit = defineEmits<{ open: [ps: number | undefined, base?: string] }>();
+const emit = defineEmits<{
+  open: [ps: number | undefined, base?: string];
+  fetch: [ps: number];
+}>();
 
 const last = computed(() => props.sets[props.sets.length - 1]?.number);
 const reading = computed(() => props.current ?? last.value);
@@ -27,7 +31,7 @@ const rebased = computed(
 
 <template>
   <div
-    v-if="sets.length > 1"
+    v-if="sets.length > 1 || gerrit"
     class="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800/60"
   >
     <div class="flex flex-wrap items-center gap-2">
@@ -45,10 +49,10 @@ const rebased = computed(
             : 'border-slate-300 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700'
         "
         :aria-pressed="set.number === reading"
-        :title="`${set.origin} · ${set.commit.slice(0, 12)}`"
-        @click="emit('open', set.number, against)"
+        :title="`${set.origin} · ${set.commit.slice(0, 12)}${set.available ? '' : ' · not fetched yet'}`"
+        @click="set.available ? emit('open', set.number, against) : emit('fetch', set.number)"
       >
-        {{ set.number }}
+        {{ set.number }}<span v-if="!set.available" aria-hidden="true"> ↓</span>
       </button>
 
       <span class="ml-2 text-slate-600 dark:text-slate-300">against</span>
@@ -79,6 +83,15 @@ const rebased = computed(
         patch set {{ set.number }}
       </button>
     </div>
+
+    <p v-if="gerrit" class="mt-1 text-slate-600 dark:text-slate-400">
+      Gerrit change
+      <a :href="gerrit.url" target="_blank" rel="noreferrer" class="underline">
+        {{ gerrit.number }}
+      </a>
+      on {{ gerrit.branch }} · {{ gerrit.status }}. A number with an arrow is on the server and not
+      in this clone yet.
+    </p>
 
     <p v-if="rebased" class="mt-1 text-amber-800 dark:text-amber-300">
       These two versions sit on different bases. The diff carries the rebase as well as the work.

@@ -165,6 +165,18 @@ export interface EditComment {
 
 export type Origin = 'local' | 'prev' | 'gerrit';
 
+export interface GerritChange {
+  number: number;
+  url: string;
+  branch: string;
+  status: string;
+}
+
+export interface PatchSets {
+  sets: PatchSet[];
+  gerrit: GerritChange | null;
+}
+
 export interface PatchSet {
   number: number;
   commit: string;
@@ -173,6 +185,8 @@ export interface PatchSet {
   createdAt: string;
   subject: string;
   gerritRef?: string;
+  /// False when the commit is not in this clone yet.
+  available: boolean;
 }
 
 /** Where a comment lands in the patch set being read. */

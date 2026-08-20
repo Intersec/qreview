@@ -1,0 +1,2 @@
+{"project":"myproject","branch":"main","id":"Idef","number":4242,"subject":"a change from a newer server","url":"https://review.example.com/c/myproject/+/4242","status":"NEW","somethingNew":{"nested":true},"submitRecords":[{"status":"NOT_READY","labels":[{"label":"Code-Review","status":"NEED"}]}],"patchSets":[{"number":1,"revision":"deadbeef00000000000000000000000000000000","ref":"refs/changes/42/4242/1","createdOn":1750000000,"kind":"REWORK","approvals":[{"type":"Code-Review","value":"2"}]}]}
+{"type":"stats","rowCount":1,"runTimeMilliseconds":6,"moreChanges":false}

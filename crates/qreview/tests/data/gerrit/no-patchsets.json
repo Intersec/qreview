@@ -1,0 +1,2 @@
+{"project":"myproject","branch":"rel-3.0","id":"Iabc","number":999,"subject":"a change with no patch set listed","url":"https://review.example.com/c/myproject/+/999","status":"MERGED"}
+{"type":"stats","rowCount":1,"runTimeMilliseconds":4,"moreChanges":false}

@@ -26,6 +26,7 @@ const {
   patchSets,
   patchSet,
   against,
+  gerrit,
 } = storeToRefs(review);
 
 const threads = computed(() => review.threads());
@@ -140,7 +141,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           :sets="patchSets"
           :current="patchSet"
           :against="against"
+          :gerrit="gerrit"
           @open="(ps, base) => review.openPatchSet(ps, base)"
+          @fetch="review.fetchPatchSet"
         />
         <MergeBar
           v-if="onMerge"

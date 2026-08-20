@@ -16,6 +16,10 @@ pub struct Cli {
     #[arg(long = "prev", value_name = "SHA")]
     pub prev: Vec<String>,
 
+    /// Do not ask Gerrit for the patch sets already pushed.
+    #[arg(long)]
+    pub no_gerrit: bool,
+
     /// Print the URL, open no browser.
     #[arg(long)]
     pub no_open: bool,

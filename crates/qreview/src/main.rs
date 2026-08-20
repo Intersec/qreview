@@ -25,6 +25,7 @@ async fn main() -> Result<()> {
     opts.rev = cli.rev.clone();
     opts.base = cli.base.clone();
     opts.prevs = cli.prev.clone();
+    opts.gerrit = !cli.no_gerrit;
 
     let session = Session::open(&cwd, &opts, Languages::new()).await?;
     print!("{}", text_report(&session).await?);

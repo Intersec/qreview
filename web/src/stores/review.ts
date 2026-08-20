@@ -11,6 +11,7 @@ import type {
   FileEntry,
   MergeBase,
   MergeListItem,
+  GerritChange,
   NewComment,
   PatchSet,
   Placed,
@@ -30,6 +31,7 @@ export const useReview = defineStore('review', () => {
   const mergeBase = ref<MergeBase | undefined>(undefined);
   const review = ref<Review | null>(null);
   const patchSets = ref<PatchSet[]>([]);
+  const gerrit = ref<GerritChange | null>(null);
   /// The patch set being read. The last one when it is not set.
   const patchSet = ref<number | undefined>(undefined);
   /// What that patch set is read against.
@@ -81,7 +83,9 @@ export const useReview = defineStore('review', () => {
       mergeList.value = [];
       patchSet.value = undefined;
       against.value = undefined;
-      patchSets.value = await api.patchSets(key).catch(() => []);
+      const versions = await api.patchSets(key).catch(() => ({ sets: [], gerrit: null }));
+      patchSets.value = versions.sets;
+      gerrit.value = versions.gerrit;
       review.value = await api.comments(key);
       files.value = await api.files(key, undefined, base);
       diff.value = null;
@@ -140,6 +144,20 @@ export const useReview = defineStore('review', () => {
       const first = stays ?? files.value.find((f) => !f.binary);
       diff.value = first ? await api.diff(key, first.path, number, base) : null;
       filePath.value = first?.path ?? null;
+    });
+  }
+
+  /// Bring a patch set that lives on Gerrit into this clone.
+  async function fetchPatchSet(number: number) {
+    const key = changeKey.value;
+    if (!key) {
+      return;
+    }
+    await guard(async () => {
+      await api.fetchPatchSet(key, number);
+      const versions = await api.patchSets(key);
+      patchSets.value = versions.sets;
+      gerrit.value = versions.gerrit;
     });
   }
 
@@ -215,6 +233,8 @@ export const useReview = defineStore('review', () => {
   return {
     review,
     patchSets,
+    gerrit,
+    fetchPatchSet,
     patchSet,
     against,
     openPatchSet,

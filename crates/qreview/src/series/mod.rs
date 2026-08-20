@@ -31,6 +31,8 @@ pub struct Options {
     pub integration_branch: Option<String>,
     /// Commits named with `--prev`, treated as older patch sets.
     pub prevs: Vec<String>,
+    /// Ask Gerrit for the patch sets already pushed.
+    pub gerrit: bool,
 }
 
 impl Options {
@@ -43,6 +45,7 @@ impl Options {
             batch_size: 5,
             integration_branch: None,
             prevs: Vec::new(),
+            gerrit: true,
         }
     }
 }

@@ -9,6 +9,7 @@ import type {
   MergeListItem,
   NewComment,
   PatchSet,
+  PatchSets,
   Review,
   Series,
   SessionBody,
@@ -57,7 +58,12 @@ export const api = {
       `/api/changes/${encodeURIComponent(key)}/diff${query({ file, ps: num(ps), base })}`,
     ),
 
-  patchSets: (key: string) => call<PatchSet[]>(`/api/changes/${encodeURIComponent(key)}/patchsets`),
+  patchSets: (key: string) => call<PatchSets>(`/api/changes/${encodeURIComponent(key)}/patchsets`),
+
+  fetchPatchSet: (key: string, number: number) =>
+    call<PatchSet>(`/api/changes/${encodeURIComponent(key)}/patchsets/${number}/fetch`, {
+      method: 'POST',
+    }),
 
   mergeList: (key: string) =>
     call<MergeListItem[]>(`/api/changes/${encodeURIComponent(key)}/mergelist`),

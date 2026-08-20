@@ -6,7 +6,7 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: M0 to M5 are done, except a range comment. M6 is next.**
+**Status: M0 to M6 are done, except a range comment. M7 is next.**
 
 ---
 
@@ -131,14 +131,14 @@ diffs any two of them.*
 *Exit: on a repository with a Gerrit remote, the patch sets already pushed
 appear without any option.*
 
-- [ ] The remote URL parser, and the canonical form used by the store
-- [ ] The branch from `.gerrit-branch`, then the configuration
-- [ ] The ssh query, with the timeout
-- [ ] The parser of the answer, against recorded fixtures
-- [ ] The lazy fetch of a patch set ref
-- [ ] Every failure path leaves the local review working
-- [ ] `--no-gerrit`
-- [ ] The change number and the Gerrit URL in the interface
+- [x] The remote URL parser, and the canonical form used by the store
+- [x] The branch from `.gerrit-branch`, then the configuration
+- [x] The ssh query, with the timeout
+- [x] The parser of the answer, against recorded fixtures
+- [x] The lazy fetch of a patch set ref
+- [x] Every failure path leaves the local review working
+- [x] `--no-gerrit`
+- [x] The change number and the Gerrit URL in the interface
 
 ## M7 — Export, configuration, and v0.1.0
 

@@ -54,6 +54,10 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/mergelist", get(mergelist))
         .route("/api/changes/{key}/patchsets", get(patchsets))
         .route(
+            "/api/changes/{key}/patchsets/{number}/fetch",
+            post(fetch_patch_set),
+        )
+        .route(
             "/api/changes/{key}/comments",
             get(comments).post(add_comment),
         )
@@ -211,13 +215,40 @@ async fn target(session: &Session, key: &str, ps: Option<usize>) -> Result<Strin
         .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PatchSets {
+    sets: Vec<PatchSet>,
+    /// What Gerrit calls this change, when the server knows it.
+    gerrit: Option<GerritChange>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GerritChange {
+    number: u64,
+    url: String,
+    branch: String,
+    status: String,
+}
+
 async fn patchsets(
     State(state): State<AppState>,
     Path(key): Path<String>,
-) -> Result<Json<Vec<PatchSet>>, ApiError> {
+) -> Result<Json<PatchSets>, ApiError> {
     let session = state.session.read().await;
+    let sets = session.patch_sets(&key).await?;
+    let gerrit = session
+        .gerrit_change(&key)
+        .await
+        .map(|change| GerritChange {
+            number: change.number,
+            url: change.url,
+            branch: change.branch,
+            status: change.status,
+        });
 
-    Ok(Json(session.patch_sets(&key).await?))
+    Ok(Json(PatchSets { sets, gerrit }))
 }
 
 #[derive(Serialize)]
@@ -286,6 +317,15 @@ struct Review {
     /// One entry per comment. A comment whose place is gone is marked lost
     /// and is never dropped.
     placed: Vec<Placed>,
+}
+
+async fn fetch_patch_set(
+    State(state): State<AppState>,
+    Path((key, number)): Path<(String, usize)>,
+) -> Result<Json<PatchSet>, ApiError> {
+    let session = state.session.read().await;
+
+    Ok(Json(session.fetch_patch_set(&key, number).await?))
 }
 
 async fn comments(
@@ -428,6 +468,12 @@ mod tests {
 
     async fn session_of(repo: &Repo, opts: Options) -> Session {
         let store = crate::store::Store::at(repo.path().join(".qreview-test").as_path());
+        // No test talks to a server. A fixture with an ssh remote would
+        // otherwise wait on a real Gerrit that is not there.
+        let opts = Options {
+            gerrit: false,
+            ..opts
+        };
 
         Session::with(
             repo.path(),
@@ -1015,10 +1061,12 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        let sets = sets.as_array().unwrap();
+        assert!(sets["gerrit"].is_null(), "no server was asked");
+        let sets = sets["sets"].as_array().unwrap();
         assert_eq!(sets.len(), 2);
         assert_eq!(sets[0]["number"], 1);
         assert_eq!(sets[0]["origin"], "prev");
+        assert_eq!(sets[0]["available"], true);
         assert_eq!(sets[1]["origin"], "local");
 
         // The series pane says how many versions the change has.

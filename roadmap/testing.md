@@ -27,9 +27,9 @@ word that you can grep for.
    block. An integration test that drives the binary sits in `tests/`.
 2. **Shared fixtures live in `crates/qreview/src/testutil/`**, behind
    `#[cfg(test)]`, because a corpus is read by several modules. Recorded
-   answers and diff corpora are files under `tests/data/`.
+   answers and diff corpora are files under `crates/qreview/tests/data/`.
 3. **No network in a test. Ever.** The Gerrit module is tested against
-   recorded answers in `tests/data/gerrit/`. A test that opens a socket is a
+   recorded answers in `crates/qreview/tests/data/gerrit/`. A test that opens a socket is a
    failed test.
 4. **Git code is tested against a real repository.** `testutil::build_repo`
    makes one in a temporary directory with real `git` commands. No mock of the

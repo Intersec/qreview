@@ -34,6 +34,8 @@ pub struct PatchSet {
     pub subject: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gerrit_ref: Option<String>,
+    /// False when the commit is not in this clone yet. Fetch it first.
+    pub available: bool,
 }
 
 /// The patch sets of a change: the older versions, then the local commit.
@@ -81,7 +83,56 @@ fn entry(info: CommitInfo, origin: Origin, gerrit_ref: Option<String>) -> PatchS
         created_at: info.date,
         subject: info.subject,
         gerrit_ref,
+        available: true,
     }
+}
+
+/// Merge what Gerrit knows into the local list.
+///
+/// Gerrit owns the numbering: those numbers are what a reviewer on the server
+/// sees, and two people must mean the same thing by "patch set 2". A local
+/// commit that Gerrit already has keeps its number and is marked local. One
+/// it does not have comes after the highest number Gerrit gave.
+pub fn merge_gerrit(local: Vec<PatchSet>, remote: &[crate::gerrit::PatchSet]) -> Vec<PatchSet> {
+    if remote.is_empty() {
+        return local;
+    }
+
+    let mut out: Vec<PatchSet> = remote
+        .iter()
+        .map(|set| PatchSet {
+            number: set.number,
+            commit: set.revision.clone(),
+            parent: None,
+            origin: Origin::Gerrit,
+            created_at: String::new(),
+            subject: String::new(),
+            gerrit_ref: Some(set.git_ref.clone()),
+            available: false,
+        })
+        .collect();
+
+    let mut next = out.iter().map(|s| s.number).max().unwrap_or(0);
+
+    for mut set in local {
+        match out.iter_mut().find(|known| known.commit == set.commit) {
+            // The server has this commit already. Keep its number, and say
+            // that it is here, because a fetch is not needed.
+            Some(known) => {
+                set.number = known.number;
+                set.gerrit_ref = known.gerrit_ref.clone();
+                *known = set;
+            }
+            None => {
+                next += 1;
+                set.number = next;
+                out.push(set);
+            }
+        }
+    }
+
+    out.sort_by_key(|set| set.number);
+    out
 }
 
 /// Do two patch sets sit on the same base?
@@ -116,6 +167,80 @@ mod tests {
         repo.git(&["commit", "--amend", "--no-edit"]).await;
 
         (repo, first)
+    }
+
+    fn remote(number: usize, revision: &str) -> crate::gerrit::PatchSet {
+        crate::gerrit::PatchSet {
+            number,
+            revision: revision.to_owned(),
+            git_ref: format!("refs/changes/21/12321/{number}"),
+            created_on: 0,
+            kind: "REWORK".to_owned(),
+        }
+    }
+
+    #[test]
+    fn gerrit_owns_the_numbering() {
+        let local = vec![PatchSet {
+            number: 1,
+            commit: "local".to_owned(),
+            parent: None,
+            origin: Origin::Local,
+            created_at: String::new(),
+            subject: "mine".to_owned(),
+            gerrit_ref: None,
+            available: true,
+        }];
+
+        let merged = merge_gerrit(local, &[remote(1, "aaa"), remote(2, "bbb")]);
+
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0].number, 1);
+        assert_eq!(merged[0].origin, Origin::Gerrit);
+        assert!(!merged[0].available, "a pushed version is not here yet");
+        assert_eq!(merged[2].number, 3, "the local commit comes after them");
+        assert_eq!(merged[2].origin, Origin::Local);
+    }
+
+    #[test]
+    fn a_local_commit_that_gerrit_has_keeps_its_number() {
+        let local = vec![PatchSet {
+            number: 1,
+            commit: "bbb".to_owned(),
+            parent: None,
+            origin: Origin::Local,
+            created_at: String::new(),
+            subject: "mine".to_owned(),
+            gerrit_ref: None,
+            available: true,
+        }];
+
+        let merged = merge_gerrit(local, &[remote(1, "aaa"), remote(2, "bbb")]);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[1].number, 2);
+        assert_eq!(merged[1].origin, Origin::Local, "it is here, so no fetch");
+        assert!(merged[1].available);
+        assert_eq!(
+            merged[1].gerrit_ref.as_deref(),
+            Some("refs/changes/21/12321/2")
+        );
+    }
+
+    #[test]
+    fn no_answer_from_gerrit_leaves_the_local_list_alone() {
+        let local = vec![PatchSet {
+            number: 1,
+            commit: "local".to_owned(),
+            parent: None,
+            origin: Origin::Local,
+            created_at: String::new(),
+            subject: "mine".to_owned(),
+            gerrit_ref: None,
+            available: true,
+        }];
+
+        assert_eq!(merge_gerrit(local.clone(), &[]), local);
     }
 
     #[tokio::test]

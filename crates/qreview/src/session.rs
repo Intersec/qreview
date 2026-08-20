@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::comments::{self, EditComment, NewComment, Target};
 use crate::diff;
+use crate::gerrit::{self, Coordinates};
 use crate::git::commit;
 use crate::git::exec::Git;
 use crate::git::merge::{self, Base};
@@ -33,6 +34,10 @@ pub struct Session {
     pub series: Series,
     /// The commits named with `--prev`, resolved.
     pub prevs: Vec<String>,
+    /// Where the Gerrit server is, when the remote names one.
+    pub gerrit: Option<Coordinates>,
+    /// One query per change, kept for the life of the run.
+    gerrit_answers: tokio::sync::Mutex<std::collections::HashMap<String, Option<gerrit::Change>>>,
 }
 
 /// What a diff is read against.
@@ -95,6 +100,11 @@ impl Session {
             }
         }
 
+        let gerrit = match opts.gerrit {
+            true => coords_of(&git, &plan.head, opts.integration_branch.as_deref()).await,
+            false => None,
+        };
+
         let mut session = Self {
             git,
             repo,
@@ -105,6 +115,8 @@ impl Session {
             plan,
             series,
             prevs,
+            gerrit,
+            gerrit_answers: tokio::sync::Mutex::new(std::collections::HashMap::new()),
         };
         session.count_comments();
         session.count_patch_sets().await;
@@ -293,13 +305,94 @@ impl Session {
     }
 
     /// The patch sets of a change, oldest first.
+    ///
+    /// Gerrit is asked once per change and the answer is kept. A failure
+    /// there leaves the local list working, because the local list is the
+    /// part the reader owns.
     pub async fn patch_sets(&self, key: &str) -> Result<Vec<PatchSet>> {
         let rev = self
             .commit_of(key)
             .with_context(|| format!("no change {key} in the series"))?;
         let info = commit::info(&self.git, &rev).await?;
+        let mut sets = patchset::of_change(&self.git, &info, &self.prevs).await?;
 
-        patchset::of_change(&self.git, &info, &self.prevs).await
+        if let Some(change) = self.ask_gerrit(&info).await {
+            sets = patchset::merge_gerrit(sets, &change.patch_sets);
+        }
+
+        for set in &mut sets {
+            set.available = self.has_commit(&set.commit).await;
+        }
+        Ok(sets)
+    }
+
+    /// What Gerrit knows about a change, asked once.
+    async fn ask_gerrit(&self, info: &commit::CommitInfo) -> Option<gerrit::Change> {
+        let coords = self.gerrit.as_ref()?;
+        let change_id = info.change_id()?;
+
+        let mut answers = self.gerrit_answers.lock().await;
+        if let Some(known) = answers.get(change_id) {
+            return known.clone();
+        }
+
+        let answer = match gerrit::query(coords, change_id).await {
+            Ok(answer) => answer,
+            Err(error) => {
+                // Say it once, and go on. The local review is what matters.
+                eprintln!("qreview: {error}");
+                None
+            }
+        };
+        answers.insert(change_id.to_owned(), answer.clone());
+
+        answer
+    }
+
+    /// What Gerrit calls a change, when the server knows it.
+    pub async fn gerrit_change(&self, key: &str) -> Option<gerrit::Change> {
+        let rev = self.commit_of(key)?;
+        let info = commit::info(&self.git, &rev).await.ok()?;
+
+        self.ask_gerrit(&info).await
+    }
+
+    async fn has_commit(&self, rev: &str) -> bool {
+        self.git
+            .text(&["cat-file", "-e", &format!("{rev}^{{commit}}")])
+            .await
+            .is_ok()
+    }
+
+    /// Fetch one Gerrit patch set into this clone.
+    ///
+    /// The only write this tool makes to the repository, and only when the
+    /// reader asks for it.
+    pub async fn fetch_patch_set(&self, key: &str, number: usize) -> Result<PatchSet> {
+        let sets = self.patch_sets(key).await?;
+        let set = sets
+            .into_iter()
+            .find(|set| set.number == number)
+            .with_context(|| format!("change {key} has no patch set {number}"))?;
+
+        if set.available {
+            return Ok(set);
+        }
+        let git_ref = set
+            .gerrit_ref
+            .clone()
+            .with_context(|| format!("patch set {number} is not on Gerrit"))?;
+
+        self.git.text(&["fetch", "origin", &git_ref]).await?;
+
+        let info = commit::info(&self.git, &set.commit).await?;
+        Ok(PatchSet {
+            parent: info.parents.first().cloned(),
+            created_at: info.date,
+            subject: info.subject,
+            available: true,
+            ..set
+        })
     }
 
     /// The commit of a patch set, or of the change when none is named.
@@ -390,4 +483,9 @@ impl Session {
 
         merge::merge_list(&self.git, &info).await
     }
+}
+
+/// Where the Gerrit server is, when the remote names one.
+async fn coords_of(git: &Git, rev: &str, branch: Option<&str>) -> Option<Coordinates> {
+    gerrit::coords::of_repo(git, rev, branch).await
 }
