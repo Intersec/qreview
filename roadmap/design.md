@@ -143,6 +143,7 @@ A batch ends at a boundary card that names the reason:
 | Tag | The tag name and the commit |
 | Resolved base | The base and the rule that found it |
 | Guess cap | The number loaded and the signal that stopped the guess |
+| Batch | The number loaded. Nothing is wrong, there is simply more |
 | Root | The history has no parent left |
 
 Every card carries **Load 5 older**. A merge card also carries **Review the

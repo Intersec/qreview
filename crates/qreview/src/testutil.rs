@@ -155,6 +155,34 @@ impl Repo {
             .unwrap_or(false)
     }
 
+    /// Add a remote, with the fetch refspec a clone would have.
+    ///
+    /// `@{upstream}` needs it: git maps a branch to its tracking ref through
+    /// the refspec, and answers "not stored as a remote-tracking branch"
+    /// without one.
+    pub async fn remote(&self, name: &str, url: &str) {
+        self.git(&["remote", "add", name, url]).await;
+    }
+
+    /// Point a branch at a remote-tracking ref, and create that ref.
+    pub async fn track(&self, branch: &str, remote: &str, at: &str) {
+        let sha = self.sha(at).await;
+        self.git(&[
+            "update-ref",
+            &format!("refs/remotes/{remote}/{branch}"),
+            &sha,
+        ])
+        .await;
+        self.git(&["config", &format!("branch.{branch}.remote"), remote])
+            .await;
+        self.git(&[
+            "config",
+            &format!("branch.{branch}.merge"),
+            &format!("refs/heads/{branch}"),
+        ])
+        .await;
+    }
+
     /// The full hash of a revision.
     pub async fn sha(&self, rev: &str) -> String {
         self.git(&["rev-parse", rev]).await
