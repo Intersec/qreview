@@ -1,0 +1,56 @@
+// The real binary, on a real repository, for the browser to talk to.
+
+import { spawn, type ChildProcess } from 'node:child_process';
+import { join } from 'node:path';
+import { build, type Fixture } from './fixture.ts';
+
+export interface Running {
+  url: string;
+  fixture: Fixture;
+  stop(): void;
+}
+
+const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qreview');
+
+/// Start qreview on a fresh fixture and wait for the address it prints.
+///
+/// The token is read from that line rather than forced in: the test walks the
+/// same path a person does.
+export async function start(): Promise<Running> {
+  const fixture = build();
+
+  const child: ChildProcess = spawn(BINARY, ['--no-open', '--no-gerrit', '--port', '0'], {
+    cwd: fixture.repo,
+    env: { ...process.env, XDG_STATE_HOME: fixture.state, NO_COLOR: '1' },
+  });
+
+  const url = await new Promise<string>((resolve, reject) => {
+    let seen = '';
+    const timer = setTimeout(() => reject(new Error(`qreview said nothing:\n${seen}`)), 20000);
+
+    child.stdout?.on('data', (chunk) => {
+      seen += String(chunk);
+      const found = seen.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[a-f0-9]+/);
+      if (found) {
+        clearTimeout(timer);
+        resolve(found[0]);
+      }
+    });
+    child.stderr?.on('data', (chunk) => {
+      seen += String(chunk);
+    });
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`qreview stopped with ${code}:\n${seen}`));
+    });
+  });
+
+  return {
+    url,
+    fixture,
+    stop: () => {
+      child.kill('SIGTERM');
+      fixture.remove();
+    },
+  };
+}

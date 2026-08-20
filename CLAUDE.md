@@ -36,6 +36,10 @@ that you can grep for. `make check V=1` prints everything.
 
 Fix the format with `make fmt`. It runs `cargo fmt` and `prettier --write`.
 
+**You cannot see the interface. `make shots` can.** It writes screenshots of
+both themes into `web/e2e/.shots`, from the real binary on a real repository.
+Look at them before saying that a visual change works.
+
 `make dev` runs the server and Vite together, with hot reload on the
 interface. Use it instead of rebuilding the binary to look at a component.
 Open the URL Vite prints, not the one the server prints.

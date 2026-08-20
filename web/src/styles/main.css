@@ -1,90 +1,312 @@
 @import 'tailwindcss';
 
 /*
- * The syntax theme.
+ * The palette.
  *
- * The server sends a class per token, never a colour, so a theme is this
- * stylesheet and the light and dark pair costs no second pass. The classes
- * come from the scope names of the grammar: `keyword control`, `string
- * quoted`, `comment line`, and so on. Only the first two atoms are used.
+ * The diff colours follow Gerrit: a pale background for the line, a stronger
+ * shade of the same colour for the words that changed inside it. The server
+ * sends a class per token and never a colour, so a theme is this file alone.
  */
-.code .keyword,
-.code .storage {
-  color: #a626a4;
-}
-.code .string {
-  color: #50a14f;
-}
-.code .comment {
-  color: #a0a1a7;
-  font-style: italic;
-}
-.code .constant {
-  color: #986801;
-}
-.code .entity {
-  color: #4078f2;
-}
-.code .support {
-  color: #0184bc;
-}
-.code .variable {
-  color: #e45649;
-}
-.code .invalid {
-  color: #ffffff;
-  background: #e45649;
-}
+:root {
+  --page: #ffffff;
+  --pane: #f8f9fa;
+  --ink: #202124;
+  --ink-quiet: #5f6368;
+  --ink-faint: #80868b;
+  --edge: #dadce0;
+  --edge-soft: #e8eaed;
+  --pick: #e8f0fe;
+  --pick-edge: #1a73e8;
 
-/* What changed inside a line. It must read under any syntax colour. */
-.code .word {
-  border-radius: 2px;
-  background: rgb(250 204 21 / 0.45);
+  --add-line: #d8fed8;
+  --add-word: #aaf2aa;
+  --remove-line: #ffebee;
+  --remove-word: #ffcdd2;
+  --gutter-add: #b9f0b9;
+  --gutter-remove: #ffd4d8;
+  --context-bar: #fff7d4;
+  --context-ink: #6b5900;
+
+  --tok-keyword: #a626a4;
+  --tok-string: #1a7f37;
+  --tok-comment: #7a7a7a;
+  --tok-constant: #986801;
+  --tok-entity: #1155cc;
+  --tok-support: #0184bc;
+  --tok-variable: #c5221f;
+
+  --code-font:
+    'Roboto Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  --code-size: 12px;
+  --code-line: 17px;
 }
 
 @media (prefers-color-scheme: dark) {
-  .code .keyword,
-  .code .storage {
-    color: #c678dd;
-  }
-  .code .string {
-    color: #98c379;
-  }
-  .code .comment {
-    color: #7f848e;
-  }
-  .code .constant {
-    color: #d19a66;
-  }
-  .code .entity {
-    color: #61afef;
-  }
-  .code .support {
-    color: #56b6c2;
-  }
-  .code .variable {
-    color: #e06c75;
-  }
-  .code .word {
-    background: rgb(161 98 7 / 0.55);
+  :root {
+    --page: #131416;
+    --pane: #1a1c1e;
+    --ink: #e8eaed;
+    --ink-quiet: #9aa0a6;
+    --ink-faint: #6f7479;
+    --edge: #2f3134;
+    --edge-soft: #26282b;
+    --pick: #1f2733;
+    --pick-edge: #8ab4f8;
+
+    --add-line: #0f401f;
+    --add-word: #35603f;
+    --remove-line: #320f10;
+    --remove-word: #6b2d2f;
+    --gutter-add: #1b5e2a;
+    --gutter-remove: #5a1f21;
+    --context-bar: #2a2410;
+    --context-ink: #d6bf6a;
+
+    --tok-keyword: #c678dd;
+    --tok-string: #98c379;
+    --tok-comment: #7f848e;
+    --tok-constant: #d19a66;
+    --tok-entity: #61afef;
+    --tok-support: #56b6c2;
+    --tok-variable: #e06c75;
   }
 }
 
-/* A comment body is Markdown, rendered small and tight. */
+html,
+body {
+  background: var(--page);
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- panes */
+
+.pane {
+  background: var(--pane);
+  border-color: var(--edge);
+}
+
+.pane-title {
+  color: var(--ink-quiet);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.row-button {
+  display: block;
+  width: 100%;
+  padding: 4px 10px;
+  text-align: left;
+  border-left: 3px solid transparent;
+  line-height: 1.35;
+}
+.row-button:hover {
+  background: var(--edge-soft);
+}
+.row-button[aria-current='true'],
+.row-button.is-picked {
+  background: var(--pick);
+  border-left-color: var(--pick-edge);
+}
+
+.chip {
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--ink-quiet);
+  background: var(--page);
+}
+.chip:hover {
+  background: var(--edge-soft);
+}
+.chip[aria-pressed='true'] {
+  background: var(--pick);
+  border-color: var(--pick-edge);
+  color: var(--ink);
+}
+
+.note {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--ink-quiet);
+}
+.note.warn {
+  background: var(--context-bar);
+  color: var(--context-ink);
+  border-top: 1px solid var(--edge);
+}
+
+/* ----------------------------------------------------------- the diff */
+
+.diff-pane {
+  height: 100%;
+  overflow: auto;
+  background: var(--page);
+}
+
+.file-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--page);
+  border-bottom: 1px solid var(--edge);
+}
+.file-bar h2 {
+  font-family: var(--code-font);
+  font-size: 13px;
+  font-weight: 500;
+}
+.file-bar .from {
+  color: var(--ink-faint);
+}
+.file-facts {
+  font-size: 11px;
+  color: var(--ink-quiet);
+}
+.file-facts .added {
+  color: #1a7f37;
+}
+.file-facts .removed {
+  color: #c5221f;
+  margin-left: 4px;
+}
+.file-bar .chip {
+  margin-left: auto;
+}
+
+table.code {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-family: var(--code-font);
+  font-size: var(--code-size);
+  line-height: var(--code-line);
+}
+table.code col.gut {
+  width: 3.25rem;
+}
+
+.gutter {
+  padding: 0 6px 0 0;
+  text-align: right;
+  vertical-align: top;
+  color: var(--ink-faint);
+  background: var(--pane);
+  border-right: 1px solid var(--edge-soft);
+  user-select: none;
+  white-space: nowrap;
+}
+.gutter-add {
+  background: var(--gutter-add);
+}
+.gutter-remove {
+  background: var(--gutter-remove);
+}
+.gutter-comment {
+  cursor: pointer;
+}
+.gutter-comment:hover {
+  background: var(--pick);
+  color: var(--pick-edge);
+}
+
+.code-cell {
+  padding: 0 8px;
+  vertical-align: top;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+.row-add {
+  background: var(--add-line);
+}
+.row-remove {
+  background: var(--remove-line);
+}
+.row-empty {
+  background: var(--edge-soft);
+}
+.row-add .word {
+  background: var(--add-word);
+}
+.row-remove .word {
+  background: var(--remove-word);
+}
+.no-newline {
+  margin-left: 6px;
+  color: var(--ink-faint);
+}
+
+tr.hunk td {
+  padding: 2px 10px;
+  background: var(--pane);
+  border-top: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge);
+  color: var(--ink-quiet);
+}
+.hunk-header {
+  margin-left: 10px;
+  color: var(--ink-faint);
+}
+
+tr.talk td {
+  padding: 4px 8px 6px;
+  background: var(--pane);
+  border-bottom: 1px solid var(--edge-soft);
+}
+
+/* ------------------------------------------------------- the syntax */
+
+.code .keyword,
+.code .storage {
+  color: var(--tok-keyword);
+}
+.code .string {
+  color: var(--tok-string);
+}
+.code .comment {
+  color: var(--tok-comment);
+  font-style: italic;
+}
+.code .constant {
+  color: var(--tok-constant);
+}
+.code .entity {
+  color: var(--tok-entity);
+}
+.code .support {
+  color: var(--tok-support);
+}
+.code .variable {
+  color: var(--tok-variable);
+}
+.code .invalid {
+  color: #ffffff;
+  background: #c5221f;
+}
+
+/* ----------------------------------------------------- the comments */
+
 .prose-comment p {
   margin: 0.25rem 0;
 }
 .prose-comment code {
   border-radius: 2px;
-  background: rgb(100 116 139 / 0.18);
+  background: var(--edge-soft);
   padding: 0 0.2rem;
-  font-family: ui-monospace, monospace;
+  font-family: var(--code-font);
   font-size: 0.9em;
 }
 .prose-comment pre {
   overflow-x: auto;
   border-radius: 3px;
-  background: rgb(100 116 139 / 0.18);
+  background: var(--edge-soft);
   padding: 0.4rem;
 }
 .prose-comment ul,

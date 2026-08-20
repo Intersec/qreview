@@ -4,15 +4,13 @@ import CommentBox from './CommentBox.vue';
 import CommentThread from './CommentThread.vue';
 import DiffRow from './DiffRow.vue';
 import { pairs } from '@/diff/pairs';
-import { segments } from '@/diff/segments';
 import type { Comment, FileDiff, NewComment, Row, Side } from '@/api/types';
 
 const props = defineProps<{
   diff: FileDiff;
   split: boolean;
   threads: { first: Comment; replies: Comment[] }[];
-  /// Where a comment lands in the patch set being read. A comment written
-  /// against another version can sit on another line, or on none.
+  /// Where a comment lands in the patch set being read.
   placement: (id: string) => { line: number | null; lost: boolean } | undefined;
 }>();
 const emit = defineEmits<{
@@ -23,59 +21,12 @@ const emit = defineEmits<{
   resolve: [id: string, resolved: boolean];
 }>();
 
-/// Which line a comment box is open on, as `side:line`.
-const writing = ref<string | null>(null);
-
-function side(row: Row): Side {
-  return row.kind === 'remove' ? 'old' : 'new';
-}
-
-function lineOf(row: Row): number | null {
-  return row.kind === 'remove' ? row.oldLine : row.newLine;
-}
-
-function at(row: Row) {
-  const line = lineOf(row);
-  if (line === null) {
-    return [];
-  }
-  return props.threads.filter((t) => {
-    if (t.first.anchor?.file !== props.diff.path || t.first.anchor.side !== side(row)) {
-      return false;
-    }
-    const placed = props.placement(t.first.id);
-    if (placed?.lost) {
-      return false;
-    }
-    return (placed?.line ?? t.first.anchor.startLine) === line;
-  });
-}
-
-function key(row: Row): string {
-  return `${side(row)}:${lineOf(row)}`;
-}
-
-function write(row: Row, body: string, draft: boolean) {
-  const line = lineOf(row);
-  if (line === null) {
-    return;
-  }
-  emit('add', {
-    scope: 'line',
-    file: props.diff.path,
-    side: side(row),
-    startLine: line,
-    body,
-    draft,
-  });
-  writing.value = null;
-}
-
 /// Above this, the browser spends more time building the DOM than the reader
-/// spends reading. The rest is one line away, in the terminal.
+/// spends reading. The rest is one command away in the terminal.
 const MAX_ROWS = 2000;
 
-const SIGN: Record<Row['kind'], string> = { context: ' ', add: '+', remove: '−' };
+/// Which line a comment box is open on, as `side:line`.
+const writing = ref<string | null>(null);
 
 const total = computed(() => props.diff.hunks.reduce((n, h) => n + h.rows.length, 0));
 const capped = computed(() => total.value > MAX_ROWS);
@@ -96,43 +47,86 @@ const shown = computed(() => {
   return out;
 });
 
-function rowClass(kind: Row['kind']): string {
-  if (kind === 'add') {
-    return 'bg-emerald-50 dark:bg-emerald-950/40';
-  }
-  if (kind === 'remove') {
-    return 'bg-rose-50 dark:bg-rose-950/40';
-  }
-  return '';
+function sideOf(row: Row): Side {
+  return row.kind === 'remove' ? 'old' : 'new';
 }
 
-function pairClass(row: Row | null): string {
-  return row ? rowClass(row.kind) : '';
+function lineOf(row: Row): number | null {
+  return row.kind === 'remove' ? row.oldLine : row.newLine;
+}
+
+function key(row: Row): string {
+  return `${sideOf(row)}:${lineOf(row)}`;
+}
+
+function at(row: Row | null) {
+  if (!row) {
+    return [];
+  }
+  const line = lineOf(row);
+  if (line === null) {
+    return [];
+  }
+  return props.threads.filter((t) => {
+    if (t.first.anchor?.file !== props.diff.path || t.first.anchor.side !== sideOf(row)) {
+      return false;
+    }
+    const placed = props.placement(t.first.id);
+    if (placed?.lost) {
+      return false;
+    }
+    return (placed?.line ?? t.first.anchor.startLine) === line;
+  });
+}
+
+/// A row that carries a comment, or an open box, gets its own row underneath
+/// so the code above it stays aligned with the other side.
+function talkative(row: Row | null): boolean {
+  return row !== null && (at(row).length > 0 || writing.value === key(row));
+}
+
+function write(row: Row, body: string, draft: boolean) {
+  const line = lineOf(row);
+  if (line === null) {
+    return;
+  }
+  emit('add', {
+    scope: 'line',
+    file: props.diff.path,
+    side: sideOf(row),
+    startLine: line,
+    body,
+    draft,
+  });
+  writing.value = null;
+}
+
+function toggle(row: Row | null) {
+  if (row) {
+    writing.value = writing.value === key(row) ? null : key(row);
+  }
 }
 </script>
 
 <template>
-  <div class="h-full overflow-auto">
-    <header
-      class="sticky top-0 z-10 flex items-baseline gap-3 border-b border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
-    >
-      <div class="min-w-0">
-        <h2 class="truncate font-mono text-sm">
-          <span v-if="diff.oldPath" class="text-slate-500 dark:text-slate-400">
-            {{ diff.oldPath }} →
-          </span>
+  <div class="diff-pane">
+    <header class="file-bar">
+      <div class="file-name">
+        <h2>
+          <span v-if="diff.oldPath" class="from">{{ diff.oldPath }} →</span>
           {{ diff.path }}
         </h2>
-        <p class="text-xs text-slate-500 dark:text-slate-400">
+        <p class="file-facts">
           {{ diff.status }}
           <span v-if="diff.language"> · {{ diff.language }}</span>
-          · +{{ diff.added }} −{{ diff.removed }}
+          · <span class="added">+{{ diff.added }}</span>
+          <span class="removed">−{{ diff.removed }}</span>
         </p>
       </div>
 
       <button
         type="button"
-        class="ml-auto shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
+        class="chip"
         :aria-pressed="split"
         @click="emit('update:split', !split)"
       >
@@ -140,92 +134,108 @@ function pairClass(row: Row | null): string {
       </button>
     </header>
 
-    <p v-if="diff.binary" class="p-3 text-sm text-slate-500 dark:text-slate-400">
-      A binary file has no diff to read.
-    </p>
+    <p v-if="diff.binary" class="note">A binary file has no diff to read.</p>
 
-    <p v-else-if="diff.hunks.length === 0" class="p-3 text-sm text-slate-500 dark:text-slate-400">
-      Nothing changed inside this file.
-    </p>
+    <p v-else-if="diff.hunks.length === 0" class="note">Nothing changed inside this file.</p>
 
-    <table v-else-if="split" class="code w-full table-fixed border-collapse font-mono text-xs">
+    <table v-else-if="split" class="code">
+      <colgroup>
+        <col class="gut" />
+        <col />
+        <col class="gut" />
+        <col />
+      </colgroup>
       <tbody v-for="(hunk, h) in shown" :key="h">
-        <tr class="bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-          <td colspan="4" class="px-2 py-1">
+        <tr class="hunk">
+          <td colspan="4">
             @@ −{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@
-            <span v-if="hunk.header" class="ml-2">{{ hunk.header }}</span>
+            <span v-if="hunk.header" class="hunk-header">{{ hunk.header }}</span>
           </td>
         </tr>
-        <tr v-for="(pair, p) in pairs(hunk.rows)" :key="`${h}-${p}`">
-          <DiffRow :row="pair.left" side="left" :class="pairClass(pair.left)" />
-          <DiffRow :row="pair.right" side="right" :class="pairClass(pair.right)" />
-        </tr>
+        <template v-for="(pair, p) in pairs(hunk.rows)" :key="`${h}-${p}`">
+          <tr>
+            <DiffRow :row="pair.left" side="old" @comment="toggle(pair.left)" />
+            <DiffRow :row="pair.right" side="new" commentable @comment="toggle(pair.right)" />
+          </tr>
+          <tr v-if="talkative(pair.left) || talkative(pair.right)" class="talk">
+            <td colspan="4">
+              <template v-for="row in [pair.left, pair.right]">
+                <CommentThread
+                  v-for="thread in at(row)"
+                  :key="thread.first.id"
+                  :first="thread.first"
+                  :replies="thread.replies"
+                  @reply="
+                    (id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })
+                  "
+                  @edit="(id, body) => emit('edit', id, body)"
+                  @remove="(id) => emit('remove', id)"
+                  @resolve="(id, value) => emit('resolve', id, value)"
+                />
+              </template>
+              <CommentBox
+                v-if="pair.right && writing === key(pair.right)"
+                label="A remark about this line"
+                @save="(body, draft) => write(pair.right!, body, draft)"
+                @cancel="writing = null"
+              />
+              <CommentBox
+                v-else-if="pair.left && writing === key(pair.left)"
+                label="A remark about this line"
+                @save="(body, draft) => write(pair.left!, body, draft)"
+                @cancel="writing = null"
+              />
+            </td>
+          </tr>
+        </template>
       </tbody>
     </table>
 
-    <table v-else class="code w-full border-collapse font-mono text-xs">
+    <table v-else class="code">
+      <colgroup>
+        <col class="gut" />
+        <col class="gut" />
+        <col />
+      </colgroup>
       <tbody v-for="(hunk, h) in shown" :key="h">
-        <tr class="bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-          <td colspan="3" class="px-2 py-1">
+        <tr class="hunk">
+          <td colspan="3">
             @@ −{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@
-            <span v-if="hunk.header" class="ml-2">{{ hunk.header }}</span>
+            <span v-if="hunk.header" class="hunk-header">{{ hunk.header }}</span>
           </td>
         </tr>
-        <tr v-for="(row, r) in hunk.rows" :key="`${h}-${r}`" :class="rowClass(row.kind)">
-          <td class="w-12 select-none px-2 text-right align-top text-slate-400 dark:text-slate-500">
-            {{ row.oldLine ?? '' }}
-          </td>
-          <td
-            class="w-12 cursor-pointer select-none px-2 text-right align-top text-slate-400 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-            :title="`Comment on this line`"
-            @click="writing = writing === key(row) ? null : key(row)"
-          >
-            {{ row.newLine ?? row.oldLine ?? '' }}
-          </td>
-          <td class="whitespace-pre-wrap break-all px-2 align-top">
-            <span class="select-none text-slate-400 dark:text-slate-500">{{ SIGN[row.kind] }}</span
-            ><span
-              v-for="(seg, s) in segments(row)"
-              :key="s"
-              :class="[seg.cls, seg.changed ? 'word' : '']"
-              >{{ seg.text }}</span
-            ><span
-              v-if="row.noNewline"
-              class="ml-2 text-slate-400 dark:text-slate-500"
-              title="the file has no newline after this line"
-              >↵?</span
-            >
-
-            <CommentThread
-              v-for="thread in at(row)"
-              :key="thread.first.id"
-              :first="thread.first"
-              :replies="thread.replies"
-              @reply="
-                (id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })
-              "
-              @edit="(id, body) => emit('edit', id, body)"
-              @remove="(id) => emit('remove', id)"
-              @resolve="(id, value) => emit('resolve', id, value)"
-            />
-
-            <CommentBox
-              v-if="writing === key(row)"
-              class="my-1"
-              label="A remark about this line"
-              @save="(body, draft) => write(row, body, draft)"
-              @cancel="writing = null"
-            />
-          </td>
-        </tr>
+        <template v-for="(row, r) in hunk.rows" :key="`${h}-${r}`">
+          <tr>
+            <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
+            <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+          </tr>
+          <tr v-if="talkative(row)" class="talk">
+            <td colspan="3">
+              <CommentThread
+                v-for="thread in at(row)"
+                :key="thread.first.id"
+                :first="thread.first"
+                :replies="thread.replies"
+                @reply="
+                  (id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })
+                "
+                @edit="(id, body) => emit('edit', id, body)"
+                @remove="(id) => emit('remove', id)"
+                @resolve="(id, value) => emit('resolve', id, value)"
+              />
+              <CommentBox
+                v-if="writing === key(row)"
+                label="A remark about this line"
+                @save="(body, draft) => write(row, body, draft)"
+                @cancel="writing = null"
+              />
+            </td>
+          </tr>
+        </template>
       </tbody>
     </table>
 
-    <p
-      v-if="capped"
-      role="status"
-      class="border-t border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
-    >
+    <p v-if="capped" role="status" class="note warn">
       This file is very large. {{ total - MAX_ROWS }} rows are not shown, because building them
       costs more than reading them.
     </p>

@@ -596,13 +596,15 @@ the rest.
 | `make build` | `vite build`, then `cargo build --release` |
 | `make check` | The whole gate. The only command to run before a commit |
 | `make test` | `cargo test` and `vitest run` |
+| `make e2e` | The browser tests, against the real binary |
+| `make shots` | Screenshots of the interface, into `web/e2e/.shots` |
 | `make fmt` | `cargo fmt` and `prettier --write` |
 | `make install` | The binary into `~/.local/bin` |
 | `make dist` | The `x86_64-unknown-linux-musl` binary, for a colleague. It adds the target if it is missing |
 
 `make check` runs, in this order: `npm run lint`, `npm run format:check`,
 `npm run test:run`, `npm run build`, `cargo fmt --check`, `cargo clippy -- -D
-warnings`, `cargo test`, then `cargo build --release`.
+warnings`, `cargo test`, `cargo build --release`, then the browser tests.
 
 **The interface is built before every Rust step.** The binary embeds
 `web/dist`, so nothing on the Rust side compiles until that directory exists.

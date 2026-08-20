@@ -26,7 +26,9 @@ check:
       - target/
   before_script:
     - curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-    - apt-get install -y --no-install-recommends nodejs
+    # chromium is what the browser tests drive. Without it `make check` says
+    # it skipped them, which is worse than a pipeline that runs them.
+    - apt-get install -y --no-install-recommends nodejs chromium
     - rustup component add clippy rustfmt
     - make setup
   script:

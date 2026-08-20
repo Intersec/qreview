@@ -8,7 +8,7 @@ PREFIX ?= $(HOME)/.local
 MUSL_TARGET := x86_64-unknown-linux-musl
 DEV_PORT := 7420
 
-.PHONY: all setup web build check test fmt lint install dist musl-target dev clean
+.PHONY: all setup web build check test e2e shots fmt lint install dist musl-target dev clean
 
 all: build
 
@@ -32,6 +32,14 @@ check:
 test: web
 	$(CARGO) test --workspace
 	cd web && $(NPM) run test:run
+
+## The browser tests alone. They drive the browser already on the machine.
+e2e: build
+	cd web && $(NPM) run e2e
+
+## Screenshots of the interface, into web/e2e/.shots.
+shots: build
+	cd web && $(NPM) run shots
 
 ## Correct the format of everything.
 fmt:

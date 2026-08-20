@@ -34,6 +34,16 @@ step() {
     fi
 }
 
+find_browser() {
+    for name in google-chrome google-chrome-stable chromium chromium-browser; do
+        if command -v "$name" >/dev/null 2>&1; then
+            echo "$name"
+            return 0
+        fi
+    done
+    return 1
+}
+
 if [ ! -d web/node_modules ]; then
     echo "web/node_modules is missing. Run: make setup"
     exit 1
@@ -49,5 +59,14 @@ step "cargo fmt"       .   cargo fmt --all -- --check
 step "cargo clippy"    .   cargo clippy --workspace --all-targets -- -D warnings
 step "cargo test"      .   cargo test --workspace
 step "cargo build"     .   cargo build --release
+
+# The browser tests need a browser. A machine without one still gets every
+# other step, and says plainly that it skipped this one rather than passing
+# quietly.
+if browser=$(find_browser); then
+    step "playwright"      web npx playwright test
+else
+    printf 'skip  playwright (no chrome or chromium on the PATH)\n'
+fi
 
 exit $failed

@@ -5,6 +5,10 @@
 /web/node_modules/
 /web/dist/
 
+# Browser tests
+/web/e2e/.results/
+/web/e2e/.shots/
+
 # Editors
 *.swp
 .DS_Store

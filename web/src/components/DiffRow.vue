@@ -1,34 +1,48 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { segments } from '@/diff/segments';
 import type { Row } from '@/api/types';
 
-defineProps<{ row: Row | null; side: 'left' | 'right' }>();
+const props = defineProps<{
+  row: Row | null;
+  /// Which line number this column carries.
+  side: 'old' | 'new';
+  /// True when clicking the number writes a comment there.
+  commentable?: boolean;
+}>();
+const emit = defineEmits<{ comment: [] }>();
 
-const SIGN: Record<Row['kind'], string> = { context: ' ', add: '+', remove: '−' };
+const kind = computed(() => props.row?.kind ?? 'empty');
+const number = computed(() => {
+  if (!props.row) {
+    return '';
+  }
+  return (props.side === 'old' ? props.row.oldLine : props.row.newLine) ?? '';
+});
 </script>
 
 <template>
-  <template v-if="row">
-    <td class="w-12 select-none px-2 text-right align-top text-slate-400 dark:text-slate-500">
-      {{ side === 'left' ? (row.oldLine ?? '') : (row.newLine ?? '') }}
-    </td>
-    <td class="whitespace-pre-wrap break-all px-2 align-top">
-      <span class="select-none text-slate-400 dark:text-slate-500">{{ SIGN[row.kind] }}</span
-      ><span
+  <td
+    class="gutter"
+    :class="[`gutter-${kind}`, commentable && number !== '' ? 'gutter-comment' : '']"
+    :title="commentable && number !== '' ? 'Comment on this line' : undefined"
+    @click="commentable && number !== '' ? emit('comment') : undefined"
+  >
+    {{ number }}
+  </td>
+  <td class="code-cell" :class="`row-${kind}`" :data-kind="kind">
+    <template v-if="row">
+      <span
         v-for="(seg, s) in segments(row)"
         :key="s"
         :class="[seg.cls, seg.changed ? 'word' : '']"
         >{{ seg.text }}</span
-      ><span
-        v-if="row.noNewline"
-        class="ml-2 text-slate-400 dark:text-slate-500"
-        title="the file has no newline after this line"
+      >
+      <span v-if="row.text === ''">&#8203;</span>
+      <span v-if="row.noNewline" class="no-newline" title="no newline at the end of the file"
         >↵?</span
       >
-    </td>
-  </template>
-  <template v-else>
-    <td class="w-12"></td>
-    <td class="bg-slate-50 dark:bg-slate-800/50"></td>
-  </template>
+    </template>
+    <slot />
+  </td>
 </template>

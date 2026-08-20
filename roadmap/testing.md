@@ -13,9 +13,9 @@ pipeline exists, it runs `make check` and nothing else changes.
 make check
 ```
 
-One command. It runs, in this order: `cargo fmt --check`, `cargo clippy -- -D
-warnings`, `cargo test`, ESLint, Prettier, `vue-tsc`, Vitest, and the release
-build. It prints one line per step and stays quiet until a step fails. A red
+One command. It runs, in this order: ESLint, Prettier, Vitest, the interface
+build, `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, the
+release build, and the browser tests. It prints one line per step and stays quiet until a step fails. A red
 `check` means the task is not done.
 
 Do not pipe `check` through `tail` or `grep`. A Prettier failure carries no
@@ -91,15 +91,35 @@ merge review and the walk both need one.
 
 Most of the logic left the browser when the colors moved to the server, so the
 interface carries less to test. Vitest covers what is left: a component that
-folds a hunk, places a comment, or drives the keyboard. A component that only
-shows a value gets no test.
+pairs rows, cuts a row into segments, or renders a comment body.
 
 The types in `web/src/api/types.ts` are written by hand. One `insta` snapshot
 per route pins the Rust shape, so a struct that drifts from the TypeScript
 turns a Rust test red.
 
-There are no end-to-end browser tests in v1. When one is needed, it goes in
-`tests/e2e/` and stays out of `make check` until the CI can run it.
+## The browser
+
+`web/e2e/` drives a real browser with Playwright, against the real binary on
+a real repository. It is part of `make check`.
+
+- **The browser is the one on the machine.** Playwright can download its own,
+  and a 150 MB download in every clone buys nothing: the interface has to work
+  in the browser the reader uses. `QREVIEW_BROWSER` names one outright.
+- **No browser, no lie.** `make check` prints `skip playwright` when it finds
+  none, rather than passing quietly. The pipeline installs chromium, so the
+  skip only ever happens on a developer machine.
+- **The fixture is a real repository**, built by `e2e/fixture.ts` with the
+  shapes a reviewer meets: a modified file, a new file, a rename, two hunks
+  far apart, and a merge under the boundary.
+- **The token is read from what the binary prints**, never forced in, so the
+  test walks the same path a person does.
+- **A console error fails a test.** One suite watches the console and expects
+  it silent: a Vue warning about a dropped attribute is how the side by side
+  view lost its colours.
+
+`make shots` writes screenshots of both themes into `web/e2e/.shots`. They are
+not a test. They are how a person, or an agent with no eyes on the screen,
+sees what the interface looks like.
 
 ## Before the CI exists
 
