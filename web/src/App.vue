@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
+import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
 import MergeBar from './components/MergeBar.vue';
 import PatchSetBar from './components/PatchSetBar.vue';
@@ -28,6 +29,17 @@ const {
 } = storeToRefs(review);
 
 const threads = computed(() => review.threads());
+const change = computed(() => series.value?.changes.find((c) => c.key === changeKey.value) ?? null);
+
+/// Move to the file before or after the one being read.
+function stepFile(by: number) {
+  const paths = files.value.filter((f) => !f.binary).map((f) => f.path);
+  const at = filePath.value === null ? -1 : paths.indexOf(filePath.value);
+  const next = paths[Math.min(Math.max(at + by, 0), paths.length - 1)];
+  if (next) {
+    review.openFile(next);
+  }
+}
 const lost = computed(() => review.lost());
 const copied = ref(false);
 const side = ref(localStorage.getItem('qreview.side') !== 'hidden');
@@ -68,18 +80,13 @@ function onKey(event: KeyboardEvent) {
     return list[next] ?? null;
   };
 
-  const paths = files.value.filter((f) => !f.binary).map((f) => f.path);
   const keys = series.value?.changes.map((c) => c.key) ?? [];
 
   switch (event.key) {
     case 'j':
-    case 'k': {
-      const path = step(paths, filePath.value, event.key === 'j' ? 1 : -1);
-      if (path) {
-        review.openFile(path);
-      }
+    case 'k':
+      stepFile(event.key === 'j' ? 1 : -1);
       break;
-    }
     case 'n':
     case 'p': {
       const key = step(keys, changeKey.value, event.key === 'n' ? 1 : -1);
@@ -159,6 +166,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       />
 
       <section class="work">
+        <ChangeBar :change="change" :files="files" :file-path="filePath" @step="stepFile" />
         <PatchSetBar
           :sets="patchSets"
           :current="patchSet"

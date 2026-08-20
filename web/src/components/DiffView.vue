@@ -318,31 +318,44 @@ function toggle(row: Row | null) {
             <DiffRow :row="pair.left" side="old" @comment="toggle(pair.left)" />
             <DiffRow :row="pair.right" side="new" commentable @comment="toggle(pair.right)" />
           </tr>
+          <!-- A comment sits under the side it was written on, not across
+               both, so the two columns keep meaning what they mean. -->
           <tr v-if="talkative(pair.left) || talkative(pair.right)" class="talk">
-            <td colspan="4">
-              <template v-for="row in [pair.left, pair.right]">
-                <CommentThread
-                  v-for="thread in at(row)"
-                  :key="thread.first.id"
-                  :first="thread.first"
-                  :replies="thread.replies"
-                  @reply="
-                    (id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })
-                  "
-                  @edit="(id, body) => emit('edit', id, body)"
-                  @remove="(id) => emit('remove', id)"
-                />
-              </template>
+            <td colspan="2">
+              <CommentThread
+                v-for="thread in at(pair.left)"
+                :key="thread.first.id"
+                :first="thread.first"
+                :replies="thread.replies"
+                @reply="
+                  (id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })
+                "
+                @edit="(id, body) => emit('edit', id, body)"
+                @remove="(id) => emit('remove', id)"
+              />
+              <CommentBox
+                v-if="pair.left && writing === key(pair.left)"
+                label="A remark about this line"
+                @save="(body, draft) => write(pair.left!, body, draft)"
+                @cancel="writing = null"
+              />
+            </td>
+            <td colspan="2">
+              <CommentThread
+                v-for="thread in at(pair.right)"
+                :key="thread.first.id"
+                :first="thread.first"
+                :replies="thread.replies"
+                @reply="
+                  (id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })
+                "
+                @edit="(id, body) => emit('edit', id, body)"
+                @remove="(id) => emit('remove', id)"
+              />
               <CommentBox
                 v-if="pair.right && writing === key(pair.right)"
                 label="A remark about this line"
                 @save="(body, draft) => write(pair.right!, body, draft)"
-                @cancel="writing = null"
-              />
-              <CommentBox
-                v-else-if="pair.left && writing === key(pair.left)"
-                label="A remark about this line"
-                @save="(body, draft) => write(pair.left!, body, draft)"
                 @cancel="writing = null"
               />
             </td>

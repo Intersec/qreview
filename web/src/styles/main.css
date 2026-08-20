@@ -653,3 +653,35 @@ tr.talk td {
   flex: 1;
   min-height: 0;
 }
+
+/* ------------------------------------------------------- the change bar */
+
+.change-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: none;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--page);
+  font-size: 12px;
+}
+.change-bar .subject {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.change-bar code {
+  font-family: var(--code-font);
+  font-size: 11px;
+}
+.change-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 16rem;
+}
+.change-bar .bar-actions {
+  align-items: baseline;
+}

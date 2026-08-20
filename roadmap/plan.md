@@ -179,9 +179,9 @@ surprised by anything.*
       change they belong to, and no pane standing empty
 - [x] Resolving a thread is gone. It is a conversation with a reviewer, and
       a local review before the push has none
-- [ ] The change header: the subject, the patch set, and where the file sits
-      in the series
-- [ ] A comment anchored under its own side in the side by side view
+- [x] The change header: the subject, the commit, and which file of the
+      change is open, with Prev and Next
+- [x] A comment anchored under its own side in the side by side view
 - [ ] The file list as a tree, the way a large change needs it
 - [ ] A whitespace toggle
 - [ ] A per-change review state, kept between sessions

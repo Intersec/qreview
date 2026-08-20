@@ -71,3 +71,40 @@ test('the page reports no error to the console', async ({ page }) => {
 
   expect(complaints).toEqual([]);
 });
+
+test('the bar says which file of the change is open', async ({ page }) => {
+  await page.getByRole('button', { name: /long: touch two places/ }).click();
+  await expect(page.locator('.change-bar')).toContainText('File 1 of 2');
+  await expect(page.locator('.change-bar')).toContainText('long: touch two places');
+
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.locator('.change-bar')).toContainText('File 2 of 2');
+  await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+});
+
+test('a comment sits under the side it was written on', async ({ page }) => {
+  await page.getByRole('button', { name: /net: retry the read/ }).click();
+  await page.getByRole('button', { name: 'Side by side' }).click();
+
+  await page.locator('td.gutter-comment').nth(2).click();
+  await page.getByRole('textbox').first().fill('On the new side.');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  const row = page.locator('tr.talk').first();
+  await expect(row.locator('td')).toHaveCount(2);
+  await expect(row.locator('td').nth(0)).toBeEmpty();
+  await expect(row.locator('td').nth(1)).toContainText('On the new side.');
+});
+
+test('the sidebar hides and comes back', async ({ page }) => {
+  await expect(page.locator('.side')).toBeVisible();
+
+  await page.keyboard.press('[');
+  await expect(page.locator('.side')).toBeHidden();
+
+  await page.reload();
+  await expect(page.locator('.side')).toBeHidden();
+
+  await page.keyboard.press('[');
+  await expect(page.locator('.side')).toBeVisible();
+});
