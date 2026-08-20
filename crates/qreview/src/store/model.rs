@@ -14,6 +14,10 @@ pub struct ChangeFile {
     /// The Change-Id, or `sha-<hash>` when the commit carries none.
     pub key: String,
     pub subject: String,
+    /// The reader marked this change read. It says nothing about the
+    /// comments: a change can be read and still carry remarks.
+    #[serde(default)]
+    pub reviewed: bool,
     #[serde(default)]
     pub comments: Vec<Comment>,
 }
@@ -24,6 +28,7 @@ impl ChangeFile {
             version: VERSION,
             key: key.to_owned(),
             subject: subject.to_owned(),
+            reviewed: false,
             comments: Vec::new(),
         }
     }

@@ -685,3 +685,45 @@ tr.talk td {
 .change-bar .bar-actions {
   align-items: baseline;
 }
+
+/* -------------------------------------- the read mark and the directory */
+
+.change-line {
+  display: flex;
+  align-items: flex-start;
+}
+.mark-read {
+  flex: none;
+  padding: 5px 2px 5px 8px;
+  color: var(--ink-faint);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.mark-read[aria-pressed='true'] {
+  color: #1a7f37;
+}
+.mark-read:hover {
+  color: var(--pick-edge);
+}
+.change-line .change-row {
+  flex: 1;
+  min-width: 0;
+  padding-left: 2px;
+}
+.change-row.is-read .change-subject {
+  color: var(--ink-quiet);
+}
+.dir {
+  padding: 3px 10px 0 14px;
+  font-family: var(--code-font);
+  font-size: 10px;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.file-row .file-path {
+  direction: ltr;
+}

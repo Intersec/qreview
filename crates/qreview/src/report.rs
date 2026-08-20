@@ -128,7 +128,7 @@ mod tests {
             files.push(ChangeFiles {
                 key: change.key.clone(),
                 files: session
-                    .files(&change.commit, &crate::session::Against::Parent)
+                    .files(&change.commit, &crate::session::Against::Parent, false)
                     .await
                     .unwrap(),
             });

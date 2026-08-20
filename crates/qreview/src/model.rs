@@ -40,6 +40,8 @@ pub struct ChangeSummary {
     pub commit: String,
     pub patch_set_count: usize,
     pub comment_count: usize,
+    /// The reader marked this change read.
+    pub reviewed: bool,
     pub is_merge: bool,
 }
 

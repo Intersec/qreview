@@ -21,14 +21,20 @@ pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const DETECT: [&str; 4] = ["-r", "-M", "-C", "--find-copies-harder"];
 
 /// The files a change touches, with the counts and no content.
-pub async fn files(git: &Git, base: &str, target: &str) -> Result<Vec<FileEntry>> {
+pub async fn files(git: &Git, base: &str, target: &str, ignore_ws: bool) -> Result<Vec<FileEntry>> {
     let mut call: Vec<&str> = vec!["diff-tree"];
     call.extend_from_slice(&DETECT);
+    if ignore_ws {
+        call.push("-w");
+    }
     call.extend_from_slice(&["--numstat", "-z", base, target]);
     let numstat = git.text(&call).await?;
 
     let mut call: Vec<&str> = vec!["diff-tree"];
     call.extend_from_slice(&DETECT);
+    if ignore_ws {
+        call.push("-w");
+    }
     call.extend_from_slice(&["--name-status", "-z", base, target]);
     let status = git.text(&call).await?;
 
@@ -54,9 +60,13 @@ pub async fn file(
     target: &str,
     path: &str,
     old_path: Option<&str>,
+    ignore_ws: bool,
 ) -> Result<Option<FileDiff>> {
     let mut call: Vec<&str> = vec!["diff-tree", "-p", "--no-color", "--full-index"];
     call.extend_from_slice(&DETECT);
+    if ignore_ws {
+        call.push("-w");
+    }
     call.extend_from_slice(&[base, target, "--", path]);
     // A rename is only visible when both sides are in the pathspec.
     if let Some(old) = old_path {
@@ -155,7 +165,7 @@ mod tests {
 
     async fn head_files(repo: &Repo) -> (Git, Vec<FileEntry>) {
         let git = Git::discover(repo.path()).await.unwrap();
-        let entries = files(&git, "HEAD^", "HEAD").await.unwrap();
+        let entries = files(&git, "HEAD^", "HEAD", false).await.unwrap();
 
         (git, entries)
     }
@@ -167,7 +177,7 @@ mod tests {
             .find(|e| e.path == path)
             .and_then(|e| e.old_path.clone());
 
-        file(&git, "HEAD^", "HEAD", path, old.as_deref())
+        file(&git, "HEAD^", "HEAD", path, old.as_deref(), false)
             .await
             .unwrap()
             .expect("the change must touch the file")
@@ -338,7 +348,7 @@ mod tests {
     async fn a_root_commit_diffs_against_the_empty_tree() {
         let repo = build_repo(&[commit("first").file("a.txt", "one\ntwo\n")]).await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let entries = files(&git, EMPTY_TREE, "HEAD").await.unwrap();
+        let entries = files(&git, EMPTY_TREE, "HEAD", false).await.unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].status, FileStatus::Added);
@@ -363,7 +373,7 @@ mod tests {
         let repo = two_commits(&[("a.txt", "a\n")], &[("a.txt", "b\n")]).await;
         let git = Git::discover(repo.path()).await.unwrap();
 
-        let missing = file(&git, "HEAD^", "HEAD", "other.txt", None)
+        let missing = file(&git, "HEAD^", "HEAD", "other.txt", None, false)
             .await
             .unwrap();
         assert!(missing.is_none());

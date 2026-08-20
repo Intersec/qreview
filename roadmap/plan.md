@@ -6,8 +6,8 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: v0.1.0 is cut. M8 is in progress**, the one the screenshots asked
-for: a side by side view that works, and a diff that reads like Gerrit.
+**Status: M8 is done.** v0.2.0 is ready to cut: a side by side view that
+works, a diff that reads like Gerrit, and the window given to the code.
 
 ---
 
@@ -182,9 +182,9 @@ surprised by anything.*
 - [x] The change header: the subject, the commit, and which file of the
       change is open, with Prev and Next
 - [x] A comment anchored under its own side in the side by side view
-- [ ] The file list as a tree, the way a large change needs it
-- [ ] A whitespace toggle
-- [ ] A per-change review state, kept between sessions
+- [x] The files grouped under the directory they live in
+- [x] A whitespace toggle
+- [x] A per-change read mark, kept between sessions
 
 ## After that
 

@@ -31,7 +31,7 @@ left is in [`plan.md`](./plan.md).
   not a remote branch
 - ✅ The change list, with the subject, the author, and the comment count
 - ✅ Keyboard navigation between the changes of the series
-- ⬜ A per-change review state, kept between sessions
+- ✅ A per-change read mark, kept between sessions
 - ✅ Review of a series that is not the checkout: a remote-tracking branch, a
   fetched Gerrit ref, a tag
 - 💡 A pushed commit and a colleague's commit both end the guess. Neither ends
@@ -61,7 +61,7 @@ left is in [`plan.md`](./plan.md).
 - ✅ Renames and copies shown as one file, not two
 - ✅ A binary file, an empty file, and a file with no trailing newline
 - ✅ Folded context between hunks, opened whole or ten lines at a time
-- ⬜ Whitespace changes shown or hidden
+- ✅ Whitespace changes shown or hidden
 - ✅ A file too large is shown with a warning and no colors
 - ✅ The file tree, with a filter
 

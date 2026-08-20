@@ -51,6 +51,7 @@ pub struct EditComment {
 #[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct Counts {
     pub total: usize,
+    pub reviewed: bool,
 }
 
 /// The change a comment is being written on.
@@ -77,11 +78,21 @@ pub fn counts(store: &Store, key: &str) -> Counts {
     match store.load(key, "") {
         Ok(file) => Counts {
             total: file.comments.len(),
+            reviewed: file.reviewed,
         },
         // A file that cannot be read must not stop the series from loading.
         // The change opens, and the read fails there, where it can be said.
         Err(_) => Counts::default(),
     }
+}
+
+/// Mark a change read, or unread.
+pub fn mark(store: &Store, key: &str, subject: &str, reviewed: bool) -> Result<bool> {
+    let mut file = store.load(key, subject)?;
+    file.reviewed = reviewed;
+    store.save(&file)?;
+
+    Ok(reviewed)
 }
 
 impl Target<'_> {

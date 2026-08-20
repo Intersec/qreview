@@ -43,6 +43,7 @@ export const useReview = defineStore('review', () => {
   /// The view the reader last chose. The configuration decides the first
   /// time, and the choice sticks after that.
   const split = ref(localStorage.getItem('qreview.split') === 'yes');
+  const ignoreWs = ref(localStorage.getItem('qreview.ws') === 'ignore');
   const mergeList = ref<MergeListItem[]>([]);
 
   /// True while the reader is on the merge under the boundary.
@@ -97,7 +98,7 @@ export const useReview = defineStore('review', () => {
       const [versions, comments, list] = await Promise.all([
         api.patchSets(key).catch(() => ({ sets: [], gerrit: null })),
         api.comments(key),
-        api.files(key, undefined, base),
+        api.files(key, undefined, base, ignoreWs.value),
       ]);
       if (mine !== generation) {
         return;
@@ -124,7 +125,13 @@ export const useReview = defineStore('review', () => {
     const mine = ++generation;
     await guard(async () => {
       filePath.value = path;
-      const read = await api.diff(key, path, patchSet.value, against.value ?? mergeBase.value);
+      const read = await api.diff(
+        key,
+        path,
+        patchSet.value,
+        against.value ?? mergeBase.value,
+        ignoreWs.value,
+      );
       if (mine === generation) {
         diff.value = read;
       }
@@ -195,6 +202,17 @@ export const useReview = defineStore('review', () => {
       const versions = await api.patchSets(key);
       patchSets.value = versions.sets;
       gerrit.value = versions.gerrit;
+    });
+  }
+
+  /// Mark a change read, or unread.
+  async function markChange(key: string, reviewed: boolean) {
+    await guard(async () => {
+      const updated = await api.markChange(key, reviewed);
+      const change = series.value?.changes.find((c) => c.key === key);
+      if (change) {
+        change.reviewed = updated.reviewed;
+      }
     });
   }
 
@@ -272,6 +290,14 @@ export const useReview = defineStore('review', () => {
     });
   }
 
+  async function setIgnoreWs(value: boolean) {
+    ignoreWs.value = value;
+    localStorage.setItem('qreview.ws', value ? 'ignore' : 'keep');
+    if (filePath.value) {
+      await openFile(filePath.value);
+    }
+  }
+
   function setSplit(value: boolean) {
     split.value = value;
     localStorage.setItem('qreview.split', value ? 'yes' : 'no');
@@ -283,6 +309,7 @@ export const useReview = defineStore('review', () => {
     gerrit,
     fetchPatchSet,
     copyExport,
+    markChange,
     loadLines,
     patchSet,
     against,
@@ -295,6 +322,8 @@ export const useReview = defineStore('review', () => {
     deleteComment,
     split,
     setSplit,
+    ignoreWs,
+    setIgnoreWs,
     version,
     series,
     changeKey,

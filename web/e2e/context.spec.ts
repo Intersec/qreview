@@ -1,6 +1,7 @@
 // The lines a diff does not carry, opened from the bar between two hunks.
 
 import { expect, test } from '@playwright/test';
+import { openChange, openFile } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -12,11 +13,8 @@ test.afterAll(() => server?.stop());
 
 test.beforeEach(async ({ page }) => {
   await page.goto(server.url);
-  await page.getByRole('button', { name: /long: touch two places/ }).click();
-  const file = page.getByRole('button', { name: /src\/long\.c/ });
-  await file.waitFor();
-  await file.click();
-  await expect(page.locator('.file-bar h2')).toContainText('src/long.c');
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
 });
 
 test('the bar says how many lines it hides', async ({ page }) => {
@@ -58,9 +56,7 @@ test('the context opens in the side by side view too', async ({ page }) => {
 });
 
 test('a file with no gap has no bar', async ({ page }) => {
-  const added = page.getByRole('button', { name: /src\/added\.py/ });
-  await added.click();
-  await expect(page.locator('.file-bar h2')).toContainText('src/added.py');
+  await openFile(page, 'added.py');
 
   await expect(page.getByRole('button', { name: /common lines/ })).toHaveCount(0);
 });

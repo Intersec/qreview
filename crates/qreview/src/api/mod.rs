@@ -56,7 +56,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/api/session", get(session))
         .route("/api/series/extend", post(extend))
-        .route("/api/changes/{key}", get(change))
+        .route("/api/changes/{key}", get(change).patch(mark_change))
         .route("/api/changes/{key}/files", get(files))
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/mergelist", get(mergelist))
@@ -155,6 +155,14 @@ struct ViewQuery {
     ps: Option<usize>,
     /// What to read it against.
     base: Option<String>,
+    /// `ignore` leaves out the lines that differ only by whitespace.
+    #[serde(default)]
+    ws: Option<String>,
+}
+
+/// `ws=ignore` asks git to leave whitespace out of the comparison.
+fn ignore_ws(value: Option<&str>) -> bool {
+    value == Some("ignore")
 }
 
 /// A base is a word, or `ps:<n>` to read one patch set against another.
@@ -202,6 +210,31 @@ async fn resolve_base(
     Ok(against)
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MarkBody {
+    reviewed: bool,
+}
+
+/// Mark a change read, or unread.
+async fn mark_change(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Json(body): Json<MarkBody>,
+) -> Result<Json<ChangeSummary>, ApiError> {
+    let mut session = state.session.write().await;
+    session.mark_reviewed(&key, body.reviewed)?;
+
+    session
+        .series
+        .changes
+        .iter()
+        .find(|c| c.key == key)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))
+}
+
 async fn files(
     State(state): State<AppState>,
     Path(key): Path<String>,
@@ -211,7 +244,11 @@ async fn files(
     let commit = target(&session, &key, view.ps).await?;
     let against = resolve_base(&session, &key, parse_base(view.base.as_deref())?).await?;
 
-    Ok(Json(session.files(&commit, &against).await?))
+    Ok(Json(
+        session
+            .files(&commit, &against, ignore_ws(view.ws.as_deref()))
+            .await?,
+    ))
 }
 
 /// The commit to read: a patch set when one is named, the change otherwise.
@@ -332,6 +369,7 @@ struct DiffQuery {
     file: String,
     ps: Option<usize>,
     base: Option<String>,
+    ws: Option<String>,
 }
 
 async fn diff(
@@ -344,7 +382,12 @@ async fn diff(
     let against = resolve_base(&session, &key, parse_base(query.base.as_deref())?).await?;
 
     session
-        .diff(&commit, &query.file, &against)
+        .diff(
+            &commit,
+            &query.file,
+            &against,
+            ignore_ws(query.ws.as_deref()),
+        )
         .await?
         .map(Json)
         .ok_or_else(|| ApiError::not_found(format!("{} is not in the change", query.file)))

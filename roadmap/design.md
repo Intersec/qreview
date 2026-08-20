@@ -488,6 +488,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/session` | The repository, the first batch of the series, the tool version |
 | `POST /api/series/extend` | Load the next batch. Body: `{ "count": 5, "parent": 1 }` |
 | `GET /api/changes/:key` | The change, its patch sets, its comment count |
+| `PATCH /api/changes/:key` | Mark the change read, or unread |
 | `GET /api/changes/:key/files?ps=2&base=parent` | The file list with the statistics |
 | `GET /api/changes/:key/diff?ps=2&base=parent&file=...` | The hunks of one file |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
@@ -502,7 +503,8 @@ All routes are under `/api`, all answers are JSON, all errors carry
 Two static routes sit outside `/api`: `/` serves the interface, and
 `/theme/<name>.css` serves the stylesheet that names the syntax classes.
 
-`ps` names the patch set to read, and the last one is the default. `base`
+`ws=ignore` leaves out what differs only by whitespace. `ps` names the patch
+set to read, and the last one is the default. `base`
 takes `parent` (the default), `ps:<n>` to read one patch set against another,
 and on a merge `automerge` (its default), `parent1` or `parent2`.
 

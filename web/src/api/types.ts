@@ -36,6 +36,7 @@ export interface ChangeSummary {
   commit: string;
   patchSetCount: number;
   commentCount: number;
+  reviewed: boolean;
   isMerge: boolean;
 }
 

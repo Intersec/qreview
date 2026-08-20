@@ -18,9 +18,12 @@ const props = defineProps<{
   loadLines: (from: number, to: number) => Promise<Row[]>;
   /// The comments whose place in this patch set is gone.
   lost: Comment[];
+  /// True when the diff leaves out what differs only by whitespace.
+  ignoreWs: boolean;
 }>();
 const emit = defineEmits<{
   'update:split': [value: boolean];
+  'update:ignoreWs': [value: boolean];
   add: [comment: NewComment];
   edit: [id: string, body: string];
   remove: [id: string];
@@ -234,6 +237,15 @@ function toggle(row: Row | null) {
         </button>
         <button type="button" class="chip" @click="about = about === 'change' ? null : 'change'">
           On the change
+        </button>
+        <button
+          type="button"
+          class="chip"
+          :aria-pressed="ignoreWs"
+          title="Leave out the lines that differ only by whitespace"
+          @click="emit('update:ignoreWs', !ignoreWs)"
+        >
+          Ignore whitespace
         </button>
         <button
           type="button"

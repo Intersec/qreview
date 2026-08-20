@@ -7,16 +7,14 @@ import { chromium, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import config from '../playwright.config.ts';
+import { openChange, openFile } from './act.ts';
 import { start } from './server.ts';
 
 const OUT = join(import.meta.dirname, '.shots');
 
 async function openLongFile(page: Page) {
-  await page.getByRole('button', { name: /long: touch two places/ }).click();
-  const file = page.getByRole('button', { name: /src\/long\.c/ });
-  await file.waitFor();
-  await file.click();
-  await page.locator('.file-bar h2', { hasText: 'src/long.c' }).waitFor();
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
 }
 
 const server = await start();
@@ -60,10 +58,8 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.screenshot({ path: join(OUT, `${scheme}-split.png`) });
 
   // A comment, open on its line.
-  await page.getByRole('button', { name: /net: retry the read/ }).click();
-  const blk = page.getByRole('button', { name: /src\/net\.blk/ });
-  await blk.waitFor();
-  await blk.click();
+  await openChange(page, /net: retry the read/);
+  await openFile(page, 'net.blk');
   await page.locator('td.gutter-comment').nth(2).click();
   await page.getByRole('textbox').first().fill('This loop never ends when the socket closes.');
   await page.screenshot({ path: join(OUT, `${scheme}-comment.png`) });

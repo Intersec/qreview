@@ -343,6 +343,7 @@ pub(crate) fn summary(info: CommitInfo) -> ChangeSummary {
         // The store fills these in. The walk knows nothing about comments.
         patch_set_count: 1,
         comment_count: 0,
+        reviewed: false,
         is_merge: info.is_merge(),
     }
 }

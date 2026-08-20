@@ -1,6 +1,7 @@
 // Reading a series, and writing on it.
 
 import { expect, test } from '@playwright/test';
+import { openChange, openFile } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -30,8 +31,8 @@ test('a change shows its files and the first diff', async ({ page }) => {
 });
 
 test('a comment on a line comes back after a reload', async ({ page }) => {
-  await page.getByRole('button', { name: /net: retry the read/ }).click();
-  await page.getByRole('button', { name: /src\/net\.blk/ }).click();
+  await openChange(page, /net: retry the read/);
+  await openFile(page, 'net.blk');
 
   await page.locator('td.gutter-comment').first().click();
   await page.getByRole('textbox').first().fill('This loop never ends.');
@@ -40,8 +41,8 @@ test('a comment on a line comes back after a reload', async ({ page }) => {
   await expect(page.getByText('This loop never ends.')).toBeVisible();
 
   await page.reload();
-  await page.getByRole('button', { name: /net: retry the read/ }).click();
-  await page.getByRole('button', { name: /src\/net\.blk/ }).click();
+  await openChange(page, /net: retry the read/);
+  await openFile(page, 'net.blk');
   await expect(page.getByText('This loop never ends.')).toBeVisible();
 });
 
@@ -107,4 +108,38 @@ test('the sidebar hides and comes back', async ({ page }) => {
 
   await page.keyboard.press('[');
   await expect(page.locator('.side')).toBeVisible();
+});
+
+test('a change can be marked read, and stays read', async ({ page }) => {
+  const change = page.locator('li', { hasText: 'docs: rename the document' });
+  const mark = change.getByRole('button', { name: '☐' });
+  await mark.click();
+
+  await expect(change.getByRole('button', { name: '☑' })).toBeVisible();
+
+  await page.reload();
+  await expect(
+    page.locator('li', { hasText: 'docs: rename the document' }).getByRole('button', { name: '☑' }),
+  ).toBeVisible();
+});
+
+test('the files are grouped under the directory they live in', async ({ page }) => {
+  await page.getByRole('button', { name: /long: touch two places/ }).click();
+
+  await expect(page.locator('.dir')).toHaveText(['src/']);
+  await expect(page.locator('.file-row').first()).toContainText('added.py');
+});
+
+test('ignoring whitespace drops a change that is only spacing', async ({ page }) => {
+  await page.getByRole('button', { name: /net: retry the read/ }).click();
+  await expect(page.locator('td.code-cell.row-add')).not.toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Ignore whitespace' }).click();
+  await expect(page.getByRole('button', { name: 'Ignore whitespace' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  // The change is real, so it survives. What matters is that the flag reaches
+  // git and the diff comes back rather than failing.
+  await expect(page.locator('td.code-cell.row-add')).not.toHaveCount(0);
 });

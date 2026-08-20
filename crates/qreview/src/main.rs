@@ -109,7 +109,7 @@ async fn text_report(session: &Session) -> Result<String> {
         files.push(ChangeFiles {
             key: change.key.clone(),
             files: session
-                .files(&change.commit, &qreview::session::Against::Parent)
+                .files(&change.commit, &qreview::session::Against::Parent, false)
                 .await?,
         });
     }

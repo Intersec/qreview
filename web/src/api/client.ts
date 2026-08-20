@@ -2,6 +2,7 @@
 // load left behind, so nothing here carries it.
 
 import type {
+  ChangeSummary,
   Comment,
   EditComment,
   FileDiff,
@@ -49,14 +50,23 @@ export const api = {
       body: JSON.stringify({ count }),
     }),
 
-  files: (key: string, ps?: number, base?: string) =>
+  files: (key: string, ps?: number, base?: string, ignoreWs = false) =>
     call<FileEntry[]>(
-      `/api/changes/${encodeURIComponent(key)}/files${query({ ps: num(ps), base })}`,
+      `/api/changes/${encodeURIComponent(key)}/files${query({
+        ps: num(ps),
+        base,
+        ws: ignoreWs ? 'ignore' : undefined,
+      })}`,
     ),
 
-  diff: (key: string, file: string, ps?: number, base?: string) =>
+  diff: (key: string, file: string, ps?: number, base?: string, ignoreWs = false) =>
     call<FileDiff>(
-      `/api/changes/${encodeURIComponent(key)}/diff${query({ file, ps: num(ps), base })}`,
+      `/api/changes/${encodeURIComponent(key)}/diff${query({
+        file,
+        ps: num(ps),
+        base,
+        ws: ignoreWs ? 'ignore' : undefined,
+      })}`,
     ),
 
   lines: (key: string, file: string, from: number, to: number, ps?: number) =>
@@ -97,6 +107,13 @@ export const api = {
     }
     return response.text();
   },
+
+  markChange: (key: string, reviewed: boolean) =>
+    call<ChangeSummary>(`/api/changes/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewed }),
+    }),
 
   comments: (key: string, ps?: number) =>
     call<Review>(`/api/changes/${encodeURIComponent(key)}/comments${query({ ps: num(ps) })}`),

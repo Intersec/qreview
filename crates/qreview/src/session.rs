@@ -206,9 +206,14 @@ impl Session {
     }
 
     /// The files a change touches.
-    pub async fn files(&self, rev: &str, against: &Against) -> Result<Vec<FileEntry>> {
+    pub async fn files(
+        &self,
+        rev: &str,
+        against: &Against,
+        ignore_ws: bool,
+    ) -> Result<Vec<FileEntry>> {
         let base = self.base_of(rev, against).await?;
-        let mut entries = diff::files(&self.git, &base, rev).await?;
+        let mut entries = diff::files(&self.git, &base, rev, ignore_ws).await?;
 
         for entry in &mut entries {
             entry.language = self.langs.of(&entry.path).unwrap_or_default().to_owned();
@@ -217,15 +222,21 @@ impl Session {
     }
 
     /// The diff of one file of a change.
-    pub async fn diff(&self, rev: &str, path: &str, against: &Against) -> Result<Option<FileDiff>> {
+    pub async fn diff(
+        &self,
+        rev: &str,
+        path: &str,
+        against: &Against,
+        ignore_ws: bool,
+    ) -> Result<Option<FileDiff>> {
         let base = self.base_of(rev, against).await?;
-        let old = diff::files(&self.git, &base, rev)
+        let old = diff::files(&self.git, &base, rev, ignore_ws)
             .await?
             .into_iter()
             .find(|e| e.path == path)
             .and_then(|e| e.old_path);
 
-        let mut found = diff::file(&self.git, &base, rev, path, old.as_deref()).await?;
+        let mut found = diff::file(&self.git, &base, rev, path, old.as_deref(), ignore_ws).await?;
 
         if let Some(file) = found.as_mut() {
             let language = self.langs.of(path).map(str::to_owned);
@@ -383,6 +394,7 @@ impl Session {
         for change in &mut self.series.changes {
             let counts = comments::counts(&self.store, &change.key);
             change.comment_count = counts.total;
+            change.reviewed = counts.reviewed;
         }
     }
 
@@ -549,6 +561,23 @@ impl Session {
         }
         .add(new)
         .await
+    }
+
+    /// Mark a change read, or unread.
+    pub fn mark_reviewed(&mut self, key: &str, reviewed: bool) -> Result<()> {
+        let subject = self
+            .series
+            .changes
+            .iter()
+            .find(|c| c.key == key)
+            .map(|c| c.subject.clone())
+            .unwrap_or_default();
+
+        comments::mark(&self.store, key, &subject, reviewed)?;
+        if let Some(change) = self.series.changes.iter_mut().find(|c| c.key == key) {
+            change.reviewed = reviewed;
+        }
+        Ok(())
     }
 
     pub fn edit_comment(&self, key: &str, id: &str, edit: EditComment) -> Result<Comment> {

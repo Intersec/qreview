@@ -22,6 +22,7 @@ const {
   mergeBase,
   mergeList,
   split,
+  ignoreWs,
   patchSets,
   patchSet,
   against,
@@ -161,6 +162,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         :busy="busy"
         @open-change="review.openChange"
         @open-file="review.openFile"
+        @mark="review.markChange"
         @more="review.loadMore(5)"
         @review-merge="review.openMerge()"
       />
@@ -187,11 +189,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           class="grow"
           :diff="diff"
           :split="split"
+          :ignore-ws="ignoreWs"
           :threads="threads"
           :lost="lost"
           :placement="review.placement"
           :load-lines="review.loadLines"
           @update:split="review.setSplit"
+          @update:ignore-ws="review.setIgnoreWs"
           @add="review.addComment"
           @edit="(id, body) => review.editComment(id, { body })"
           @remove="review.deleteComment"

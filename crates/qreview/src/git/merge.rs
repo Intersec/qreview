@@ -106,7 +106,7 @@ mod tests {
         let tree = auto_merge_tree(&git, &head)
             .await
             .expect("git 2.38 or later makes an auto-merge tree");
-        let files = diff::files(&git, &tree, &head.hash).await.unwrap();
+        let files = diff::files(&git, &tree, &head.hash, false).await.unwrap();
 
         let paths: Vec<_> = files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(
@@ -115,7 +115,7 @@ mod tests {
             "only the resolved file, not what the merge brought"
         );
 
-        let file = diff::file(&git, &tree, &head.hash, "f", None)
+        let file = diff::file(&git, &tree, &head.hash, "f", None, false)
             .await
             .unwrap()
             .unwrap();
@@ -135,7 +135,7 @@ mod tests {
         let head = commit::info(&git, "HEAD").await.unwrap();
 
         let base = base_of(&git, &head, Base::Parent(1)).await.unwrap();
-        let files = diff::files(&git, &base, &head.hash).await.unwrap();
+        let files = diff::files(&git, &base, &head.hash, false).await.unwrap();
 
         let mut paths: Vec<_> = files.iter().map(|f| f.path.as_str()).collect();
         paths.sort_unstable();
@@ -194,7 +194,7 @@ mod tests {
         let head = commit::info(&git, "HEAD").await.unwrap();
 
         let tree = auto_merge_tree(&git, &head).await.unwrap();
-        let files = diff::files(&git, &tree, &head.hash).await.unwrap();
+        let files = diff::files(&git, &tree, &head.hash, false).await.unwrap();
 
         assert!(files.is_empty(), "nobody resolved anything: {files:?}");
     }
