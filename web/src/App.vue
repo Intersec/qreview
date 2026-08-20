@@ -5,6 +5,7 @@ import CommentPane from './components/CommentPane.vue';
 import DiffView from './components/DiffView.vue';
 import FileList from './components/FileList.vue';
 import MergeBar from './components/MergeBar.vue';
+import PatchSetBar from './components/PatchSetBar.vue';
 import SeriesPane from './components/SeriesPane.vue';
 import { useReview } from './stores/review';
 
@@ -22,9 +23,13 @@ const {
   mergeBase,
   mergeList,
   split,
+  patchSets,
+  patchSet,
+  against,
 } = storeToRefs(review);
 
 const threads = computed(() => review.threads());
+const lost = computed(() => review.lost());
 
 const fileList = ref<InstanceType<typeof FileList> | null>(null);
 
@@ -131,6 +136,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         @open="review.openFile"
       />
       <section class="flex min-h-0 flex-col">
+        <PatchSetBar
+          :sets="patchSets"
+          :current="patchSet"
+          :against="against"
+          @open="(ps, base) => review.openPatchSet(ps, base)"
+        />
         <MergeBar
           v-if="onMerge"
           :base="mergeBase"
@@ -144,6 +155,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           :diff="diff"
           :split="split"
           :threads="threads"
+          :placement="review.placement"
           @update:split="review.setSplit"
           @add="review.addComment"
           @edit="(id, body) => review.editComment(id, { body })"
@@ -161,6 +173,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         class="hidden border-t border-slate-200 xl:block xl:border-l xl:border-t-0 dark:border-slate-700"
         :threads="threads"
         :file="filePath"
+        :lost="lost"
         @add="review.addComment"
         @edit="(id, body) => review.editComment(id, { body })"
         @remove="review.deleteComment"

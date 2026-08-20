@@ -11,6 +11,9 @@ const props = defineProps<{
   diff: FileDiff;
   split: boolean;
   threads: { first: Comment; replies: Comment[] }[];
+  /// Where a comment lands in the patch set being read. A comment written
+  /// against another version can sit on another line, or on none.
+  placement: (id: string) => { line: number | null; lost: boolean } | undefined;
 }>();
 const emit = defineEmits<{
   'update:split': [value: boolean];
@@ -36,12 +39,16 @@ function at(row: Row) {
   if (line === null) {
     return [];
   }
-  return props.threads.filter(
-    (t) =>
-      t.first.anchor?.file === props.diff.path &&
-      t.first.anchor.side === side(row) &&
-      t.first.anchor.startLine === line,
-  );
+  return props.threads.filter((t) => {
+    if (t.first.anchor?.file !== props.diff.path || t.first.anchor.side !== side(row)) {
+      return false;
+    }
+    const placed = props.placement(t.first.id);
+    if (placed?.lost) {
+      return false;
+    }
+    return (placed?.line ?? t.first.anchor.startLine) === line;
+  });
 }
 
 function key(row: Row): string {

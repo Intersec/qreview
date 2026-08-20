@@ -6,7 +6,7 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: M0 to M4 are done, except a range comment. M5 is next.**
+**Status: M0 to M5 are done, except a range comment. M6 is next.**
 
 ---
 
@@ -118,13 +118,13 @@ restart.*
 *Exit: `qreview <rev> --prev <sha> --prev <sha>` shows three patch sets and
 diffs any two of them.*
 
-- [x] The patch set model
+- [x] The patch set model and the selector
 - [x] `--prev`, repeatable
 - [x] A diff of a patch set against its parent
 - [x] A diff between two patch sets
-- [ ] The label when the parents differ
-- [ ] The anchoring, the three branches of `design.md` section 5.3
-- [ ] The panel of the comments that could not be anchored
+- [x] The label when the parents differ
+- [x] The anchoring, the three branches of `design.md` section 5.3
+- [x] The panel of the comments that could not be anchored
 
 ## M6 — Gerrit
 

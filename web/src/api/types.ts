@@ -162,3 +162,27 @@ export interface EditComment {
   resolved?: boolean;
   draft?: boolean;
 }
+
+export type Origin = 'local' | 'prev' | 'gerrit';
+
+export interface PatchSet {
+  number: number;
+  commit: string;
+  parent: string | null;
+  origin: Origin;
+  createdAt: string;
+  subject: string;
+  gerritRef?: string;
+}
+
+/** Where a comment lands in the patch set being read. */
+export interface Placed {
+  id: string;
+  line: number | null;
+  moved: boolean;
+  lost: boolean;
+}
+
+export interface Review extends ChangeFile {
+  placed: Placed[];
+}

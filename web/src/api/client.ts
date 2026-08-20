@@ -2,13 +2,14 @@
 // load left behind, so nothing here carries it.
 
 import type {
-  ChangeFile,
   Comment,
   EditComment,
   FileDiff,
   FileEntry,
   MergeListItem,
   NewComment,
+  PatchSet,
+  Review,
   Series,
   SessionBody,
 } from './types';
@@ -46,16 +47,23 @@ export const api = {
       body: JSON.stringify({ count }),
     }),
 
-  files: (key: string, base?: string) =>
-    call<FileEntry[]>(`/api/changes/${encodeURIComponent(key)}/files${query({ base })}`),
+  files: (key: string, ps?: number, base?: string) =>
+    call<FileEntry[]>(
+      `/api/changes/${encodeURIComponent(key)}/files${query({ ps: num(ps), base })}`,
+    ),
 
-  diff: (key: string, file: string, base?: string) =>
-    call<FileDiff>(`/api/changes/${encodeURIComponent(key)}/diff${query({ file, base })}`),
+  diff: (key: string, file: string, ps?: number, base?: string) =>
+    call<FileDiff>(
+      `/api/changes/${encodeURIComponent(key)}/diff${query({ file, ps: num(ps), base })}`,
+    ),
+
+  patchSets: (key: string) => call<PatchSet[]>(`/api/changes/${encodeURIComponent(key)}/patchsets`),
 
   mergeList: (key: string) =>
     call<MergeListItem[]>(`/api/changes/${encodeURIComponent(key)}/mergelist`),
 
-  comments: (key: string) => call<ChangeFile>(`/api/changes/${encodeURIComponent(key)}/comments`),
+  comments: (key: string, ps?: number) =>
+    call<Review>(`/api/changes/${encodeURIComponent(key)}/comments${query({ ps: num(ps) })}`),
 
   addComment: (key: string, comment: NewComment) =>
     call<Comment>(`/api/changes/${encodeURIComponent(key)}/comments`, {
@@ -77,6 +85,10 @@ export const api = {
       { method: 'DELETE' },
     ),
 };
+
+function num(value: number | undefined): string | undefined {
+  return value === undefined ? undefined : String(value);
+}
 
 function query(params: Record<string, string | undefined>): string {
   const pairs = Object.entries(params).filter(([, value]) => value !== undefined);

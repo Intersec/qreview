@@ -7,6 +7,7 @@ import type { Comment, NewComment } from '@/api/types';
 const props = defineProps<{
   threads: { first: Comment; replies: Comment[] }[];
   file: string | null;
+  lost: Comment[];
 }>();
 const emit = defineEmits<{
   add: [comment: NewComment];
@@ -76,6 +77,28 @@ const unresolved = computed(() => props.threads.filter((t) => !t.first.resolved)
     <p v-if="loose.length === 0" class="text-sm text-slate-500 dark:text-slate-400">
       Nothing yet. A comment on a line is written from the line itself.
     </p>
+
+    <section
+      v-if="lost.length"
+      class="rounded border border-amber-400 bg-amber-50 p-2 dark:border-amber-700 dark:bg-amber-950/40"
+    >
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+        Could not be placed · {{ lost.length }}
+      </h3>
+      <p class="mt-1 text-xs text-slate-600 dark:text-slate-300">
+        The line these were written on is not in this patch set. They are kept here rather than
+        moved to a line nobody chose.
+      </p>
+      <ul class="mt-2 space-y-1">
+        <li v-for="comment in lost" :key="comment.id" class="text-xs">
+          <code>{{ comment.anchor?.file }}:{{ comment.anchor?.startLine }}</code>
+          <span class="ml-1 text-slate-500 dark:text-slate-400">
+            patch set {{ comment.patchSet }}
+          </span>
+          <p class="mt-0.5">{{ comment.body }}</p>
+        </li>
+      </ul>
+    </section>
 
     <CommentThread
       v-for="thread in loose"

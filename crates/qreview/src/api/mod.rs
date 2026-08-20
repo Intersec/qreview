@@ -15,6 +15,7 @@ use axum::{Json, Router, middleware};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
+use crate::anchor::{self, Placed};
 use crate::comments::{EditComment, NewComment};
 use crate::git::merge::Base;
 use crate::model::{ChangeSummary, FileDiff, FileEntry, Series};
@@ -275,10 +276,23 @@ async fn diff(
         .ok_or_else(|| ApiError::not_found(format!("{} is not in the change", query.file)))
 }
 
+/// The review of a change, and where each comment lands in the patch set
+/// being read.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Review {
+    #[serde(flatten)]
+    file: ChangeFile,
+    /// One entry per comment. A comment whose place is gone is marked lost
+    /// and is never dropped.
+    placed: Vec<Placed>,
+}
+
 async fn comments(
     State(state): State<AppState>,
     Path(key): Path<String>,
-) -> Result<Json<ChangeFile>, ApiError> {
+    Query(view): Query<ViewQuery>,
+) -> Result<Json<Review>, ApiError> {
     let session = state.session.read().await;
     let subject = session
         .series
@@ -288,7 +302,11 @@ async fn comments(
         .map(|c| c.subject.clone())
         .unwrap_or_default();
 
-    Ok(Json(session.comments(&key, &subject)?))
+    let file = session.comments(&key, &subject)?;
+    let rev = target(&session, &key, view.ps).await?;
+    let placed = anchor::place_all(&session.git, &file.comments, &rev).await;
+
+    Ok(Json(Review { file, placed }))
 }
 
 async fn add_comment(
@@ -1035,6 +1053,107 @@ mod tests {
             .map(|r| (r["kind"].as_str().unwrap(), r["text"].as_str().unwrap()))
             .collect();
         assert_eq!(texts, [("remove", "one"), ("add", "two")]);
+    }
+
+    #[tokio::test]
+    async fn a_comment_follows_its_line_into_the_next_patch_set() {
+        let repo = build_repo(&[
+            commit("base").file("a.txt", "0\n"),
+            commit("work")
+                .file("a.txt", "alpha\nbeta\ngamma\n")
+                .change_id("Iwork"),
+        ])
+        .await;
+        let first = repo.sha("HEAD").await;
+
+        let mut opts = Options::new();
+        opts.prevs = vec![first.clone()];
+        let server = app(AppState::new(
+            session_of(&repo, opts.clone()).await,
+            TOKEN.to_owned(),
+        ));
+
+        // A comment on "beta", which is line 2 in the first version.
+        json(
+            server,
+            post(
+                "/api/changes/Iwork/comments",
+                r#"{"scope":"line","file":"a.txt","side":"new","startLine":2,"body":"why beta"}"#,
+            ),
+        )
+        .await;
+
+        // The amend pushes two lines above it, so beta becomes line 4.
+        std::fs::write(
+            repo.path().join("a.txt"),
+            "new\nlines\nalpha\nbeta\ngamma\n",
+        )
+        .unwrap();
+        repo.git(&["add", "-A"]).await;
+        repo.git(&["commit", "--amend", "--no-edit"]).await;
+
+        let fresh = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
+        let (status, body) = json(
+            fresh,
+            get_with_cookie("/api/changes/Iwork/comments?ps=2", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let placed = &body["placed"][0];
+        assert_eq!(placed["line"], 4, "the comment follows the line it was on");
+        assert_eq!(placed["moved"], true);
+        assert_eq!(placed["lost"], false);
+    }
+
+    #[tokio::test]
+    async fn a_comment_whose_line_is_gone_is_kept_and_marked() {
+        let repo = build_repo(&[
+            commit("base").file("a.txt", "0\n"),
+            commit("work")
+                .file("a.txt", "alpha\nbeta\ngamma\n")
+                .change_id("Iwork"),
+        ])
+        .await;
+        let first = repo.sha("HEAD").await;
+        let mut opts = Options::new();
+        opts.prevs = vec![first];
+        let server = app(AppState::new(
+            session_of(&repo, opts.clone()).await,
+            TOKEN.to_owned(),
+        ));
+
+        json(
+            server,
+            post(
+                "/api/changes/Iwork/comments",
+                r#"{"scope":"line","file":"a.txt","side":"new","startLine":2,"body":"why beta"}"#,
+            ),
+        )
+        .await;
+
+        std::fs::write(repo.path().join("a.txt"), "alpha\ngamma\n").unwrap();
+        repo.git(&["add", "-A"]).await;
+        repo.git(&["commit", "--amend", "--no-edit"]).await;
+
+        let fresh = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
+        let (_, body) = json(
+            fresh,
+            get_with_cookie("/api/changes/Iwork/comments?ps=2", TOKEN),
+        )
+        .await;
+
+        assert_eq!(body["placed"][0]["lost"], true);
+        assert_eq!(
+            body["comments"][0]["body"], "why beta",
+            "a comment is never dropped, only marked"
+        );
     }
 
     #[tokio::test]

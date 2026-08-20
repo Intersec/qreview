@@ -5,7 +5,6 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { api } from '@/api/client';
 import type {
-  ChangeFile,
   Comment,
   EditComment,
   FileDiff,
@@ -13,6 +12,9 @@ import type {
   MergeBase,
   MergeListItem,
   NewComment,
+  PatchSet,
+  Placed,
+  Review,
   Series,
 } from '@/api/types';
 
@@ -26,7 +28,12 @@ export const useReview = defineStore('review', () => {
   const error = ref<string | null>(null);
   const busy = ref(false);
   const mergeBase = ref<MergeBase | undefined>(undefined);
-  const review = ref<ChangeFile | null>(null);
+  const review = ref<Review | null>(null);
+  const patchSets = ref<PatchSet[]>([]);
+  /// The patch set being read. The last one when it is not set.
+  const patchSet = ref<number | undefined>(undefined);
+  /// What that patch set is read against.
+  const against = ref<string | undefined>(undefined);
   const split = ref(localStorage.getItem('qreview.split') === 'yes');
   const mergeList = ref<MergeListItem[]>([]);
 
@@ -72,8 +79,11 @@ export const useReview = defineStore('review', () => {
       changeKey.value = key;
       mergeBase.value = base;
       mergeList.value = [];
+      patchSet.value = undefined;
+      against.value = undefined;
+      patchSets.value = await api.patchSets(key).catch(() => []);
       review.value = await api.comments(key);
-      files.value = await api.files(key, base);
+      files.value = await api.files(key, undefined, base);
       diff.value = null;
       filePath.value = null;
 
@@ -91,7 +101,7 @@ export const useReview = defineStore('review', () => {
     }
     await guard(async () => {
       filePath.value = path;
-      diff.value = await api.diff(key, path, mergeBase.value);
+      diff.value = await api.diff(key, path, patchSet.value, against.value ?? mergeBase.value);
     });
   }
 
@@ -114,6 +124,37 @@ export const useReview = defineStore('review', () => {
     });
   }
 
+  /// Read another version of the change, against another one.
+  async function openPatchSet(number: number | undefined, base?: string) {
+    const key = changeKey.value;
+    if (!key) {
+      return;
+    }
+    await guard(async () => {
+      patchSet.value = number;
+      against.value = base;
+      review.value = await api.comments(key, number);
+      files.value = await api.files(key, number, base);
+
+      const stays = files.value.find((f) => f.path === filePath.value && !f.binary);
+      const first = stays ?? files.value.find((f) => !f.binary);
+      diff.value = first ? await api.diff(key, first.path, number, base) : null;
+      filePath.value = first?.path ?? null;
+    });
+  }
+
+  /// Where a comment lands in the patch set being read.
+  function placement(id: string): Placed | undefined {
+    return review.value?.placed.find((p) => p.id === id);
+  }
+
+  /// The comments whose place is gone. They are never dropped.
+  function lost(): Comment[] {
+    const comments = review.value?.comments ?? [];
+
+    return comments.filter((c) => placement(c.id)?.lost);
+  }
+
   /// The threads of the change: a first comment and the replies under it.
   function threads(): { first: Comment; replies: Comment[] }[] {
     const comments = review.value?.comments ?? [];
@@ -129,7 +170,7 @@ export const useReview = defineStore('review', () => {
   async function reload() {
     const key = changeKey.value;
     if (key) {
-      review.value = await api.comments(key);
+      review.value = await api.comments(key, patchSet.value);
     }
   }
 
@@ -173,6 +214,12 @@ export const useReview = defineStore('review', () => {
 
   return {
     review,
+    patchSets,
+    patchSet,
+    against,
+    openPatchSet,
+    placement,
+    lost,
     threads,
     addComment,
     editComment,
