@@ -91,3 +91,96 @@ pub struct ParentInfo {
     /// whole branch into the review.
     pub remote: bool,
 }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FileStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+    Copied,
+}
+
+/// One file of a change, without its content.
+///
+/// The file list route answers with these. A change of 200 files must not
+/// build 200 diffs to show the first one.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEntry {
+    pub path: String,
+    /// Set on a rename or a copy.
+    pub old_path: Option<String>,
+    pub status: FileStatus,
+    /// The syntect language name.
+    pub language: String,
+    pub binary: bool,
+    pub added: usize,
+    pub removed: usize,
+}
+
+/// One file of a change, with its content.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileDiff {
+    #[serde(flatten)]
+    pub file: FileEntry,
+    pub hunks: Vec<Hunk>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Hunk {
+    pub old_start: usize,
+    pub old_lines: usize,
+    pub new_start: usize,
+    pub new_lines: usize,
+    /// What git prints after the second `@@`, usually the enclosing function.
+    pub header: String,
+    pub rows: Vec<Row>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RowKind {
+    Context,
+    Add,
+    Remove,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Row {
+    pub kind: RowKind,
+    pub old_line: Option<usize>,
+    pub new_line: Option<usize>,
+    pub text: String,
+    /// The file has no newline after this line.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_newline: bool,
+    /// Syntax classes, from syntect. Empty until the file is highlighted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tokens: Vec<Span>,
+    /// Intra-line marks. Absent on a context row.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub words: Vec<WordSpan>,
+}
+
+/// A byte range of `Row::text` that carries a syntax class.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+    /// A CSS class, for example `keyword control`.
+    pub cls: String,
+}
+
+/// A byte range of `Row::text` that changed inside the line.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WordSpan {
+    pub start: usize,
+    pub end: usize,
+}

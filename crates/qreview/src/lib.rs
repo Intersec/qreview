@@ -5,6 +5,7 @@
 //! lives here, so it can be tested without a process.
 
 pub mod assets;
+pub mod diff;
 pub mod git;
 pub mod model;
 pub mod series;

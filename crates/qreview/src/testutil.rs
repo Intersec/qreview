@@ -263,6 +263,11 @@ pub async fn build_repo(commits: &[Commit]) -> Repo {
     repo.git(&["config", "user.email", "author@example.com"])
         .await;
     repo.git(&["config", "commit.gpgsign", "false"]).await;
+    // The fixture must not depend on the machine it runs on. A developer with
+    // core.autocrlf=input would otherwise commit different bytes than one
+    // without it, and the CRLF case would pass or fail by accident.
+    repo.git(&["config", "core.autocrlf", "false"]).await;
+    repo.git(&["config", "core.safecrlf", "false"]).await;
     // Keep the fixture readable: no rename detection surprises from a limit.
     repo.git(&["config", "diff.renames", "true"]).await;
 
