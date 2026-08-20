@@ -333,7 +333,7 @@ fn done(
     }
 }
 
-fn summary(info: CommitInfo) -> ChangeSummary {
+pub(crate) fn summary(info: CommitInfo) -> ChangeSummary {
     ChangeSummary {
         key: info.key(),
         change_id: info.change_id().map(str::to_owned),
@@ -343,7 +343,6 @@ fn summary(info: CommitInfo) -> ChangeSummary {
         // The store fills these in. The walk knows nothing about comments.
         patch_set_count: 1,
         comment_count: 0,
-        unresolved_count: 0,
         is_merge: info.is_merge(),
     }
 }

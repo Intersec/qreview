@@ -15,7 +15,7 @@ use crate::git::exec::Git;
 use crate::git::merge::{self, Base};
 use crate::highlight::Highlighter;
 use crate::lang::Languages;
-use crate::model::{FileDiff, FileEntry, RepoInfo, RowKind, Series};
+use crate::model::{BoundaryKind, FileDiff, FileEntry, RepoInfo, RowKind, Series};
 use crate::patchset::{self, PatchSet};
 use crate::repo;
 use crate::series::{self, Options, Plan};
@@ -129,18 +129,42 @@ impl Session {
     /// Loading more only appends. It never changes a diff already shown,
     /// because every change is diffed against its own parent.
     pub async fn extend(&mut self, count: usize) -> Result<usize> {
-        let Some(from) = self.series.boundary.commit.clone() else {
+        let boundary = self.series.boundary.clone();
+        let Some(mut from) = boundary.commit.clone() else {
             return Ok(0);
         };
 
-        let batch = series::extend(&self.git, &self.plan, &from, count).await?;
-        let added = batch.changes.len();
+        let mut changes = Vec::new();
 
-        if let Some(last) = batch.changes.last() {
+        // Past a merge, the merge itself joins the list: it is reviewable,
+        // and the card that held it is about to be replaced. The walk then
+        // continues on the first parent, never on the second.
+        if boundary.kind == BoundaryKind::Merge {
+            let info = commit::info(&self.git, &from).await?;
+            let Some(parent) = info.parents.first().cloned() else {
+                return Ok(0);
+            };
+            changes.push(series::summary(info));
+            from = parent;
+        }
+
+        // The base is where the first batch stopped. Going further back is
+        // exactly what the reader asked for, so it no longer applies.
+        let plan = Plan {
+            base: None,
+            ..self.plan.clone()
+        };
+        let batch = series::extend(&self.git, &plan, &from, count).await?;
+
+        changes.extend(batch.changes);
+        let added = changes.len();
+
+        if let Some(last) = changes.last() {
             self.series.oldest = last.commit.clone();
         }
-        self.series.changes.extend(batch.changes);
+        self.series.changes.extend(changes);
         self.series.boundary = batch.boundary;
+        self.plan = plan;
         self.count_comments();
         self.count_patch_sets().await;
 
@@ -359,7 +383,6 @@ impl Session {
         for change in &mut self.series.changes {
             let counts = comments::counts(&self.store, &change.key);
             change.comment_count = counts.total;
-            change.unresolved_count = counts.unresolved;
         }
     }
 

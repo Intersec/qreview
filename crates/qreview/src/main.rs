@@ -53,8 +53,8 @@ async fn main() -> Result<()> {
     let session = Session::with(&cwd, &opts, langs, std::sync::Arc::new(highlighter), None).await?;
 
     match cli.command {
-        Some(cli::Command::Export { key, all }) => {
-            let options = qreview::export::Options { all };
+        Some(cli::Command::Export { key }) => {
+            let options = qreview::export::Options {};
             let text = match key {
                 Some(key) => qreview::export::change(&session, &key, options).await?,
                 None => qreview::export::series(&session, options).await?,
@@ -92,9 +92,9 @@ fn list(session: &Session) -> String {
             continue;
         };
         out.push_str(&format!(
-            "{key}  {} comments, {} unresolved  {}\n",
+            "{key}  {} comment{}  {}\n",
             file.comments.len(),
-            file.unresolved(),
+            if file.comments.len() == 1 { "" } else { "s" },
             file.subject
         ));
     }

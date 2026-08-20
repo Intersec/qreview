@@ -298,7 +298,6 @@ mod tests {
             created_at: "t".to_owned(),
             updated_at: "t".to_owned(),
             scope: Scope::Change,
-            resolved: false,
             draft: false,
             body: "b".to_owned(),
             anchor: None,
@@ -324,7 +323,6 @@ mod tests {
             created_at: "t".to_owned(),
             updated_at: "t".to_owned(),
             scope: Scope::Line,
-            resolved: false,
             draft: false,
             body: "b".to_owned(),
             anchor: Some(Anchor {

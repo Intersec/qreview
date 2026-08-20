@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
-import CommentPane from './components/CommentPane.vue';
 import DiffView from './components/DiffView.vue';
-import FileList from './components/FileList.vue';
 import MergeBar from './components/MergeBar.vue';
 import PatchSetBar from './components/PatchSetBar.vue';
-import SeriesPane from './components/SeriesPane.vue';
+import SidePane from './components/SidePane.vue';
 import { useReview } from './stores/review';
 
 const review = useReview();
@@ -32,6 +30,13 @@ const {
 const threads = computed(() => review.threads());
 const lost = computed(() => review.lost());
 const copied = ref(false);
+const side = ref(localStorage.getItem('qreview.side') !== 'hidden');
+const pane = ref<InstanceType<typeof SidePane> | null>(null);
+
+function toggleSide() {
+  side.value = !side.value;
+  localStorage.setItem('qreview.side', side.value ? 'shown' : 'hidden');
+}
 
 async function copy(scope: 'change' | 'series') {
   await review.copyExport(scope);
@@ -41,13 +46,11 @@ async function copy(scope: 'change' | 'series') {
   }, 2000);
 }
 
-const fileList = ref<InstanceType<typeof FileList> | null>(null);
-
 /// Move through the review without the mouse.
 ///
 /// j and k walk the files, n and p walk the changes, u swaps the two diff
-/// views, and / jumps to the filter. A key typed into a field is the text of
-/// that field and nothing else.
+/// views, [ hides the sidebar, and / jumps to the filter. A key typed into a
+/// field is the text of that field and nothing else.
 function onKey(event: KeyboardEvent) {
   const target = event.target as HTMLElement | null;
   const typing =
@@ -88,9 +91,15 @@ function onKey(event: KeyboardEvent) {
     case 'u':
       review.setSplit(!split.value);
       break;
+    case '[':
+      toggleSide();
+      break;
     case '/':
       event.preventDefault();
-      fileList.value?.focusFilter();
+      if (!side.value) {
+        toggleSide();
+      }
+      pane.value?.focusFilter();
       break;
     default:
       return;
@@ -106,67 +115,50 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <div class="flex h-screen flex-col bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
-    <header
-      class="flex shrink-0 items-baseline gap-3 border-b border-slate-200 px-3 py-2 dark:border-slate-700"
-    >
-      <h1 class="font-semibold">qreview</h1>
-      <p v-if="series" class="truncate text-xs text-slate-500 dark:text-slate-400">
-        {{ series.repo.remote ?? series.repo.root }}
-      </p>
-      <div class="ml-auto flex items-center gap-2 text-xs">
-        <button
-          type="button"
-          class="rounded border border-slate-300 px-2 py-1 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
-          title="The comments of this change, as Markdown, in the clipboard"
-          @click="copy('change')"
-        >
+  <div class="shell">
+    <header class="top-bar">
+      <button
+        type="button"
+        class="side-toggle"
+        :aria-pressed="side"
+        title="Show or hide the series ( [ )"
+        @click="toggleSide"
+      >
+        {{ side ? '«' : '»' }}
+      </button>
+      <h1>qreview</h1>
+      <p v-if="series" class="repo">{{ series.repo.remote ?? series.repo.root }}</p>
+
+      <span class="bar-actions">
+        <button type="button" class="chip" title="This change, as Markdown" @click="copy('change')">
           Copy this change
         </button>
-        <button
-          type="button"
-          class="rounded border border-slate-300 px-2 py-1 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
-          title="The comments of the whole series, as Markdown, in the clipboard"
-          @click="copy('series')"
-        >
+        <button type="button" class="chip" title="The whole series" @click="copy('series')">
           Copy the series
         </button>
-        <span v-if="copied" role="status" class="text-emerald-700 dark:text-emerald-400">
-          copied
-        </span>
-        <span class="text-slate-400 dark:text-slate-500">{{ version }}</span>
-      </div>
+        <span v-if="copied" role="status" class="copied">copied</span>
+        <span class="quiet">{{ version }}</span>
+      </span>
     </header>
 
-    <p
-      v-if="error"
-      role="alert"
-      class="bg-rose-100 px-3 py-2 text-sm text-rose-900 dark:bg-rose-950 dark:text-rose-200"
-    >
-      {{ error }}
-    </p>
+    <p v-if="error" role="alert" class="error">{{ error }}</p>
 
-    <main
-      v-if="series"
-      class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[16rem_18rem_1fr] xl:grid-cols-[16rem_18rem_1fr_20rem]"
-    >
-      <SeriesPane
-        class="border-b border-slate-200 md:border-b-0 md:border-r dark:border-slate-700"
+    <main v-if="series" class="body" :class="side ? '' : 'no-side'">
+      <SidePane
+        v-if="side"
+        ref="pane"
         :series="series"
         :selected="changeKey"
+        :files="files"
+        :file-path="filePath"
         :busy="busy"
-        @open="review.openChange"
+        @open-change="review.openChange"
+        @open-file="review.openFile"
         @more="review.loadMore(5)"
         @review-merge="review.openMerge()"
       />
-      <FileList
-        ref="fileList"
-        class="border-b border-slate-200 md:border-b-0 md:border-r dark:border-slate-700"
-        :files="files"
-        :selected="filePath"
-        @open="review.openFile"
-      />
-      <section class="flex min-h-0 flex-col">
+
+      <section class="work">
         <PatchSetBar
           :sets="patchSets"
           :current="patchSet"
@@ -184,37 +176,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         />
         <DiffView
           v-if="diff"
-          class="min-h-0 flex-1"
+          class="grow"
           :diff="diff"
           :split="split"
           :threads="threads"
+          :lost="lost"
           :placement="review.placement"
           :load-lines="review.loadLines"
           @update:split="review.setSplit"
           @add="review.addComment"
           @edit="(id, body) => review.editComment(id, { body })"
           @remove="review.deleteComment"
-          @resolve="(id, resolved) => review.editComment(id, { resolved })"
         />
-        <p v-else class="p-3 text-sm text-slate-500 dark:text-slate-400">
+        <p v-else class="note">
           {{
             files.length === 0 ? 'This change touches no file.' : 'Pick a file to read its diff.'
           }}
         </p>
       </section>
-
-      <CommentPane
-        class="hidden border-t border-slate-200 xl:block xl:border-l xl:border-t-0 dark:border-slate-700"
-        :threads="threads"
-        :file="filePath"
-        :lost="lost"
-        @add="review.addComment"
-        @edit="(id, body) => review.editComment(id, { body })"
-        @remove="review.deleteComment"
-        @resolve="(id, resolved) => review.editComment(id, { resolved })"
-      />
     </main>
 
-    <p v-else class="p-3 text-sm text-slate-500 dark:text-slate-400">Reading the repository…</p>
+    <p v-else class="note">Reading the repository…</p>
   </div>
 </template>

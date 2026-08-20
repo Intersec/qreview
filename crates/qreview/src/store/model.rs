@@ -27,14 +27,6 @@ impl ChangeFile {
             comments: Vec::new(),
         }
     }
-
-    /// The threads that nobody marked resolved.
-    pub fn unresolved(&self) -> usize {
-        self.comments
-            .iter()
-            .filter(|c| c.parent_id.is_none() && !c.resolved)
-            .count()
-    }
 }
 
 /// What a comment is attached to.
@@ -67,9 +59,6 @@ pub struct Comment {
     pub created_at: String,
     pub updated_at: String,
     pub scope: Scope,
-    /// Only the first comment of a thread carries this.
-    #[serde(default)]
-    pub resolved: bool,
     /// A mark that the author has not finished. Nothing publishes it.
     #[serde(default)]
     pub draft: bool,

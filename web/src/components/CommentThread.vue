@@ -9,7 +9,6 @@ const emit = defineEmits<{
   reply: [parentId: string, body: string, draft: boolean];
   edit: [id: string, body: string];
   remove: [id: string];
-  resolve: [id: string, resolved: boolean];
 }>();
 
 const replying = ref(false);
@@ -23,13 +22,12 @@ function when(comment: Comment): string {
 </script>
 
 <template>
-  <article class="talk-box" :class="first.resolved ? 'opacity-60' : ''">
+  <article class="talk-box">
     <div v-for="comment in all" :key="comment.id">
       <p class="talk-head">
         <span class="talk-who">{{ comment.author }}</span>
         <span>{{ when(comment) }}</span>
         <span v-if="comment.draft" class="talk-tag">draft</span>
-        <span v-if="first.resolved && comment.id === first.id" class="talk-tag">resolved</span>
         <span class="spacer"></span>
         <span>patch set {{ comment.patchSet }}</span>
       </p>
@@ -55,12 +53,14 @@ function when(comment: Comment): string {
         <button type="button" class="action" @click="editing = comment.id">Edit</button>
         <button type="button" class="action" @click="emit('remove', comment.id)">Delete</button>
         <span class="spacer"></span>
-        <template v-if="comment.id === first.id">
-          <button type="button" class="action" @click="replying = !replying">Reply</button>
-          <button type="button" class="action" @click="emit('resolve', first.id, !first.resolved)">
-            {{ first.resolved ? 'Reopen' : 'Resolve' }}
-          </button>
-        </template>
+        <button
+          v-if="comment.id === first.id"
+          type="button"
+          class="action"
+          @click="replying = !replying"
+        >
+          Reply
+        </button>
       </div>
     </div>
 

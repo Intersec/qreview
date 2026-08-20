@@ -33,6 +33,11 @@ for (const scheme of ['light', 'dark'] as const) {
     colorScheme: scheme,
   });
   const complaints: string[] = [];
+  page.on('response', (response) => {
+    if (response.status() >= 400) {
+      complaints.push(`${response.status()} ${response.url()}`);
+    }
+  });
   page.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning') {
       complaints.push(`${message.type()}: ${message.text()}`);

@@ -175,6 +175,10 @@ surprised by anything.*
 - [x] The context bar between hunks: `+N common lines` and `+10`
 - [x] The `lines` route, which reads what the diff does not carry
 - [x] A comment card that reads like a Gerrit draft
+- [x] The window belongs to the code: one sidebar, the files under the
+      change they belong to, and no pane standing empty
+- [x] Resolving a thread is gone. It is a conversation with a reviewer, and
+      a local review before the push has none
 - [ ] The change header: the subject, the patch set, and where the file sits
       in the series
 - [ ] A comment anchored under its own side in the side by side view

@@ -36,7 +36,6 @@ export interface ChangeSummary {
   commit: string;
   patchSetCount: number;
   commentCount: number;
-  unresolvedCount: number;
   isMerge: boolean;
 }
 
@@ -141,7 +140,6 @@ export interface Comment {
   createdAt: string;
   updatedAt: string;
   scope: Scope;
-  resolved: boolean;
   draft: boolean;
   body: string;
   anchor: Anchor | null;
@@ -167,7 +165,6 @@ export interface NewComment {
 
 export interface EditComment {
   body?: string;
-  resolved?: boolean;
   draft?: boolean;
 }
 

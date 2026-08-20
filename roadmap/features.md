@@ -84,10 +84,9 @@ left is in [`plan.md`](./plan.md).
 
 - ✅ A comment on a line
 - ⬜ A comment on a range of lines
-- ✅ A comment on a file
-- ✅ A comment on the whole change
+- ✅ A comment on a file, shown above its diff
+- ✅ A comment on the whole change, shown above the diff
 - ✅ A reply, which makes a thread
-- ✅ Resolve and reopen a thread
 - ✅ Edit and delete a comment
 - ✅ A draft mark on a comment that is not finished
 - ✅ Markdown in the body of a comment

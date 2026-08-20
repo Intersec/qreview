@@ -16,13 +16,14 @@ const props = defineProps<{
   placement: (id: string) => { line: number | null; lost: boolean } | undefined;
   /// Read a run of lines the diff does not carry.
   loadLines: (from: number, to: number) => Promise<Row[]>;
+  /// The comments whose place in this patch set is gone.
+  lost: Comment[];
 }>();
 const emit = defineEmits<{
   'update:split': [value: boolean];
   add: [comment: NewComment];
   edit: [id: string, body: string];
   remove: [id: string];
-  resolve: [id: string, resolved: boolean];
 }>();
 
 /// Above this, the browser spends more time building the DOM than the reader
@@ -180,6 +181,30 @@ function write(row: Row, body: string, draft: boolean) {
   writing.value = null;
 }
 
+/// A comment about the whole change, or about this file. Neither belongs to
+/// a line, so both sit above the diff rather than in a pane of their own.
+const loose = computed(() =>
+  props.threads.filter(
+    (t) =>
+      t.first.scope === 'change' ||
+      (t.first.scope === 'file' && t.first.anchor?.file === props.diff.path),
+  ),
+);
+
+/// Which of the two "write about" boxes is open.
+const about = ref<'change' | 'file' | null>(null);
+
+function writeAbout(scope: 'change' | 'file', body: string, draft: boolean) {
+  emit('add', {
+    scope,
+    file: scope === 'file' ? props.diff.path : undefined,
+    side: scope === 'file' ? 'new' : undefined,
+    body,
+    draft,
+  });
+  about.value = null;
+}
+
 function toggle(row: Row | null) {
   if (row) {
     writing.value = writing.value === key(row) ? null : key(row);
@@ -203,15 +228,54 @@ function toggle(row: Row | null) {
         </p>
       </div>
 
-      <button
-        type="button"
-        class="chip"
-        :aria-pressed="split"
-        @click="emit('update:split', !split)"
-      >
-        {{ split ? 'Unified' : 'Side by side' }}
-      </button>
+      <span class="bar-actions">
+        <button type="button" class="chip" @click="about = about === 'file' ? null : 'file'">
+          Comment on the file
+        </button>
+        <button type="button" class="chip" @click="about = about === 'change' ? null : 'change'">
+          On the change
+        </button>
+        <button
+          type="button"
+          class="chip"
+          :aria-pressed="split"
+          @click="emit('update:split', !split)"
+        >
+          {{ split ? 'Unified' : 'Side by side' }}
+        </button>
+      </span>
     </header>
+
+    <section v-if="about || loose.length || lost.length" class="above-diff">
+      <CommentBox
+        v-if="about"
+        :label="about === 'change' ? 'A remark about the change' : 'A remark about the file'"
+        @save="(body, draft) => writeAbout(about!, body, draft)"
+        @cancel="about = null"
+      />
+
+      <CommentThread
+        v-for="thread in loose"
+        :key="thread.first.id"
+        :first="thread.first"
+        :replies="thread.replies"
+        @reply="(id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })"
+        @edit="(id, body) => emit('edit', id, body)"
+        @remove="(id) => emit('remove', id)"
+      />
+
+      <div v-if="lost.length" class="lost">
+        <p class="lost-title">Could not be placed · {{ lost.length }}</p>
+        <p class="quiet">
+          The line these were written on is not in this patch set. They are kept here rather than
+          moved to a line nobody chose.
+        </p>
+        <p v-for="comment in lost" :key="comment.id" class="lost-item">
+          <code>{{ comment.anchor?.file }}:{{ comment.anchor?.startLine }}</code>
+          <span class="quiet"> patch set {{ comment.patchSet }} · </span>{{ comment.body }}
+        </p>
+      </div>
+    </section>
 
     <p v-if="diff.binary" class="note">A binary file has no diff to read.</p>
 
@@ -267,7 +331,6 @@ function toggle(row: Row | null) {
                   "
                   @edit="(id, body) => emit('edit', id, body)"
                   @remove="(id) => emit('remove', id)"
-                  @resolve="(id, value) => emit('resolve', id, value)"
                 />
               </template>
               <CommentBox
@@ -336,7 +399,6 @@ function toggle(row: Row | null) {
                 "
                 @edit="(id, body) => emit('edit', id, body)"
                 @remove="(id) => emit('remove', id)"
-                @resolve="(id, value) => emit('resolve', id, value)"
               />
               <CommentBox
                 v-if="writing === key(row)"

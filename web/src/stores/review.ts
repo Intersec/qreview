@@ -28,6 +28,10 @@ export const useReview = defineStore('review', () => {
   const diff = ref<FileDiff | null>(null);
   const error = ref<string | null>(null);
   const busy = ref(false);
+  /// Counts the reads that are under way. An answer that arrives after the
+  /// reader has moved on belongs to nothing and is dropped, rather than
+  /// shown as an error about a file the change does not have.
+  let generation = 0;
   const mergeBase = ref<MergeBase | undefined>(undefined);
   const review = ref<Review | null>(null);
   const patchSets = ref<PatchSet[]>([]);
@@ -83,17 +87,25 @@ export const useReview = defineStore('review', () => {
   }
 
   async function openChange(key: string, base?: MergeBase) {
+    const mine = ++generation;
     await guard(async () => {
       changeKey.value = key;
       mergeBase.value = base;
       mergeList.value = [];
       patchSet.value = undefined;
       against.value = undefined;
-      const versions = await api.patchSets(key).catch(() => ({ sets: [], gerrit: null }));
+      const [versions, comments, list] = await Promise.all([
+        api.patchSets(key).catch(() => ({ sets: [], gerrit: null })),
+        api.comments(key),
+        api.files(key, undefined, base),
+      ]);
+      if (mine !== generation) {
+        return;
+      }
       patchSets.value = versions.sets;
       gerrit.value = versions.gerrit;
-      review.value = await api.comments(key);
-      files.value = await api.files(key, undefined, base);
+      review.value = comments;
+      files.value = list;
       diff.value = null;
       filePath.value = null;
 
@@ -109,9 +121,13 @@ export const useReview = defineStore('review', () => {
     if (!key) {
       return;
     }
+    const mine = ++generation;
     await guard(async () => {
       filePath.value = path;
-      diff.value = await api.diff(key, path, patchSet.value, against.value ?? mergeBase.value);
+      const read = await api.diff(key, path, patchSet.value, against.value ?? mergeBase.value);
+      if (mine === generation) {
+        diff.value = read;
+      }
     });
   }
 

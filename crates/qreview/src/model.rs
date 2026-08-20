@@ -40,7 +40,6 @@ pub struct ChangeSummary {
     pub commit: String,
     pub patch_set_count: usize,
     pub comment_count: usize,
-    pub unresolved_count: usize,
     pub is_merge: bool,
 }
 

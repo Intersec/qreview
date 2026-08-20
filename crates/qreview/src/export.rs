@@ -14,10 +14,7 @@ use crate::store::model::{Comment, Scope, Side};
 const CONTEXT: usize = 2;
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Options {
-    /// Include the threads somebody marked resolved.
-    pub all: bool,
-}
+pub struct Options {}
 
 /// The review of one change.
 pub async fn change(session: &Session, key: &str, opts: Options) -> Result<String> {
@@ -42,10 +39,10 @@ pub async fn change(session: &Session, key: &str, opts: Options) -> Result<Strin
     let patch_set = sets.last().map(|s| s.number).unwrap_or(1);
     let _ = writeln!(
         out,
-        "Commit {} (patch set {patch_set}) · {} comments, {} unresolved",
+        "Commit {} (patch set {patch_set}) · {} comment{}",
         short(&commit),
         file.comments.len(),
-        file.unresolved()
+        if file.comments.len() == 1 { "" } else { "s" }
     );
 
     if threads.is_empty() {
@@ -76,7 +73,10 @@ pub async fn series(session: &Session, opts: Options) -> Result<String> {
     let mut out = String::new();
 
     for summary in &session.series.changes {
-        if summary.comment_count == 0 {
+        // The store is asked, never a count the session cached: a comment
+        // written a moment ago must be in the export.
+        let file = session.comments(&summary.key, &summary.subject)?;
+        if file.comments.is_empty() {
             continue;
         }
         if !out.is_empty() {
@@ -92,11 +92,10 @@ pub async fn series(session: &Session, opts: Options) -> Result<String> {
 }
 
 /// The threads worth exporting, first comment and replies.
-fn threads_of(comments: &[Comment], opts: Options) -> Vec<(&Comment, Vec<&Comment>)> {
+fn threads_of(comments: &[Comment], _opts: Options) -> Vec<(&Comment, Vec<&Comment>)> {
     comments
         .iter()
         .filter(|c| c.parent_id.is_none())
-        .filter(|c| opts.all || !c.resolved)
         .map(|first| {
             let replies = comments
                 .iter()
@@ -266,7 +265,7 @@ mod tests {
             .lines()
             .map(|line| {
                 if line.starts_with("Commit ") {
-                    "Commit <hash> (patch set 1) · 2 comments, 2 unresolved".to_owned()
+                    "Commit <hash> (patch set 1) · 2 comments".to_owned()
                 } else {
                     line.to_owned()
                 }
@@ -275,37 +274,6 @@ mod tests {
             .join("\n");
 
         insta::assert_snapshot!(stable);
-    }
-
-    #[tokio::test]
-    async fn a_resolved_thread_is_left_out_unless_it_is_asked_for() {
-        let repo = reviewed().await;
-        let session = session_of(&repo).await;
-
-        let comment = session
-            .add_comment("Iretry", line_comment("src/net.blk", 3, "a remark"))
-            .await
-            .unwrap();
-        session
-            .edit_comment(
-                "Iretry",
-                &comment.id,
-                crate::comments::EditComment {
-                    resolved: Some(true),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-
-        let quiet = change(&session, "Iretry", Options::default())
-            .await
-            .unwrap();
-        assert!(quiet.contains("Nothing to report"), "{quiet}");
-
-        let full = change(&session, "Iretry", Options { all: true })
-            .await
-            .unwrap();
-        assert!(full.contains("a remark"), "{full}");
     }
 
     #[tokio::test]

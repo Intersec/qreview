@@ -23,7 +23,7 @@ test('the series stops at the merge and says so', async ({ page }) => {
 test('a change shows its files and the first diff', async ({ page }) => {
   await page.getByRole('button', { name: /docs: rename the document/ }).click();
 
-  await expect(page.getByRole('button', { name: /new-name\.md/ })).toBeVisible();
+  await expect(page.locator('.file-row', { hasText: 'new-name.md' })).toBeVisible();
   // The header of the diff names both sides of the rename.
   await expect(page.locator('.file-bar h2')).toContainText('docs/old-name.md →');
   await expect(page.locator('.file-bar h2')).toContainText('docs/new-name.md');

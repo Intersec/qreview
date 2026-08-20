@@ -145,7 +145,6 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".to_owned(),
             updated_at: "2026-01-01T00:00:00Z".to_owned(),
             scope: Scope::Line,
-            resolved: false,
             draft: false,
             body: body.to_owned(),
             anchor: Some(Anchor {
@@ -268,16 +267,19 @@ mod tests {
     }
 
     #[test]
-    fn only_the_first_comment_of_a_thread_counts_as_unresolved() {
+    fn a_reply_belongs_to_the_comment_above_it() {
         let mut file = ChangeFile::new("I8f3a", "s");
         file.comments.push(comment("c-1", "one"));
         let mut reply = comment("c-2", "an answer");
         reply.parent_id = Some("c-1".to_owned());
         file.comments.push(reply);
 
-        assert_eq!(file.unresolved(), 1);
-
-        file.comments[0].resolved = true;
-        assert_eq!(file.unresolved(), 0);
+        let threads = file
+            .comments
+            .iter()
+            .filter(|c| c.parent_id.is_none())
+            .count();
+        assert_eq!(threads, 1);
+        assert_eq!(file.comments.len(), 2);
     }
 }

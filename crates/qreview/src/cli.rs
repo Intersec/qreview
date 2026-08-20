@@ -39,10 +39,6 @@ pub enum Command {
         /// One change. The whole series when it is missing.
         #[arg(long, value_name = "CHANGE-ID")]
         key: Option<String>,
-
-        /// Include the threads somebody marked resolved.
-        #[arg(long)]
-        all: bool,
     },
 
     /// List the changes this repository has a review for.

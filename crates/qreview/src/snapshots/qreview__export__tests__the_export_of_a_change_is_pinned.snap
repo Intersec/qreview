@@ -3,7 +3,7 @@ source: crates/qreview/src/export.rs
 expression: stable
 ---
 # Review: net: fix the retry loop
-Commit <hash> (patch set 1) · 2 comments, 2 unresolved
+Commit <hash> (patch set 1) · 2 comments
 
 ## src/net.blk:3
 ```c

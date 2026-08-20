@@ -44,8 +44,6 @@ pub struct EditComment {
     #[serde(default)]
     pub body: Option<String>,
     #[serde(default)]
-    pub resolved: Option<bool>,
-    #[serde(default)]
     pub draft: Option<bool>,
 }
 
@@ -53,7 +51,6 @@ pub struct EditComment {
 #[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct Counts {
     pub total: usize,
-    pub unresolved: usize,
 }
 
 /// The change a comment is being written on.
@@ -80,7 +77,6 @@ pub fn counts(store: &Store, key: &str) -> Counts {
     match store.load(key, "") {
         Ok(file) => Counts {
             total: file.comments.len(),
-            unresolved: file.unresolved(),
         },
         // A file that cannot be read must not stop the series from loading.
         // The change opens, and the read fails there, where it can be said.
@@ -117,7 +113,6 @@ impl Target<'_> {
             created_at: now.clone(),
             updated_at: now,
             scope: new.scope,
-            resolved: false,
             draft: new.draft,
             body: new.body.trim_end().to_owned(),
             anchor,
@@ -144,12 +139,6 @@ pub fn edit(store: &Store, key: &str, id: &str, edit: EditComment) -> Result<Com
             bail!("a comment with no text says nothing. Delete it instead");
         }
         found.body = body.trim_end().to_owned();
-    }
-    if let Some(resolved) = edit.resolved {
-        if found.parent_id.is_some() {
-            bail!("a thread is resolved on its first comment, not on a reply");
-        }
-        found.resolved = resolved;
     }
     if let Some(draft) = edit.draft {
         found.draft = draft;

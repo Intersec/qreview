@@ -358,11 +358,10 @@ read, and one file is written.
       "id": "c-01H...",
       "parentId": null,
       "patchSet": 2,
-      "author": "Nicolas Pauss",
+      "author": "A Developer",
       "createdAt": "2026-08-20T14:02:11Z",
       "updatedAt": "2026-08-20T14:02:11Z",
       "scope": "line",
-      "resolved": false,
       "body": "This loop retries forever when the socket is closed.",
       "anchor": {
         "file": "src/net.blk",
@@ -380,8 +379,11 @@ read, and one file is written.
 
 `scope` is `line`, `range`, `file`, or `change`. A `file` comment has an anchor
 with no line. A `change` comment has no anchor. A reply sets `parentId`, which
-makes a thread. A thread is resolved or not; the flag lives on the first
-comment of the thread.
+makes a thread.
+
+A thread is never resolved. Resolving is a conversation with a reviewer, and
+a review of your own series before the push has none: you correct the code
+and delete the remark.
 
 A draft is a comment like any other, with `"draft": true`. Nothing publishes
 it anywhere, so a draft is only a mark that the author has not finished.
@@ -536,7 +538,6 @@ Rules for the format:
 - The comment follows the code, never the opposite. The reader needs the
   context first.
 - Four lines of code around the anchor, with the real line numbers.
-- A resolved thread is left out by default. `--all` includes it.
 - The export names the commit and the patch set, so the session knows the
   state the remarks were written against.
 

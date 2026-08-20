@@ -448,3 +448,208 @@ tr.talk td {
   font-family: var(--code-font);
   font-size: 11px;
 }
+
+/* --------------------------------------------------------- the sidebar */
+
+.side {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--pane);
+  border-right: 1px solid var(--edge);
+  font-size: 12px;
+}
+.side-head {
+  padding: 6px 10px 4px;
+}
+.change-row {
+  padding: 5px 10px;
+}
+.change-subject {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.change-facts {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--ink-quiet);
+}
+.change-facts code {
+  font-family: var(--code-font);
+}
+.tag {
+  margin-left: 4px;
+  border-radius: 2px;
+  padding: 0 3px;
+  background: var(--edge);
+  font-size: 10px;
+}
+.count {
+  margin-left: 4px;
+}
+
+.files {
+  padding: 2px 0 6px;
+  background: var(--page);
+  border-top: 1px solid var(--edge-soft);
+  border-bottom: 1px solid var(--edge-soft);
+}
+.file-filter {
+  width: calc(100% - 16px);
+  margin: 4px 8px;
+  padding: 2px 6px;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  background: var(--page);
+  color: var(--ink);
+  font-size: 11px;
+}
+.file-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 10px 2px 14px;
+  font-family: var(--code-font);
+  font-size: 11px;
+}
+.file-row .mark {
+  width: 0.8rem;
+  flex: none;
+  color: var(--ink-quiet);
+}
+.file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  /* A path is read from its end, so the start is what gets cut. */
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-row .stat {
+  flex: none;
+}
+.added {
+  color: #1a7f37;
+}
+.removed {
+  margin-left: 4px;
+  color: #c5221f;
+}
+.quiet {
+  color: var(--ink-quiet);
+}
+.pad {
+  padding: 2px 14px;
+}
+
+.side-toggle {
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  padding: 1px 6px;
+  color: var(--ink-quiet);
+  font-size: 11px;
+}
+.side-toggle:hover {
+  background: var(--edge-soft);
+}
+
+/* -------------------------------------------- what sits above the diff */
+
+.bar-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.above-diff {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--pane);
+}
+.lost {
+  max-width: 44rem;
+  margin: 4px 0;
+  border: 1px solid var(--draft-edge);
+  border-left: 3px solid var(--context-ink);
+  background: var(--draft);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.lost-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--context-ink);
+}
+.lost-item {
+  margin-top: 4px;
+}
+.lost-item code {
+  font-family: var(--code-font);
+  font-size: 11px;
+}
+
+/* ----------------------------------------------------------- the shell */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--pane);
+}
+.top-bar h1 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.top-bar .repo {
+  font-size: 11px;
+  color: var(--ink-quiet);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.copied {
+  font-size: 11px;
+  color: #1a7f37;
+}
+.error {
+  flex: none;
+  padding: 6px 10px;
+  background: var(--remove-line);
+  color: #8c1d18;
+  font-size: 12px;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 17rem minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.body.no-side {
+  grid-template-columns: minmax(0, 1fr);
+}
+.work {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.work .grow {
+  flex: 1;
+  min-height: 0;
+}

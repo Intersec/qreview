@@ -379,9 +379,6 @@ struct ExportQuery {
     scope: Option<String>,
     #[serde(default)]
     key: Option<String>,
-    /// Include the threads somebody marked resolved.
-    #[serde(default)]
-    all: bool,
 }
 
 async fn export(
@@ -389,7 +386,7 @@ async fn export(
     Query(query): Query<ExportQuery>,
 ) -> Result<String, ApiError> {
     let session = state.session.read().await;
-    let opts = crate::export::Options { all: query.all };
+    let opts = crate::export::Options {};
 
     match (query.scope.as_deref(), query.key) {
         (Some("change"), Some(key)) => Ok(crate::export::change(&session, &key, opts).await?),
@@ -956,7 +953,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_thread_is_resolved_on_its_first_comment() {
+    async fn a_reply_hangs_under_the_comment_it_answers() {
         let repo = fixture().await;
         let server = server(&repo).await;
 
@@ -976,34 +973,17 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
-        let reply_id = reply["id"].as_str().unwrap().to_owned();
+        assert_eq!(reply["parentId"], parent);
 
         let (status, _) = json(
-            server.clone(),
-            send(
-                "PATCH",
-                &format!("/api/changes/I8f3ac21/comments/{reply_id}"),
-                r#"{"resolved":true}"#,
-            ),
-        )
-        .await;
-        assert_eq!(
-            status,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "a reply carries no resolved flag"
-        );
-
-        let (status, done) = json(
             server,
-            send(
-                "PATCH",
-                &format!("/api/changes/I8f3ac21/comments/{parent}"),
-                r#"{"resolved":true}"#,
+            post(
+                "/api/changes/I8f3ac21/comments",
+                r#"{"scope":"change","parentId":"c-nothing","body":"to nobody"}"#,
             ),
         )
         .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(done["resolved"], true);
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[tokio::test]
@@ -1070,7 +1050,6 @@ mod tests {
         let change = &body["series"]["changes"][0];
         assert_eq!(change["key"], "I8f3ac21");
         assert_eq!(change["commentCount"], 1);
-        assert_eq!(change["unresolvedCount"], 1);
     }
 
     #[tokio::test]
@@ -1347,6 +1326,109 @@ mod tests {
                 .unwrap()
                 .contains("patch set 7"),
             "{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_series_export_holds_a_comment_written_a_moment_ago() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", LINE_COMMENT),
+        )
+        .await;
+
+        let response = server
+            .oneshot(get_with_cookie("/api/export", TOKEN))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+
+        // The count on the series is filled when the session opens. Trusting
+        // it here made the export say the series had nothing in it.
+        assert!(text.contains("this reads wrong"), "{text}");
+        assert!(text.contains("src/a.blk:2"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn load_more_walks_past_the_base_it_stopped_on() {
+        let commits: Vec<_> = (1..=8)
+            .map(|i| commit(&format!("change {i}")).file("a", &format!("{i}\n")))
+            .collect();
+        let repo = build_repo(&commits).await;
+        repo.remote("origin", "ssh://review.example.com:29418/myproject")
+            .await;
+        repo.track("main", "origin", "HEAD~2").await;
+
+        let server = app(AppState::new(
+            session_of(&repo, Options::new()).await,
+            TOKEN.to_owned(),
+        ));
+
+        let (_, first) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+        assert_eq!(first["series"]["changes"].as_array().unwrap().len(), 2);
+        assert_eq!(first["series"]["boundary"]["kind"], "base");
+
+        let request = Request::builder()
+            .method("POST")
+            .uri("/api/series/extend")
+            .header(header::COOKIE, format!("{}={TOKEN}", auth::COOKIE))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"count":3}"#))
+            .unwrap();
+        let (status, after) = json(server, request).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let changes = after["changes"].as_array().unwrap();
+        assert_eq!(
+            changes.len(),
+            5,
+            "the base is where the first batch stopped, not a wall"
+        );
+        assert_eq!(changes[2]["subject"], "change 6");
+    }
+
+    #[tokio::test]
+    async fn load_more_walks_past_a_merge_and_keeps_it() {
+        let repo = merged().await;
+        let repo = {
+            // One commit above the merge, so the first batch is not empty.
+            std::fs::write(repo.path().join("after.txt"), "1\n").unwrap();
+            repo.git(&["add", "-A"]).await;
+            repo.git(&["commit", "-m", "after the merge"]).await;
+            repo
+        };
+        let server = app(AppState::new(
+            session_of(&repo, Options::new()).await,
+            TOKEN.to_owned(),
+        ));
+
+        let (_, first) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+        assert_eq!(first["series"]["changes"].as_array().unwrap().len(), 1);
+        assert_eq!(first["series"]["boundary"]["kind"], "merge");
+
+        let request = Request::builder()
+            .method("POST")
+            .uri("/api/series/extend")
+            .header(header::COOKIE, format!("{}={TOKEN}", auth::COOKIE))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"count":2}"#))
+            .unwrap();
+        let (status, after) = json(server, request).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let changes = after["changes"].as_array().unwrap();
+        assert_eq!(changes[1]["subject"], "Merge side into main");
+        assert_eq!(changes[1]["isMerge"], true, "the merge joins the list");
+        assert_eq!(
+            changes[2]["subject"], "main work",
+            "and the walk goes on down the first parent"
         );
     }
 
