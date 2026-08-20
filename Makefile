@@ -8,7 +8,7 @@ PREFIX ?= $(HOME)/.local
 MUSL_TARGET := x86_64-unknown-linux-musl
 DEV_PORT := 7420
 
-.PHONY: all setup web build check test fmt lint install dist dev clean
+.PHONY: all setup web build check test fmt lint install dist musl-target dev clean
 
 all: build
 
@@ -46,10 +46,26 @@ lint:
 install: build
 	$(CARGO) install --path crates/qreview --root $(PREFIX) --force
 
-## One static binary, for a colleague. Needs: rustup target add $(MUSL_TARGET)
-dist: web
+## One static binary, for a colleague. It adds the target if it is missing.
+dist: web musl-target
 	$(CARGO) build --release --target $(MUSL_TARGET)
 	@ls -lh target/$(MUSL_TARGET)/release/qreview
+
+# A target belongs to rustup, not to asdf: `.tool-versions` pins a Rust
+# version and knows nothing about targets. asdf installs Rust through rustup
+# and points RUSTUP_HOME at its own directory, so this works under asdf too,
+# and the target lands inside the asdf install.
+#
+# Only `dist` does this. `build` never touches the toolchain.
+musl-target:
+	@command -v rustup >/dev/null 2>&1 || { \
+		echo "rustup is missing. It installs the $(MUSL_TARGET) target."; \
+		exit 1; \
+	}
+	@rustup target list --installed | grep -qx '$(MUSL_TARGET)' || { \
+		echo "adding the $(MUSL_TARGET) target"; \
+		rustup target add $(MUSL_TARGET); \
+	}
 
 ## The server and Vite together, with hot reload on the interface.
 ## Open the URL that Vite prints, not the one the server prints.

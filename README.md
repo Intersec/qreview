@@ -65,10 +65,15 @@ needed to run the tool.
 ```sh
 git clone <this repository>
 cd qreview
+make setup         # the interface dependencies, once
 make build         # the interface, then the binary
+make check         # the gate: lint, format, tests, build
 make install       # into ~/.local/bin
 make dist          # a static musl binary, for a colleague
 ```
+
+`make dist` adds the `x86_64-unknown-linux-musl` target when it is missing. It
+needs no C toolchain: Rust links musl with its own bundled linker.
 
 ## Gerrit
 

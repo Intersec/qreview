@@ -579,7 +579,7 @@ the rest.
 | `make test` | `cargo test` and `vitest run` |
 | `make fmt` | `cargo fmt` and `prettier --write` |
 | `make install` | The binary into `~/.local/bin` |
-| `make dist` | The `x86_64-unknown-linux-musl` binary, for a colleague |
+| `make dist` | The `x86_64-unknown-linux-musl` binary, for a colleague. It adds the target if it is missing |
 
 `make check` runs, in this order: `npm run lint`, `npm run format:check`,
 `npm run test:run`, `npm run build`, `cargo fmt --check`, `cargo clippy -- -D
@@ -592,6 +592,18 @@ own.
 
 Node is needed to **build** the interface. It is not needed to run qreview.
 The release artifact is one static binary.
+
+**The static build needs no C toolchain.** Rust links `musl` with its own
+bundled linker and crt objects, so `musl-gcc` is not a prerequisite. Measured
+on the scaffold: 1.9 MB, `statically linked`, and it serves the interface with
+`web/dist` deleted.
+
+The target itself belongs to rustup, not to asdf. `.tool-versions` pins a Rust
+version and knows nothing about targets, so `make dist` runs `rustup target
+add` when the target is missing. asdf installs Rust through rustup and points
+`RUSTUP_HOME` at its own directory, so this works under asdf, and the target
+lands inside the asdf install. Only `dist` does this. `build` never touches
+the toolchain.
 
 A debug build serves the interface from `web/dist` on disk. A release build
 embeds it. So `make dev` gives Vite hot reload against the real server, and

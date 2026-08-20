@@ -126,6 +126,12 @@ interface is private and carries no version.
 binary built on one distribution fails on an older one, and that is the first
 thing a colleague hits. musl links statically and removes the question.
 
+Measured on the scaffold: 1.9 MB against 1.8 MB for the glibc build, and
+`ldd` says `statically linked`. It costs no C toolchain, because Rust links
+musl with its own bundled linker. `make dist` adds the target when it is
+missing, so the only prerequisite is rustup, which asdf already uses to
+install Rust.
+
 ## 2026-08-20 — Comments live in the state directory of the user
 
 **Decision.** Comments are stored under `~/.local/state/qreview/`, keyed by
