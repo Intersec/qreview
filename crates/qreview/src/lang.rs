@@ -13,11 +13,14 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("blk", "c"),
     ("blkk", "c"),
     ("pxc", "c"),
-    ("pyx", "cython"),
-    ("pxd", "cython"),
-    ("pxi", "cython"),
+    // No Cython grammar is bundled, measured on the set we ship. Python is
+    // the closest thing that exists, and it reads well enough. A user who
+    // wants better drops a grammar file in the configuration directory.
+    ("pyx", "python"),
+    ("pxd", "python"),
+    ("pxi", "python"),
     ("iop", "d"),
-    ("tpl", "jinja"),
+    ("tpl", "jinja2"),
 ];
 
 /// The map from extension to language name.
@@ -72,9 +75,9 @@ mod tests {
 
         assert_eq!(lang.of("src/net.blk"), Some("c"));
         assert_eq!(lang.of("src/thing.pxc"), Some("c"));
-        assert_eq!(lang.of("src/fast.pyx"), Some("cython"));
+        assert_eq!(lang.of("src/fast.pyx"), Some("python"));
         assert_eq!(lang.of("iface/api.iop"), Some("d"));
-        assert_eq!(lang.of("page.tpl"), Some("jinja"));
+        assert_eq!(lang.of("page.tpl"), Some("jinja2"));
     }
 
     #[test]
@@ -111,5 +114,26 @@ mod tests {
         let lang = Languages::new();
 
         assert_eq!(lang.of("some.dir/file"), None);
+    }
+}
+
+#[cfg(test)]
+mod bundled {
+    use super::*;
+
+    /// Every language the map names must exist in the grammar set we ship.
+    /// A map entry that resolves to nothing is a file shown as plain text.
+    #[test]
+    fn every_language_of_the_map_is_bundled() {
+        let set = two_face::syntax::extra_newlines();
+        let lang = Languages::new();
+
+        for ext in ["blk", "pxc", "pyx", "iop", "tpl"] {
+            let name = lang.of(&format!("file.{ext}")).unwrap();
+            assert!(
+                set.find_syntax_by_token(name).is_some(),
+                "no grammar for {name}, mapped from .{ext}"
+            );
+        }
     }
 }

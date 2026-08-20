@@ -8,6 +8,7 @@ pub mod api;
 pub mod assets;
 pub mod diff;
 pub mod git;
+pub mod highlight;
 pub mod lang;
 pub mod model;
 pub mod repo;

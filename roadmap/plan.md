@@ -63,22 +63,22 @@ the guess.*
 *Exit: `qreview` opens the browser, shows a colored unified diff of every
 change of the batch, and loads the next batch on demand.*
 
-- [ ] axum on the loopback address, a random port, the session token
-- [ ] `GET /api/session`, `/api/changes/:key`, `/files`, `/diff`
-- [ ] `POST /api/series/extend`, the next batch
-- [ ] The 401 on a request with no token
+- [x] axum on the loopback address, a random port, the session token
+- [x] `GET /api/session`, `/api/changes/:key`, `/files`, `/diff`
+- [x] `POST /api/series/extend`, the next batch
+- [x] The 401 on a request with no token
 - [ ] The Vue application, the Vite build, Tailwind, Pinia
 - [ ] `rust-embed`, and the release binary that serves the interface alone
 - [ ] The three panes: the series, the files, the diff
 - [ ] The boundary card and the **Load 5 older** action
 - [ ] The unified diff view
-- [ ] `syntect`, the class output, and the two theme stylesheets
-- [ ] The merge of the syntax spans and the intra-line spans into the rows
-- [ ] The highlight cache, keyed by blob hash
-- [ ] The language map, and the example site map
-- [ ] The user grammar directory, loaded at startup
-- [ ] Make sure whether a Cython grammar is bundled. Write the answer in
-      `stack.md`
+- [ ] The two theme stylesheets
+- [x] `syntect`, the class output, and the spans on every row
+- [x] The highlight cache, keyed by blob hash
+- [x] The language map, and the example site map
+- [x] The user grammar directory, loaded at startup
+- [x] Make sure whether a Cython grammar is bundled. Written in `stack.md`:
+      there is none, so `.pyx` maps to Python
 - [ ] The browser open, and `--no-open`
 
 ## M3 — A diff you want to read

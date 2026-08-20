@@ -226,11 +226,32 @@ real risk.
 line. Then `git diff-tree -p <tree> <merge>`. It needs git 2.38 or later,
 tested on 2.43. Older git falls back to `git diff-tree --cc`.
 
+## 2026-08-20 — What the grammar set carries, measured
+
+The set is `two-face`, the grammars `bat` ships, read by `syntect` with the
+pure-Rust regex engine. It holds 199 syntaxes. Measured, for the languages the
+built-in map names:
+
+| Language | Bundled |
+|---|---|
+| C | yes |
+| Python | yes |
+| D | yes |
+| Jinja2 | yes |
+| **Cython** | **no** |
+
+So `.iop` maps to D, which was the plan, and `.pyx`, `.pxd` and `.pxi` map to
+Python. Cython is Python with types, so the loss is small: the types read as
+identifiers. A user who wants better drops a `.sublime-syntax` file in the
+configuration directory, and no rebuild is needed.
+
+A test holds this. Every language the map names must resolve to a grammar,
+because a map entry that resolves to nothing shows the file as plain text
+while looking configured.
+
 ## Open questions
 
-- **A Cython grammar for syntect.** The bundled set may not carry one. Task M2
-  must make sure. If there is none, `.pyx` and `.pxd` map to Python until
-  somebody drops a `.sublime-syntax` file in the configuration directory.
+(The Cython question is answered below, under *What the grammar set carries*.)
 - **Other platforms.** The tool is built and tested on Linux, and that is the
   only target. Nothing in the design stops the others, and nothing has tried
   them.

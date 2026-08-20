@@ -5,11 +5,14 @@
 
 use anyhow::Result;
 
+use std::sync::Arc;
+
 use crate::diff;
 use crate::git::commit;
 use crate::git::exec::Git;
+use crate::highlight::Highlighter;
 use crate::lang::Languages;
-use crate::model::{FileDiff, FileEntry, RepoInfo, Series};
+use crate::model::{FileDiff, FileEntry, RepoInfo, RowKind, Series};
 use crate::repo;
 use crate::series::{self, Options, Plan};
 
@@ -17,6 +20,7 @@ pub struct Session {
     pub git: Git,
     pub repo: RepoInfo,
     pub langs: Languages,
+    pub highlighter: Arc<Highlighter>,
     pub plan: Plan,
     pub series: Series,
 }
@@ -24,6 +28,17 @@ pub struct Session {
 impl Session {
     /// Open a repository and load the first batch of its series.
     pub async fn open(cwd: &std::path::Path, opts: &Options, langs: Languages) -> Result<Self> {
+        Self::with_highlighter(cwd, opts, langs, Arc::new(Highlighter::new())).await
+    }
+
+    /// The same, with a highlighter the caller built, so a user grammar
+    /// directory is loaded once and not per session.
+    pub async fn with_highlighter(
+        cwd: &std::path::Path,
+        opts: &Options,
+        langs: Languages,
+        highlighter: Arc<Highlighter>,
+    ) -> Result<Self> {
         let git = Git::discover(cwd).await?;
         let repo = repo::info(&git).await?;
         let (plan, batch) = series::first_batch(&git, opts).await?;
@@ -46,6 +61,7 @@ impl Session {
             git,
             repo,
             langs,
+            highlighter,
             plan,
             series,
         })
@@ -107,9 +123,66 @@ impl Session {
         let mut found = diff::file(&self.git, &base, rev, path, old.as_deref()).await?;
 
         if let Some(file) = found.as_mut() {
-            file.file.language = self.langs.of(path).unwrap_or_default().to_owned();
+            let language = self.langs.of(path).map(str::to_owned);
+            file.file.language = language.clone().unwrap_or_default();
+
+            if !file.file.binary {
+                self.paint(file, rev, &base, old.as_deref(), language.as_deref())
+                    .await;
+            }
         }
         Ok(found)
+    }
+
+    /// Put the syntax spans on every row.
+    ///
+    /// A line is highlighted with the whole file around it, never alone: a
+    /// block comment or a multi-line string needs the lines before it.
+    async fn paint(
+        &self,
+        file: &mut FileDiff,
+        rev: &str,
+        base: &str,
+        old_path: Option<&str>,
+        language: Option<&str>,
+    ) {
+        let path = file.file.path.clone();
+        let new_side = self.blob(rev, &path, language, &path).await;
+        let old_side = self
+            .blob(base, old_path.unwrap_or(&path), language, &path)
+            .await;
+
+        for hunk in &mut file.hunks {
+            for row in &mut hunk.rows {
+                let (side, line) = match row.kind {
+                    RowKind::Remove => (&old_side, row.old_line),
+                    _ => (&new_side, row.new_line),
+                };
+                let Some(spans) = side
+                    .as_ref()
+                    .and_then(|lines| lines.get(line?.checked_sub(1)?))
+                else {
+                    continue;
+                };
+                row.tokens = spans.clone();
+            }
+        }
+    }
+
+    /// Read one side of a file and highlight it, keyed by its blob hash.
+    async fn blob(
+        &self,
+        rev: &str,
+        path: &str,
+        language: Option<&str>,
+        for_path: &str,
+    ) -> Option<crate::highlight::Lines> {
+        let spec = format!("{rev}:{path}");
+        let blob = self.git.text(&["rev-parse", &spec]).await.ok()?;
+        let blob = blob.trim().to_owned();
+        let text = self.git.text(&["cat-file", "blob", &blob]).await.ok()?;
+
+        Some(self.highlighter.lines(&blob, &text, language, for_path))
     }
 
     /// The commit a change key names, inside the loaded series.

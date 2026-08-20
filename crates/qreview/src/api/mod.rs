@@ -337,6 +337,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_rows_arrive_already_highlighted() {
+        let repo = build_repo(&[
+            commit("first").file("src/net.blk", "int a = 1;\n/* note */\n"),
+            commit("second")
+                .file("src/net.blk", "int a = 2;\n/* note */\n")
+                .change_id("Icolors"),
+        ])
+        .await;
+
+        let (status, body) = json(
+            app(&repo).await,
+            get_with_cookie("/api/changes/Icolors/diff?file=src/net.blk", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let rows = body["hunks"][0]["rows"].as_array().unwrap();
+        let added = rows.iter().find(|r| r["kind"] == "add").unwrap();
+        let classes: Vec<_> = added["tokens"]
+            .as_array()
+            .expect("an added row carries its spans")
+            .iter()
+            .map(|t| t["cls"].as_str().unwrap().to_owned())
+            .collect();
+
+        // .blk is C by the map alone. No grammar knows the extension.
+        assert!(
+            classes
+                .iter()
+                .any(|c| c.starts_with("storage") || c.starts_with("keyword")),
+            "{classes:?}"
+        );
+        assert!(
+            classes.iter().any(|c| c.starts_with("constant")),
+            "the number is a constant: {classes:?}"
+        );
+
+        let context = rows.iter().find(|r| r["kind"] == "context").unwrap();
+        let comment: Vec<_> = context["tokens"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["cls"].as_str().unwrap().to_owned())
+            .collect();
+        assert!(
+            comment.iter().any(|c| c.starts_with("comment")),
+            "{comment:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn a_file_the_change_does_not_touch_is_a_named_error() {
         let repo = fixture().await;
         let (status, body) = json(
