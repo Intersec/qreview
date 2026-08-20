@@ -1,11 +1,9 @@
 # qreview
 
 Local code review for a Git series, in your browser, with the Gerrit model:
-one change at a time, with patch sets. One binary, no runtime to install.
+one change at a time, with patch sets.
 
-> **Status: in development.** Nothing is usable yet. The design is in
-> [`roadmap/`](./roadmap/) and the work order is in
-> [`roadmap/plan.md`](./roadmap/plan.md).
+One binary, no runtime to install, nothing leaves your machine.
 
 ## Why
 
@@ -22,27 +20,40 @@ address, and opens the browser.
 ```sh
 qreview                                          # the current series
 qreview af448g1                                  # one commit
-qreview af448g1 --prev 4888eaa8 --prev 774faaa9  # with local patch sets
+qreview af448g1..HEAD                            # a range
+qreview af448g1 --prev 4888eaa8 --prev 774faaa9  # with older patch sets
 qreview export                                   # the comments, as Markdown
+qreview list                                     # what this repository holds
 ```
 
 | Option | What it does |
 |---|---|
-| `--base <rev>` | Set the base of the series |
+| `--base <rev>` | Set the base of the series. It wins over every rule |
+| `--prev <sha>` | Treat a commit as an older patch set. Repeatable |
 | `--no-gerrit` | Skip the Gerrit query |
 | `--no-open` | Print the URL, open no browser |
 | `--port <n>` | Use a fixed port |
 
 What the browser shows:
 
-- The series on the left, one line per commit, with a **Load 5 older** action
-  when the start of the series is not obvious.
-- The files of the selected change, then the diff, side by side.
-- Comments on a line, a range, a file, or the change.
-- A patch set selector, and a diff between any two patch sets.
-- A merge reviewed against the auto-merge, so you read the conflict
-  resolution and not the whole branch it brought in.
-- An export of the comments, made to be pasted into a Claude session.
+- The series on the left, one line per commit, ending in a card that says why
+  the walk stopped there and offers **Load 5 older**.
+- The files of the change, then the diff, unified or side by side, with the
+  changed words marked inside a line.
+- Comments on a line, on a file, or on the change, in threads you can
+  resolve. Markdown in the body.
+- A patch set selector, and a diff between any two versions.
+- A merge read against the auto-merge, so you see the conflict resolution and
+  not the whole branch it brought in.
+- Two buttons that put the review in the clipboard, made to be pasted into a
+  session with an AI agent.
+
+| Key | What it does |
+|---|---|
+| `j` / `k` | The next or the previous file |
+| `n` / `p` | The next or the previous change |
+| `u` | Swap unified and side by side |
+| `/` | Jump to the file filter |
 
 Comments are stored under `~/.local/state/qreview`, keyed by `Change-Id`. An
 amend keeps them.
@@ -108,6 +119,7 @@ Personal settings go in `~/.config/qreview/config.json`. See
 | [`roadmap/concept.md`](./roadmap/concept.md) | The problem, the users, the non-goals, the prior art |
 | [`roadmap/design.md`](./roadmap/design.md) | The architecture, the data model, the API |
 | [`roadmap/plan.md`](./roadmap/plan.md) | The milestones and the tasks |
+| [`examples/`](./examples/) | Configuration files to copy |
 | [`roadmap/testing.md`](./roadmap/testing.md) | The test policy |
 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) | The branch model, the commits, the release |
 

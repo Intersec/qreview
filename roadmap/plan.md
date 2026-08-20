@@ -145,14 +145,14 @@ appear without any option.*
 *Exit: a colleague copies one binary, runs it, and reviews a series on the
 first try. No Node, no cargo, no install step.*
 
-- [ ] The Markdown export, one change and the whole series
-- [ ] The copy button
-- [ ] `qreview export` and `qreview list`
-- [ ] The snapshot test that pins the export format
-- [ ] The three configuration layers
-- [ ] `examples/config.json` and `examples/languages.json`
-- [ ] The README: install, use, and the custom file types section
-- [ ] `cargo xtask release`: the changelog collection, the version bump, the
+- [x] The Markdown export, one change and the whole series
+- [x] The copy button
+- [x] `qreview export` and `qreview list`
+- [x] The snapshot test that pins the export format
+- [x] The three configuration layers
+- [x] `examples/config.json` and `examples/languages.json`
+- [x] The README: install, use, and the custom file types section
+- [x] `cargo xtask release`: the changelog collection, the version bump, the
       tag
 - [ ] `make dist`, the musl binary, and the size of it written in `stack.md`
 - [ ] Tag `v0.1.0`
