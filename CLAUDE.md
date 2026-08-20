@@ -25,8 +25,8 @@ Do not start a task that is not the next one, unless the user names it.
 Leave this green:
 
 ```sh
-make check   # fmt + clippy + cargo test + eslint + prettier + vue-tsc
-             # + vitest + release build
+make check   # eslint + prettier + vitest + vite build
+             # + cargo fmt + clippy + cargo test + release build
 ```
 
 `check` is the whole gate and the only command to run. It prints one line per
@@ -38,6 +38,10 @@ Fix the format with `make fmt`. It runs `cargo fmt` and `prettier --write`.
 
 `make dev` runs the server and Vite together, with hot reload on the
 interface. Use it instead of rebuilding the binary to look at a component.
+Open the URL Vite prints, not the one the server prints.
+
+The interface is built before every Rust step, because the binary embeds
+`web/dist`. A clean checkout needs `make setup` once.
 
 ## End of a task
 

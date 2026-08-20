@@ -1,0 +1,36 @@
+# One stage. It runs `make check`, which is the same gate a developer runs
+# before a commit. Enable "Pipelines must succeed" in the merge request
+# settings so a red pipeline blocks the merge.
+#
+# The job needs a runner with network access to the crates.io and npm
+# registries. Do not commit a registry token: expose it as a protected CI/CD
+# variable.
+
+stages:
+  - verify
+
+check:
+  stage: verify
+  image: rust:1.92
+  interruptible: true
+  variables:
+    CARGO_HOME: $CI_PROJECT_DIR/.cargo-home
+  cache:
+    key:
+      files:
+        - Cargo.lock
+        - web/package-lock.json
+    paths:
+      - .cargo-home/
+      - web/node_modules/
+      - target/
+  before_script:
+    - curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+    - apt-get install -y --no-install-recommends nodejs
+    - rustup component add clippy rustfmt
+    - make setup
+  script:
+    - make check
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

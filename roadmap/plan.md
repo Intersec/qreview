@@ -6,7 +6,7 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: M0 in progress.**
+**Status: M0 done, except the difit read. M1 is next.**
 
 ---
 
@@ -20,17 +20,18 @@ in place.*
 - [x] `LICENSE` (Apache-2.0)
 - [x] `CLAUDE.md`, `README.md`, `CONTRIBUTING.md`
 - [x] `CHANGELOG.md` and the `changelog/` fragment directories
-- [ ] The cargo workspace: `crates/qreview`, `crates/xtask`
-- [ ] `rustfmt.toml`, `clippy.toml`, and `-D warnings` in the gate
-- [ ] `web/`: Vite, Vue 3, TypeScript, Tailwind, ESLint, Prettier
-- [ ] `.tool-versions`: the Rust and Node versions
-- [ ] `rust-embed`, with the debug build reading `web/dist` from disk
-- [ ] The `Makefile`: `dev`, `build`, `check`, `test`, `install`, `dist`
-- [ ] `make check`, one line per step, quiet until a step fails
-- [ ] `.gitlab-ci.yml`, one `verify` stage that runs `make check`
+- [x] The cargo workspace: `crates/qreview`, `crates/xtask`
+- [x] `rustfmt.toml`, `clippy.toml`, and `-D warnings` in the gate
+- [x] `web/`: Vite, Vue 3, TypeScript, Tailwind, ESLint, Prettier
+- [x] `.tool-versions`: rust 1.92.0, nodejs 24.13.1, read by asdf
+- [x] `rust-embed`, with the debug build reading `web/dist` from disk
+- [x] The `Makefile`: `setup`, `dev`, `build`, `check`, `test`, `fmt`,
+      `install`, `dist`
+- [x] `make check`, one line per step, quiet until a step fails
+- [x] `.gitlab-ci.yml`, one `verify` stage that runs `make check`
 - [x] `.gitignore`, `.editorconfig`
 - [ ] Run difit for 30 minutes on a real series. Write what to copy
-      and what to avoid in `concept.md`
+      and what to avoid in `concept.md`. **Needs a person at a browser**
 - [x] The first commit
 
 ## M1 — The git core, no interface

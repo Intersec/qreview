@@ -572,16 +572,23 @@ the rest.
 
 | Target | What it does |
 |---|---|
+| `make setup` | `npm ci`. Needed once, and after a lockfile change |
 | `make dev` | The Rust server on a fixed port, and Vite with a proxy on `/api` |
-| `make build` | `npm ci`, `vite build`, then `cargo build --release` |
+| `make build` | `vite build`, then `cargo build --release` |
 | `make check` | The whole gate. The only command to run before a commit |
 | `make test` | `cargo test` and `vitest run` |
+| `make fmt` | `cargo fmt` and `prettier --write` |
 | `make install` | The binary into `~/.local/bin` |
 | `make dist` | The `x86_64-unknown-linux-musl` binary, for a colleague |
 
-`make check` runs, in this order: `cargo fmt --check`, `cargo clippy -- -D
-warnings`, `cargo test`, `npm run lint`, `npm run format:check`,
-`npm run type-check`, `npm run test:run`, then `cargo build --release`.
+`make check` runs, in this order: `npm run lint`, `npm run format:check`,
+`npm run test:run`, `npm run build`, `cargo fmt --check`, `cargo clippy -- -D
+warnings`, `cargo test`, then `cargo build --release`.
+
+**The interface is built before every Rust step.** The binary embeds
+`web/dist`, so nothing on the Rust side compiles until that directory exists.
+`npm run build` also runs `vue-tsc`, so the type check has no step of its
+own.
 
 Node is needed to **build** the interface. It is not needed to run qreview.
 The release artifact is one static binary.
