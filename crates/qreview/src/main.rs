@@ -1,8 +1,7 @@
 //! qreview — local code review for a Git series.
 //!
-//! This is the scaffold. It serves the interface and nothing else. The git
-//! model, the API, and the comment store arrive in M1 and M2. See
-//! `roadmap/plan.md`.
+//! The binary is a thin shell: it reads the arguments, opens the session,
+//! and serves the interface. Everything else lives in the library.
 
 mod cli;
 
@@ -12,25 +11,47 @@ use axum::body::Body;
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use clap::Parser;
-use qreview::assets;
-use qreview::git::{self, exec::Git};
 use tokio::net::TcpListener;
+
+use qreview::assets;
+use qreview::lang::Languages;
+use qreview::report::{self, ChangeFiles};
+use qreview::series::Options;
+use qreview::session::Session;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = cli::Cli::parse();
 
     let cwd = std::env::current_dir().context("cannot read the working directory")?;
-    let git = Git::discover(&cwd).await?;
-    let head = git::commit::info(&git, "HEAD").await?;
+    let mut opts = Options::new();
+    opts.rev = cli.rev.clone();
+    opts.base = cli.base.clone();
 
-    println!("repository: {}", git.root().display());
-    println!("head:       {} {}", &head.hash[..12], head.subject);
+    let session = Session::open(&cwd, &opts, Languages::new()).await?;
+    print!("{}", text_report(&session).await?);
 
-    let app = Router::new().fallback(serve);
+    serve(cli.port).await
+}
+
+/// The series as text. The interface arrives in M2, see `roadmap/plan.md`.
+async fn text_report(session: &Session) -> Result<String> {
+    let mut files = Vec::new();
+
+    for change in &session.series.changes {
+        files.push(ChangeFiles {
+            key: change.key.clone(),
+            files: session.files(&change.commit).await?,
+        });
+    }
+    Ok(report::render(&session.series, &files))
+}
+
+async fn serve(port: u16) -> Result<()> {
+    let app = Router::new().fallback(assets_route);
 
     // The loopback address only. Never another interface.
-    let listener = TcpListener::bind(("127.0.0.1", cli.port))
+    let listener = TcpListener::bind(("127.0.0.1", port))
         .await
         .context("cannot listen on the loopback address")?;
     let addr = listener.local_addr()?;
@@ -46,7 +67,7 @@ async fn main() -> Result<()> {
         .context("the server stopped with an error")
 }
 
-async fn serve(uri: Uri) -> Response {
+async fn assets_route(uri: Uri) -> Response {
     match assets::get(uri.path()) {
         Some((body, mime)) => (
             StatusCode::OK,

@@ -46,7 +46,7 @@ step "prettier"        web npm run --silent format:check
 step "vitest"          web npm run --silent test:run
 step "vite build"      web npm run --silent build
 step "cargo fmt"       .   cargo fmt --all -- --check
-step "cargo clippy"    .   cargo clippy --all-targets -- -D warnings
+step "cargo clippy"    .   cargo clippy --workspace --all-targets -- -D warnings
 step "cargo test"      .   cargo test --workspace
 step "cargo build"     .   cargo build --release
 

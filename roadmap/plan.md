@@ -6,7 +6,7 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: M0 done, except the difit read. M1 is next.**
+**Status: M1 done. M2 is next. M0 still owes the difit read.**
 
 ---
 
@@ -40,23 +40,23 @@ in place.*
 list of each change as text, and the tests cover the six resolution rules and
 the guess.*
 
-- [ ] `model.rs`, the types of `design.md` section 4
-- [ ] `git/exec.rs`, the child process wrapper, with a timeout and a clear
+- [x] `model.rs`, the types of `design.md` section 4
+- [x] `git/exec.rs`, the child process wrapper, with a timeout and a clear
       error when `git` is missing
-- [ ] `testutil::build_repo`, the repository builder, merges included
-- [ ] Base resolution, the six rules of `design.md` section 3.1
-- [ ] Any revision as the head of a series, not only `HEAD`. Nothing reads the
+- [x] `testutil::build_repo`, the repository builder, merges included
+- [x] Base resolution, the six rules of `design.md` section 3.1
+- [x] Any revision as the head of a series, not only `HEAD`. Nothing reads the
       working tree
-- [ ] `.gerrit-branch` read from the reviewed commit, not from disk
-- [ ] The first-parent walk, in batches, with the boundary it stops on
-- [ ] The best-effort guess, capped at 10, with the signal that stopped it
-- [ ] Change identity: the `Change-Id` trailer, the `sha-` fallback
-- [ ] The file list of a change, with the statistics
-- [ ] The diff parser, from `git diff-tree -p` to `FileDiff`
-- [ ] The intra-line word diff, with the `similar` crate
-- [ ] The corpus of diff shapes: rename, copy, binary, no trailing newline,
+- [x] `.gerrit-branch` read from the reviewed commit, not from disk
+- [x] The first-parent walk, in batches, with the boundary it stops on
+- [x] The best-effort guess, capped at 10, with the signal that stopped it
+- [x] Change identity: the `Change-Id` trailer, the `sha-` fallback
+- [x] The file list of a change, with the statistics
+- [x] The diff parser, from `git diff-tree -p` to `FileDiff`
+- [x] The intra-line word diff, with the `similar` crate
+- [x] The corpus of diff shapes: rename, copy, binary, no trailing newline,
       CRLF, empty file
-- [ ] `cli.rs`, the argument parsing with clap, and the text output
+- [x] `cli.rs`, the argument parsing with clap, and the text output
 
 ## M2 — The server and the first view
 

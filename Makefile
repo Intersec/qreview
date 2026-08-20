@@ -39,7 +39,7 @@ fmt:
 	cd web && $(NPM) run format
 
 lint:
-	$(CARGO) clippy --all-targets -- -D warnings
+	$(CARGO) clippy --workspace --all-targets -- -D warnings
 	cd web && $(NPM) run lint
 
 ## The binary into $(PREFIX)/bin.

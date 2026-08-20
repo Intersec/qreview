@@ -7,8 +7,12 @@
 pub mod assets;
 pub mod diff;
 pub mod git;
+pub mod lang;
 pub mod model;
+pub mod repo;
+pub mod report;
 pub mod series;
+pub mod session;
 
 #[cfg(test)]
 mod testutil;
