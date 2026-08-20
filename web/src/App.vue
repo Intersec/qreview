@@ -3,11 +3,24 @@ import { onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import DiffView from './components/DiffView.vue';
 import FileList from './components/FileList.vue';
+import MergeBar from './components/MergeBar.vue';
 import SeriesPane from './components/SeriesPane.vue';
 import { useReview } from './stores/review';
 
 const review = useReview();
-const { series, changeKey, files, filePath, diff, error, busy, version } = storeToRefs(review);
+const {
+  series,
+  changeKey,
+  files,
+  filePath,
+  diff,
+  error,
+  busy,
+  version,
+  onMerge,
+  mergeBase,
+  mergeList,
+} = storeToRefs(review);
 
 onMounted(() => review.load());
 </script>
@@ -40,6 +53,7 @@ onMounted(() => review.load());
         :busy="busy"
         @open="review.openChange"
         @more="review.loadMore(5)"
+        @review-merge="review.openMerge()"
       />
       <FileList
         class="border-b border-slate-200 md:border-b-0 md:border-r dark:border-slate-700"
@@ -47,10 +61,21 @@ onMounted(() => review.load());
         :selected="filePath"
         @open="review.openFile"
       />
-      <DiffView v-if="diff" :diff="diff" />
-      <p v-else class="p-3 text-sm text-slate-500 dark:text-slate-400">
-        Pick a file to read its diff.
-      </p>
+      <section class="flex min-h-0 flex-col">
+        <MergeBar
+          v-if="onMerge"
+          :base="mergeBase"
+          :list="mergeList"
+          @pick="review.openMerge($event)"
+          @show-list="review.loadMergeList()"
+        />
+        <DiffView v-if="diff" class="min-h-0 flex-1" :diff="diff" />
+        <p v-else class="p-3 text-sm text-slate-500 dark:text-slate-400">
+          {{
+            files.length === 0 ? 'This change touches no file.' : 'Pick a file to read its diff.'
+          }}
+        </p>
+      </section>
     </main>
 
     <p v-else class="p-3 text-sm text-slate-500 dark:text-slate-400">Reading the repository…</p>

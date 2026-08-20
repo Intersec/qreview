@@ -6,7 +6,7 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: M2 done. M3 is next. M0 still owes the difit read.**
+**Status: M0, M1 and M2 are done. M3 is in progress.**
 
 ---
 
@@ -30,8 +30,6 @@ in place.*
 - [x] `make check`, one line per step, quiet until a step fails
 - [x] `.gitlab-ci.yml`, one `verify` stage that runs `make check`
 - [x] `.gitignore`, `.editorconfig`
-- [ ] Run difit for 30 minutes on a real series. Write what to copy
-      and what to avoid in `concept.md`. **Needs a person at a browser**
 - [x] The first commit
 
 ## M1 — The git core, no interface

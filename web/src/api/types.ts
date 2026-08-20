@@ -101,3 +101,13 @@ export interface SessionBody {
   version: string;
   series: Series;
 }
+
+export interface MergeListItem {
+  commit: string;
+  subject: string;
+  author: string;
+  date: string;
+}
+
+/** What a merge is read against. Absent means the auto-merge. */
+export type MergeBase = 'automerge' | 'parent1' | 'parent2';

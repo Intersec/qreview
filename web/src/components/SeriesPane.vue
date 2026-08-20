@@ -3,7 +3,7 @@ import BoundaryCard from './BoundaryCard.vue';
 import type { ChangeSummary, Series } from '@/api/types';
 
 defineProps<{ series: Series; selected: string | null; busy: boolean }>();
-const emit = defineEmits<{ open: [key: string]; more: [] }>();
+const emit = defineEmits<{ open: [key: string]; more: []; reviewMerge: [] }>();
 
 function label(change: ChangeSummary): string {
   return change.commit.slice(0, 12);
@@ -38,6 +38,11 @@ function label(change: ChangeSummary): string {
       </li>
     </ul>
 
-    <BoundaryCard :boundary="series.boundary" :busy="busy" @more="emit('more')" />
+    <BoundaryCard
+      :boundary="series.boundary"
+      :busy="busy"
+      @more="emit('more')"
+      @review-merge="emit('reviewMerge')"
+    />
   </nav>
 </template>

@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import type { Boundary } from '@/api/types';
 
 const props = defineProps<{ boundary: Boundary; busy: boolean }>();
-const emit = defineEmits<{ more: [] }>();
+const emit = defineEmits<{ more: []; reviewMerge: [] }>();
 
 const title = computed(() => {
   switch (props.boundary.kind) {
@@ -57,6 +57,15 @@ const short = computed(() => props.boundary.commit?.slice(0, 12) ?? '');
     <p v-if="short" class="mt-2 text-slate-500 dark:text-slate-400">
       next commit <code>{{ short }}</code>
     </p>
+
+    <button
+      v-if="boundary.merge"
+      type="button"
+      class="mt-2 mr-2 rounded border border-amber-600 px-2 py-1 text-amber-900 hover:bg-amber-100 dark:border-amber-500 dark:text-amber-200 dark:hover:bg-amber-900/40"
+      @click="emit('reviewMerge')"
+    >
+      Review the merge
+    </button>
 
     <button
       v-if="boundary.commit"
