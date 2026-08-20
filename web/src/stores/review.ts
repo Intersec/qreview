@@ -16,6 +16,7 @@ export const useReview = defineStore('review', () => {
   const error = ref<string | null>(null);
   const busy = ref(false);
   const mergeBase = ref<MergeBase | undefined>(undefined);
+  const split = ref(localStorage.getItem('qreview.split') === 'yes');
   const mergeList = ref<MergeListItem[]>([]);
 
   /// True while the reader is on the merge under the boundary.
@@ -101,7 +102,14 @@ export const useReview = defineStore('review', () => {
     });
   }
 
+  function setSplit(value: boolean) {
+    split.value = value;
+    localStorage.setItem('qreview.split', value ? 'yes' : 'no');
+  }
+
   return {
+    split,
+    setSplit,
     version,
     series,
     changeKey,

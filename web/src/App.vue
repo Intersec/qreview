@@ -20,6 +20,7 @@ const {
   onMerge,
   mergeBase,
   mergeList,
+  split,
 } = storeToRefs(review);
 
 onMounted(() => review.load());
@@ -69,7 +70,13 @@ onMounted(() => review.load());
           @pick="review.openMerge($event)"
           @show-list="review.loadMergeList()"
         />
-        <DiffView v-if="diff" class="min-h-0 flex-1" :diff="diff" />
+        <DiffView
+          v-if="diff"
+          class="min-h-0 flex-1"
+          :diff="diff"
+          :split="split"
+          @update:split="review.setSplit"
+        />
         <p v-else class="p-3 text-sm text-slate-500 dark:text-slate-400">
           {{
             files.length === 0 ? 'This change touches no file.' : 'Pick a file to read its diff.'
