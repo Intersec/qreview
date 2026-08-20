@@ -6,7 +6,7 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: M1 done. M2 is next. M0 still owes the difit read.**
+**Status: M2 done. M3 is next. M0 still owes the difit read.**
 
 ---
 
@@ -79,7 +79,7 @@ change of the batch, and loads the next batch on demand.*
 - [x] The user grammar directory, loaded at startup
 - [x] Make sure whether a Cython grammar is bundled. Written in `stack.md`:
       there is none, so `.pyx` maps to Python
-- [ ] The browser open, and `--no-open`
+- [x] The browser open, and `--no-open`
 
 ## M3 — A diff you want to read
 

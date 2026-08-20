@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
     let token = auth::new_token();
     let state = AppState::new(session, token.clone());
 
-    serve(cli.port, api::app(state), &token).await
+    serve(cli.port, api::app(state), &token, cli.no_open).await
 }
 
 /// The series as text. The interface arrives in M2, see `roadmap/plan.md`.
@@ -47,16 +47,21 @@ async fn text_report(session: &Session) -> Result<String> {
     Ok(report::render(&session.series, &files))
 }
 
-async fn serve(port: u16, app: Router, token: &str) -> Result<()> {
+async fn serve(port: u16, app: Router, token: &str, no_open: bool) -> Result<()> {
     // The loopback address only. Never another interface.
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
         .context("cannot listen on the loopback address")?;
     let addr = listener.local_addr()?;
 
+    let url = format!("http://{addr}/?t={token}");
     println!();
-    println!("qreview is at http://{addr}/?t={token}");
+    println!("qreview is at {url}");
     println!("Press Ctrl-C to stop.");
+
+    if !no_open {
+        open_browser(&url);
+    }
 
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
@@ -64,4 +69,21 @@ async fn serve(port: u16, app: Router, token: &str) -> Result<()> {
         })
         .await
         .context("the server stopped with an error")
+}
+
+/// Show the review in the browser of the user.
+///
+/// Linux is the only target, so `xdg-open` is what a desktop provides. A
+/// failure is not worth stopping for: the URL is printed above it.
+fn open_browser(url: &str) {
+    let started = std::process::Command::new("xdg-open")
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    if started.is_err() {
+        eprintln!("qreview: no browser opened. Open the address above by hand.");
+    }
 }
