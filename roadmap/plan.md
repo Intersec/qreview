@@ -1,0 +1,180 @@
+# Plan
+
+The milestones, in order. Each one ends with a state that a person can use or
+judge. Each task is one commit with `make check` green.
+
+Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
+a task that was dropped: strike it and write why.
+
+**Status: M0 in progress.**
+
+---
+
+## M0 — Foundation
+
+*Exit: `make check` is green on an empty project, and the governance files are
+in place.*
+
+- [x] The roadmap: `concept.md`, `stack.md`, `design.md`, `features.md`,
+      `plan.md`, `testing.md`
+- [x] `LICENSE` (Apache-2.0)
+- [x] `CLAUDE.md`, `README.md`, `CONTRIBUTING.md`
+- [x] `CHANGELOG.md` and the `changelog/` fragment directories
+- [ ] The cargo workspace: `crates/qreview`, `crates/xtask`
+- [ ] `rustfmt.toml`, `clippy.toml`, and `-D warnings` in the gate
+- [ ] `web/`: Vite, Vue 3, TypeScript, Tailwind, ESLint, Prettier
+- [ ] `.tool-versions`: the Rust and Node versions
+- [ ] `rust-embed`, with the debug build reading `web/dist` from disk
+- [ ] The `Makefile`: `dev`, `build`, `check`, `test`, `install`, `dist`
+- [ ] `make check`, one line per step, quiet until a step fails
+- [ ] `.gitlab-ci.yml`, one `verify` stage that runs `make check`
+- [x] `.gitignore`, `.editorconfig`
+- [ ] Run difit for 30 minutes on a real series. Write what to copy
+      and what to avoid in `concept.md`
+- [x] The first commit
+
+## M1 — The git core, no interface
+
+*Exit: `qreview --no-open` prints the first batch of the series and the file
+list of each change as text, and the tests cover the six resolution rules and
+the guess.*
+
+- [ ] `model.rs`, the types of `design.md` section 4
+- [ ] `git/exec.rs`, the child process wrapper, with a timeout and a clear
+      error when `git` is missing
+- [ ] `testutil::build_repo`, the repository builder, merges included
+- [ ] Base resolution, the six rules of `design.md` section 3.1
+- [ ] Any revision as the head of a series, not only `HEAD`. Nothing reads the
+      working tree
+- [ ] `.gerrit-branch` read from the reviewed commit, not from disk
+- [ ] The first-parent walk, in batches, with the boundary it stops on
+- [ ] The best-effort guess, capped at 10, with the signal that stopped it
+- [ ] Change identity: the `Change-Id` trailer, the `sha-` fallback
+- [ ] The file list of a change, with the statistics
+- [ ] The diff parser, from `git diff-tree -p` to `FileDiff`
+- [ ] The intra-line word diff, with the `similar` crate
+- [ ] The corpus of diff shapes: rename, copy, binary, no trailing newline,
+      CRLF, empty file
+- [ ] `cli.rs`, the argument parsing with clap, and the text output
+
+## M2 — The server and the first view
+
+*Exit: `qreview` opens the browser, shows a colored unified diff of every
+change of the batch, and loads the next batch on demand.*
+
+- [ ] axum on the loopback address, a random port, the session token
+- [ ] `GET /api/session`, `/api/changes/:key`, `/files`, `/diff`
+- [ ] `POST /api/series/extend`, the next batch
+- [ ] The 401 on a request with no token
+- [ ] The Vue application, the Vite build, Tailwind, Pinia
+- [ ] `rust-embed`, and the release binary that serves the interface alone
+- [ ] The three panes: the series, the files, the diff
+- [ ] The boundary card and the **Load 5 older** action
+- [ ] The unified diff view
+- [ ] `syntect`, the class output, and the two theme stylesheets
+- [ ] The merge of the syntax spans and the intra-line spans into the rows
+- [ ] The highlight cache, keyed by blob hash
+- [ ] The language map, and the example site map
+- [ ] The user grammar directory, loaded at startup
+- [ ] Make sure whether a Cython grammar is bundled. Write the answer in
+      `stack.md`
+- [ ] The browser open, and `--no-open`
+
+## M3 — A diff you want to read
+
+*Exit: the side-by-side view is usable on a commit of 100 files or more.*
+
+- [ ] The side-by-side view
+- [ ] The intra-line marks
+- [ ] Folded context, opened line by line or whole
+- [ ] Renames and copies as one file
+- [ ] The merge review: the auto-merge base, parent 1, parent 2
+- [ ] The merge list tab
+- [ ] The `--cc` fallback on git older than 2.38
+- [ ] **Follow the other parent** on a merge card
+- [ ] The file tree with a filter
+- [ ] Keyboard navigation: next file, next change, next hunk
+- [ ] Measure the time to first paint on a 5000 line file. Write the number
+      and the limit in `stack.md`
+- [ ] A large file is shown with a warning and no colors
+
+## M4 — Comments
+
+*Exit: a whole review of a series can be written and found again after a
+restart.*
+
+- [ ] The store: the layout, the repository identity, the atomic write
+- [ ] A read that survives a corrupt file and never deletes it
+- [ ] The comment routes, create, edit, delete, resolve
+- [ ] A comment on a line, on a range, on a file, on the change
+- [ ] Threads and replies
+- [ ] The draft mark
+- [ ] Markdown in the body
+- [ ] The comment count on the series pane
+- [ ] Make sure that an amend keeps the comments
+
+## M5 — Patch sets
+
+*Exit: `qreview <rev> --prev <sha> --prev <sha>` shows three patch sets and
+diffs any two of them.*
+
+- [ ] The patch set model and the selector
+- [ ] `--prev`, repeatable
+- [ ] A diff of a patch set against its parent
+- [ ] A diff between two patch sets
+- [ ] The label when the parents differ
+- [ ] The anchoring, the three branches of `design.md` section 5.3
+- [ ] The panel of the comments that could not be anchored
+
+## M6 — Gerrit
+
+*Exit: on a repository with a Gerrit remote, the patch sets already pushed
+appear without any option.*
+
+- [ ] The remote URL parser, and the canonical form used by the store
+- [ ] The branch from `.gerrit-branch`, then the configuration
+- [ ] The ssh query, with the timeout
+- [ ] The parser of the answer, against recorded fixtures
+- [ ] The lazy fetch of a patch set ref
+- [ ] Every failure path leaves the local review working
+- [ ] `--no-gerrit`
+- [ ] The change number and the Gerrit URL in the interface
+
+## M7 — Export, configuration, and v0.1.0
+
+*Exit: a colleague copies one binary, runs it, and reviews a series on the
+first try. No Node, no cargo, no install step.*
+
+- [ ] The Markdown export, one change and the whole series
+- [ ] The copy button
+- [ ] `qreview export` and `qreview list`
+- [ ] The snapshot test that pins the export format
+- [ ] The three configuration layers
+- [ ] `examples/config.json` and `examples/languages.json`
+- [ ] The README: install, use, and the custom file types section
+- [ ] `cargo xtask release`: the changelog collection, the version bump, the
+      tag
+- [ ] `make dist`, the musl binary, and the size of it written in `stack.md`
+- [ ] Tag `v0.1.0`
+
+---
+
+## After v0.1.0
+
+Ordered by the value we expect, not by the effort:
+
+1. A rebase-aware diff between two patch sets.
+2. A JSON export, and a Claude Code skill that reads it.
+
+## Session protocol
+
+1. Read this file. Take the first task that is not `[x]`.
+2. Read the part of [`design.md`](./design.md) that the task touches.
+3. Write the code and the tests together. See [`testing.md`](./testing.md).
+4. Run `make check`.
+5. Commit the task alone, with the why in the message.
+6. Mark the task `[x]` here. Move the **Status** line when a milestone ends.
+7. Update [`features.md`](./features.md) when a feature changes status.
+
+If a task contradicts [`design.md`](./design.md), stop and report. Write the
+new decision in [`stack.md`](./stack.md) with the date, then continue.
