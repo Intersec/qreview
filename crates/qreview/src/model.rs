@@ -167,7 +167,10 @@ pub struct Row {
     pub words: Vec<WordSpan>,
 }
 
-/// A byte range of `Row::text` that carries a syntax class.
+/// A range of `Row::text` that carries a syntax class.
+///
+/// The offsets are UTF-16 code units, which is what a browser slices with.
+/// They count bytes inside the server, until the row leaves it.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Span {
@@ -177,7 +180,7 @@ pub struct Span {
     pub cls: String,
 }
 
-/// A byte range of `Row::text` that changed inside the line.
+/// A range of `Row::text` that changed inside the line, in UTF-16 units.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WordSpan {

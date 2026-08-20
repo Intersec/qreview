@@ -11,6 +11,7 @@ pub mod git;
 pub mod highlight;
 pub mod lang;
 pub mod model;
+pub mod offsets;
 pub mod repo;
 pub mod report;
 pub mod series;

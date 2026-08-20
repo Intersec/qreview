@@ -130,6 +130,14 @@ impl Session {
                 self.paint(file, rev, &base, old.as_deref(), language.as_deref())
                     .await;
             }
+
+            // The last step before a row leaves the server: the browser
+            // slices by UTF-16 units, and everything above counts bytes.
+            for hunk in &mut file.hunks {
+                for row in &mut hunk.rows {
+                    crate::offsets::to_utf16(row);
+                }
+            }
         }
         Ok(found)
     }
