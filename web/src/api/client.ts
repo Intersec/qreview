@@ -1,7 +1,17 @@
 // Every call to the server. The token travels as a cookie the first page
 // load left behind, so nothing here carries it.
 
-import type { FileDiff, FileEntry, MergeListItem, Series, SessionBody } from './types';
+import type {
+  ChangeFile,
+  Comment,
+  EditComment,
+  FileDiff,
+  FileEntry,
+  MergeListItem,
+  NewComment,
+  Series,
+  SessionBody,
+} from './types';
 
 export class ApiError extends Error {
   constructor(
@@ -44,6 +54,28 @@ export const api = {
 
   mergeList: (key: string) =>
     call<MergeListItem[]>(`/api/changes/${encodeURIComponent(key)}/mergelist`),
+
+  comments: (key: string) => call<ChangeFile>(`/api/changes/${encodeURIComponent(key)}/comments`),
+
+  addComment: (key: string, comment: NewComment) =>
+    call<Comment>(`/api/changes/${encodeURIComponent(key)}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(comment),
+    }),
+
+  editComment: (key: string, id: string, edit: EditComment) =>
+    call<Comment>(`/api/changes/${encodeURIComponent(key)}/comments/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(edit),
+    }),
+
+  deleteComment: (key: string, id: string) =>
+    call<{ deleted: number }>(
+      `/api/changes/${encodeURIComponent(key)}/comments/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+    ),
 };
 
 function query(params: Record<string, string | undefined>): string {

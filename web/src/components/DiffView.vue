@@ -1,12 +1,68 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import CommentBox from './CommentBox.vue';
+import CommentThread from './CommentThread.vue';
 import DiffRow from './DiffRow.vue';
 import { pairs } from '@/diff/pairs';
 import { segments } from '@/diff/segments';
-import type { FileDiff, Row } from '@/api/types';
+import type { Comment, FileDiff, NewComment, Row, Side } from '@/api/types';
 
-const props = defineProps<{ diff: FileDiff; split: boolean }>();
-const emit = defineEmits<{ 'update:split': [value: boolean] }>();
+const props = defineProps<{
+  diff: FileDiff;
+  split: boolean;
+  threads: { first: Comment; replies: Comment[] }[];
+}>();
+const emit = defineEmits<{
+  'update:split': [value: boolean];
+  add: [comment: NewComment];
+  edit: [id: string, body: string];
+  remove: [id: string];
+  resolve: [id: string, resolved: boolean];
+}>();
+
+/// Which line a comment box is open on, as `side:line`.
+const writing = ref<string | null>(null);
+
+function side(row: Row): Side {
+  return row.kind === 'remove' ? 'old' : 'new';
+}
+
+function lineOf(row: Row): number | null {
+  return row.kind === 'remove' ? row.oldLine : row.newLine;
+}
+
+function at(row: Row) {
+  const line = lineOf(row);
+  if (line === null) {
+    return [];
+  }
+  return props.threads.filter(
+    (t) =>
+      t.first.anchor?.file === props.diff.path &&
+      t.first.anchor.side === side(row) &&
+      t.first.anchor.startLine === line,
+  );
+}
+
+function key(row: Row): string {
+  return `${side(row)}:${lineOf(row)}`;
+}
+
+function write(row: Row, body: string, draft: boolean) {
+  const line = lineOf(row);
+  if (line === null) {
+    return;
+  }
+  emit('add', {
+    scope: 'line',
+    file: props.diff.path,
+    side: side(row),
+    startLine: line,
+    body,
+    draft,
+  });
+  writing.value = null;
+}
 
 /// Above this, the browser spends more time building the DOM than the reader
 /// spends reading. The rest is one line away, in the terminal.
@@ -112,8 +168,12 @@ function pairClass(row: Row | null): string {
           <td class="w-12 select-none px-2 text-right align-top text-slate-400 dark:text-slate-500">
             {{ row.oldLine ?? '' }}
           </td>
-          <td class="w-12 select-none px-2 text-right align-top text-slate-400 dark:text-slate-500">
-            {{ row.newLine ?? '' }}
+          <td
+            class="w-12 cursor-pointer select-none px-2 text-right align-top text-slate-400 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+            :title="`Comment on this line`"
+            @click="writing = writing === key(row) ? null : key(row)"
+          >
+            {{ row.newLine ?? row.oldLine ?? '' }}
           </td>
           <td class="whitespace-pre-wrap break-all px-2 align-top">
             <span class="select-none text-slate-400 dark:text-slate-500">{{ SIGN[row.kind] }}</span
@@ -128,6 +188,27 @@ function pairClass(row: Row | null): string {
               title="the file has no newline after this line"
               >↵?</span
             >
+
+            <CommentThread
+              v-for="thread in at(row)"
+              :key="thread.first.id"
+              :first="thread.first"
+              :replies="thread.replies"
+              @reply="
+                (id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })
+              "
+              @edit="(id, body) => emit('edit', id, body)"
+              @remove="(id) => emit('remove', id)"
+              @resolve="(id, value) => emit('resolve', id, value)"
+            />
+
+            <CommentBox
+              v-if="writing === key(row)"
+              class="my-1"
+              label="A remark about this line"
+              @save="(body, draft) => write(row, body, draft)"
+              @cancel="writing = null"
+            />
           </td>
         </tr>
       </tbody>

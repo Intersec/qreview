@@ -69,3 +69,32 @@
     background: rgb(161 98 7 / 0.55);
   }
 }
+
+/* A comment body is Markdown, rendered small and tight. */
+.prose-comment p {
+  margin: 0.25rem 0;
+}
+.prose-comment code {
+  border-radius: 2px;
+  background: rgb(100 116 139 / 0.18);
+  padding: 0 0.2rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+.prose-comment pre {
+  overflow-x: auto;
+  border-radius: 3px;
+  background: rgb(100 116 139 / 0.18);
+  padding: 0.4rem;
+}
+.prose-comment ul,
+.prose-comment ol {
+  margin: 0.25rem 0 0.25rem 1.1rem;
+  list-style: disc;
+}
+.prose-comment ol {
+  list-style: decimal;
+}
+.prose-comment a {
+  text-decoration: underline;
+}

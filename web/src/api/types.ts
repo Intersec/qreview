@@ -111,3 +111,54 @@ export interface MergeListItem {
 
 /** What a merge is read against. Absent means the auto-merge. */
 export type MergeBase = 'automerge' | 'parent1' | 'parent2';
+
+export type Scope = 'line' | 'range' | 'file' | 'change';
+export type Side = 'old' | 'new';
+
+export interface Anchor {
+  file: string;
+  side: Side;
+  startLine: number | null;
+  endLine: number | null;
+  blob: string | null;
+  lineHash: string | null;
+  context: string[];
+}
+
+export interface Comment {
+  id: string;
+  parentId: string | null;
+  patchSet: number;
+  author: string;
+  createdAt: string;
+  updatedAt: string;
+  scope: Scope;
+  resolved: boolean;
+  draft: boolean;
+  body: string;
+  anchor: Anchor | null;
+}
+
+export interface ChangeFile {
+  version: number;
+  key: string;
+  subject: string;
+  comments: Comment[];
+}
+
+export interface NewComment {
+  parentId?: string;
+  scope: Scope;
+  file?: string;
+  side?: Side;
+  startLine?: number;
+  endLine?: number;
+  body: string;
+  draft?: boolean;
+}
+
+export interface EditComment {
+  body?: string;
+  resolved?: boolean;
+  draft?: boolean;
+}

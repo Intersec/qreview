@@ -4,7 +4,17 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { api } from '@/api/client';
-import type { FileDiff, FileEntry, MergeBase, MergeListItem, Series } from '@/api/types';
+import type {
+  ChangeFile,
+  Comment,
+  EditComment,
+  FileDiff,
+  FileEntry,
+  MergeBase,
+  MergeListItem,
+  NewComment,
+  Series,
+} from '@/api/types';
 
 export const useReview = defineStore('review', () => {
   const version = ref('');
@@ -16,6 +26,7 @@ export const useReview = defineStore('review', () => {
   const error = ref<string | null>(null);
   const busy = ref(false);
   const mergeBase = ref<MergeBase | undefined>(undefined);
+  const review = ref<ChangeFile | null>(null);
   const split = ref(localStorage.getItem('qreview.split') === 'yes');
   const mergeList = ref<MergeListItem[]>([]);
 
@@ -61,6 +72,7 @@ export const useReview = defineStore('review', () => {
       changeKey.value = key;
       mergeBase.value = base;
       mergeList.value = [];
+      review.value = await api.comments(key);
       files.value = await api.files(key, base);
       diff.value = null;
       filePath.value = null;
@@ -102,12 +114,69 @@ export const useReview = defineStore('review', () => {
     });
   }
 
+  /// The threads of the change: a first comment and the replies under it.
+  function threads(): { first: Comment; replies: Comment[] }[] {
+    const comments = review.value?.comments ?? [];
+
+    return comments
+      .filter((c) => c.parentId === null)
+      .map((first) => ({
+        first,
+        replies: comments.filter((c) => c.parentId === first.id),
+      }));
+  }
+
+  async function reload() {
+    const key = changeKey.value;
+    if (key) {
+      review.value = await api.comments(key);
+    }
+  }
+
+  async function addComment(comment: NewComment) {
+    const key = changeKey.value;
+    if (!key) {
+      return;
+    }
+    await guard(async () => {
+      await api.addComment(key, comment);
+      await reload();
+    });
+  }
+
+  async function editComment(id: string, edit: EditComment) {
+    const key = changeKey.value;
+    if (!key) {
+      return;
+    }
+    await guard(async () => {
+      await api.editComment(key, id, edit);
+      await reload();
+    });
+  }
+
+  async function deleteComment(id: string) {
+    const key = changeKey.value;
+    if (!key) {
+      return;
+    }
+    await guard(async () => {
+      await api.deleteComment(key, id);
+      await reload();
+    });
+  }
+
   function setSplit(value: boolean) {
     split.value = value;
     localStorage.setItem('qreview.split', value ? 'yes' : 'no');
   }
 
   return {
+    review,
+    threads,
+    addComment,
+    editComment,
+    deleteComment,
     split,
     setSplit,
     version,

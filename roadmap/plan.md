@@ -6,7 +6,7 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: M0, M1 and M2 are done. M3 is in progress.**
+**Status: M0 to M4 are done, except a range comment. M5 is next.**
 
 ---
 
@@ -106,10 +106,10 @@ restart.*
 - [x] The store: the layout, the repository identity, the atomic write
 - [x] A read that survives a corrupt file and never deletes it
 - [x] The comment routes, create, edit, delete, resolve
-- [ ] A comment on a line, on a range, on a file, on the change
+- [x] A comment on a line, on a file, on the change
 - [x] Threads and replies
 - [x] The draft mark
-- [ ] Markdown in the body
+- [x] Markdown in the body, sanitized before it is shown
 - [x] The comment count on the series pane
 - [x] Make sure that an amend keeps the comments
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
+import CommentPane from './components/CommentPane.vue';
 import DiffView from './components/DiffView.vue';
 import FileList from './components/FileList.vue';
 import MergeBar from './components/MergeBar.vue';
@@ -22,6 +23,8 @@ const {
   mergeList,
   split,
 } = storeToRefs(review);
+
+const threads = computed(() => review.threads());
 
 const fileList = ref<InstanceType<typeof FileList> | null>(null);
 
@@ -107,7 +110,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       {{ error }}
     </p>
 
-    <main v-if="series" class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[18rem_20rem_1fr]">
+    <main
+      v-if="series"
+      class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[16rem_18rem_1fr] xl:grid-cols-[16rem_18rem_1fr_20rem]"
+    >
       <SeriesPane
         class="border-b border-slate-200 md:border-b-0 md:border-r dark:border-slate-700"
         :series="series"
@@ -137,7 +143,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           class="min-h-0 flex-1"
           :diff="diff"
           :split="split"
+          :threads="threads"
           @update:split="review.setSplit"
+          @add="review.addComment"
+          @edit="(id, body) => review.editComment(id, { body })"
+          @remove="review.deleteComment"
+          @resolve="(id, resolved) => review.editComment(id, { resolved })"
         />
         <p v-else class="p-3 text-sm text-slate-500 dark:text-slate-400">
           {{
@@ -145,6 +156,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           }}
         </p>
       </section>
+
+      <CommentPane
+        class="hidden border-t border-slate-200 xl:block xl:border-l xl:border-t-0 dark:border-slate-700"
+        :threads="threads"
+        :file="filePath"
+        @add="review.addComment"
+        @edit="(id, body) => review.editComment(id, { body })"
+        @remove="review.deleteComment"
+        @resolve="(id, resolved) => review.editComment(id, { resolved })"
+      />
     </main>
 
     <p v-else class="p-3 text-sm text-slate-500 dark:text-slate-400">Reading the repository…</p>
