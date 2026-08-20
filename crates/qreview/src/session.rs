@@ -3,7 +3,7 @@
 //! The command line builds it, the server shares it, and the interface reads
 //! it through the API. Nothing here touches the working tree.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::diff;
 use crate::git::commit;
@@ -113,12 +113,14 @@ impl Session {
     }
 
     /// The commit a change key names, inside the loaded series.
-    pub fn commit_of(&self, key: &str) -> Result<String> {
+    ///
+    /// A key that is not there is not a failure. It is a question with the
+    /// answer "no", and the route turns it into a 404.
+    pub fn commit_of(&self, key: &str) -> Option<String> {
         self.series
             .changes
             .iter()
             .find(|c| c.key == key)
             .map(|c| c.commit.clone())
-            .with_context(|| format!("no change {key} in the series"))
     }
 }

@@ -4,6 +4,7 @@
 //! starts the server, and opens the browser. Everything the review needs
 //! lives here, so it can be tested without a process.
 
+pub mod api;
 pub mod assets;
 pub mod diff;
 pub mod git;

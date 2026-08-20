@@ -514,6 +514,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "getrandom",
  "hex",
  "mime_guess",
  "rust-embed",
@@ -523,6 +524,7 @@ dependencies = [
  "similar",
  "tempfile",
  "tokio",
+ "tower",
 ]
 
 [[package]]

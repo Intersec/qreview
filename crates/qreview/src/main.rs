@@ -13,6 +13,7 @@ use axum::response::{IntoResponse, Response};
 use clap::Parser;
 use tokio::net::TcpListener;
 
+use qreview::api::{self, AppState, auth};
 use qreview::assets;
 use qreview::lang::Languages;
 use qreview::report::{self, ChangeFiles};
@@ -31,7 +32,10 @@ async fn main() -> Result<()> {
     let session = Session::open(&cwd, &opts, Languages::new()).await?;
     print!("{}", text_report(&session).await?);
 
-    serve(cli.port).await
+    let token = auth::new_token();
+    let state = AppState::new(session, token.clone());
+
+    serve(cli.port, api::router(state), &token).await
 }
 
 /// The series as text. The interface arrives in M2, see `roadmap/plan.md`.
@@ -47,8 +51,8 @@ async fn text_report(session: &Session) -> Result<String> {
     Ok(report::render(&session.series, &files))
 }
 
-async fn serve(port: u16) -> Result<()> {
-    let app = Router::new().fallback(assets_route);
+async fn serve(port: u16, app: Router, token: &str) -> Result<()> {
+    let app = app.fallback(assets_route);
 
     // The loopback address only. Never another interface.
     let listener = TcpListener::bind(("127.0.0.1", port))
@@ -56,7 +60,8 @@ async fn serve(port: u16) -> Result<()> {
         .context("cannot listen on the loopback address")?;
     let addr = listener.local_addr()?;
 
-    println!("qreview is at http://{addr}/");
+    println!();
+    println!("qreview is at http://{addr}/?t={token}");
     println!("Press Ctrl-C to stop.");
 
     axum::serve(listener, app)
