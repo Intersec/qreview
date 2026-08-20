@@ -11,7 +11,13 @@ const RECORD: char = '\x1e';
 /// The separator between two fields of one commit.
 const FIELD: char = '\x00';
 
-const FORMAT: &str = "--format=%H%x00%P%x00%an%x00%ae%x00%aI%x00%s%x00%B%x1e";
+/// `%at` is the author date as a count of seconds, not as a written date.
+///
+/// A written date is not the same everywhere: one git prints `+00:00` for
+/// UTC and another prints `Z`, so the pipeline disagreed with the machine
+/// that wrote the test. A count of seconds says the same thing everywhere,
+/// and the tool formats it once, its own way.
+const FORMAT: &str = "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x00%B%x1e";
 
 /// One commit, with the parts a review reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,7 +26,7 @@ pub struct CommitInfo {
     pub parents: Vec<String>,
     pub author: String,
     pub email: String,
-    /// The author date, ISO 8601.
+    /// The author date, RFC 3339 in UTC, formatted by this tool.
     pub date: String,
     pub subject: String,
     pub message: String,
@@ -86,13 +92,27 @@ fn parse(out: &str) -> Vec<CommitInfo> {
         .collect()
 }
 
+/// A count of seconds since the epoch, as a date the interface can show.
+fn iso_utc(seconds: &str) -> String {
+    let Ok(seconds) = seconds.trim().parse::<i64>() else {
+        return String::new();
+    };
+    let Ok(moment) = time::OffsetDateTime::from_unix_timestamp(seconds) else {
+        return String::new();
+    };
+
+    moment
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default()
+}
+
 fn parse_one(record: &str) -> Option<CommitInfo> {
     let mut fields = record.split(FIELD);
     let hash = fields.next()?.trim().to_owned();
     let parents = fields.next()?;
     let author = fields.next()?.to_owned();
     let email = fields.next()?.to_owned();
-    let date = fields.next()?.to_owned();
+    let date = iso_utc(fields.next()?);
     let subject = fields.next()?.to_owned();
     let message = fields.next()?.to_owned();
 
@@ -159,7 +179,7 @@ mod tests {
         assert_eq!(head.subject, "first: do a thing");
         assert_eq!(head.author, "Test Author");
         assert_eq!(head.email, "author@example.com");
-        assert_eq!(head.date, "2026-01-01T00:00:00+00:00");
+        assert_eq!(head.date, "2026-01-01T00:00:00Z");
         assert!(head.parents.is_empty());
         assert!(!head.is_merge());
     }

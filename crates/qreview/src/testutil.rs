@@ -304,11 +304,10 @@ mod tests {
         ])
         .await;
 
-        let dates = repo.git(&["log", "--format=%aI", "--reverse"]).await;
-        assert_eq!(
-            dates,
-            "2026-01-01T00:00:00+00:00\n2026-01-01T00:01:00+00:00"
-        );
+        // Seconds since the epoch, not a written date: one git prints
+        // `+00:00` for UTC and another prints `Z`.
+        let dates = repo.git(&["log", "--format=%at", "--reverse"]).await;
+        assert_eq!(dates, "1767225600\n1767225660");
     }
 
     #[tokio::test]
