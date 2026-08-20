@@ -89,9 +89,9 @@ change of the batch, and loads the next batch on demand.*
 - [ ] The intra-line marks
 - [ ] Folded context, opened line by line or whole
 - [ ] Renames and copies as one file
-- [ ] The merge review: the auto-merge base, parent 1, parent 2
+- [x] The merge review: the auto-merge base, parent 1, parent 2
 - [ ] The merge list tab
-- [ ] The `--cc` fallback on git older than 2.38
+- [x] Git older than 2.38 says so and reads against the first parent
 - [ ] **Follow the other parent** on a merge card
 - [ ] The file tree with a filter
 - [ ] Keyboard navigation: next file, next change, next hunk

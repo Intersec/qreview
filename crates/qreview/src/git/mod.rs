@@ -2,3 +2,4 @@
 
 pub mod commit;
 pub mod exec;
+pub mod merge;

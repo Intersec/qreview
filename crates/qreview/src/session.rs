@@ -10,6 +10,7 @@ use std::sync::Arc;
 use crate::diff;
 use crate::git::commit;
 use crate::git::exec::Git;
+use crate::git::merge::{self, Base};
 use crate::highlight::Highlighter;
 use crate::lang::Languages;
 use crate::model::{FileDiff, FileEntry, RepoInfo, RowKind, Series};
@@ -88,10 +89,28 @@ impl Session {
         Ok(added)
     }
 
-    /// The base a change is diffed against: its first parent, or the empty
-    /// tree when it has none.
-    pub async fn base_of(&self, rev: &str) -> Result<String> {
+    /// The tree a change is diffed against.
+    ///
+    /// A normal change is diffed against its first parent, or against the
+    /// empty tree when it is a root commit. A merge takes the base the reader
+    /// picked, and the auto-merge by default.
+    pub async fn base_of(&self, rev: &str, base: Option<Base>) -> Result<String> {
         let info = commit::info(&self.git, rev).await?;
+
+        if let Some(base) = base
+            && let Some(tree) = merge::base_of(&self.git, &info, base).await
+        {
+            return Ok(tree);
+        }
+
+        // A merge with no base asked for reads against the auto-merge, the
+        // way Gerrit shows one.
+        if info.is_merge()
+            && base.is_none()
+            && let Some(tree) = merge::auto_merge_tree(&self.git, &info).await
+        {
+            return Ok(tree);
+        }
 
         Ok(info
             .parents
@@ -101,8 +120,8 @@ impl Session {
     }
 
     /// The files a change touches.
-    pub async fn files(&self, rev: &str) -> Result<Vec<FileEntry>> {
-        let base = self.base_of(rev).await?;
+    pub async fn files(&self, rev: &str, base: Option<Base>) -> Result<Vec<FileEntry>> {
+        let base = self.base_of(rev, base).await?;
         let mut entries = diff::files(&self.git, &base, rev).await?;
 
         for entry in &mut entries {
@@ -112,8 +131,13 @@ impl Session {
     }
 
     /// The diff of one file of a change.
-    pub async fn diff(&self, rev: &str, path: &str) -> Result<Option<FileDiff>> {
-        let base = self.base_of(rev).await?;
+    pub async fn diff(
+        &self,
+        rev: &str,
+        path: &str,
+        base: Option<Base>,
+    ) -> Result<Option<FileDiff>> {
+        let base = self.base_of(rev, base).await?;
         let old = diff::files(&self.git, &base, rev)
             .await?
             .into_iter()
@@ -198,10 +222,23 @@ impl Session {
     /// A key that is not there is not a failure. It is a question with the
     /// answer "no", and the route turns it into a 404.
     pub fn commit_of(&self, key: &str) -> Option<String> {
+        if let Some(change) = self.series.changes.iter().find(|c| c.key == key) {
+            return Some(change.commit.clone());
+        }
+
+        // The merge under the boundary is reviewable, and it is not in the
+        // list: the card is where the reader opens it.
         self.series
-            .changes
-            .iter()
-            .find(|c| c.key == key)
-            .map(|c| c.commit.clone())
+            .boundary
+            .commit
+            .clone()
+            .filter(|commit| key == commit || key == format!("sha-{commit}"))
+    }
+
+    /// The commits a merge brings in.
+    pub async fn merge_list(&self, rev: &str) -> Result<Vec<crate::git::commit::CommitInfo>> {
+        let info = commit::info(&self.git, rev).await?;
+
+        merge::merge_list(&self.git, &info).await
     }
 }

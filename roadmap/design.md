@@ -228,10 +228,12 @@ The base selector of a merge offers:
 A **merge list** tab lists the commits that the merge brings in,
 `git log --oneline <parent1>..<parent2>`. It is a list, not a review surface.
 
-CAUTION: On git older than 2.38, the auto-merge base is not available. The
-tool falls back to `git diff-tree --cc`, which shows the same resolutions in a
-combined diff. A combined diff has no single old line number, so a comment on
-it anchors to the new side only.
+CAUTION: On git older than 2.38, `merge-tree --write-tree` does not exist and
+there is no auto-merge base. The tool says so once, on standard error, and
+falls back to the first parent, which is honest but long. It does **not** fall
+back to `git diff-tree --cc`: a combined diff is a different format with no
+single old line number, and an untested parser for it is worse than a base
+selector the reader can see.
 
 ## 4. Data model
 

@@ -15,6 +15,7 @@ use axum::{Json, Router, middleware};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
+use crate::git::merge::Base;
 use crate::model::{ChangeSummary, FileDiff, FileEntry, Series};
 use crate::session::Session;
 
@@ -45,6 +46,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}", get(change))
         .route("/api/changes/{key}/files", get(files))
         .route("/api/changes/{key}/diff", get(diff))
+        .route("/api/changes/{key}/mergelist", get(mergelist))
         .fallback(interface)
         .layer(middleware::from_fn_with_state(state.clone(), auth::guard))
         .with_state(state)
@@ -114,21 +116,78 @@ async fn change(
         .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))
 }
 
+/// Which side a merge is read against. Absent means the default: the first
+/// parent for a change, the auto-merge for a merge.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct BaseQuery {
+    base: Option<String>,
+}
+
+impl BaseQuery {
+    fn choice(&self) -> Result<Option<Base>, ApiError> {
+        match self.base.as_deref() {
+            None | Some("") | Some("default") => Ok(None),
+            Some("automerge") => Ok(Some(Base::AutoMerge)),
+            Some("parent1") => Ok(Some(Base::Parent(1))),
+            Some("parent2") => Ok(Some(Base::Parent(2))),
+            Some(other) => Err(ApiError::bad_request(format!(
+                "base {other} is not one of automerge, parent1, parent2"
+            ))),
+        }
+    }
+}
+
 async fn files(
     State(state): State<AppState>,
     Path(key): Path<String>,
+    Query(base): Query<BaseQuery>,
 ) -> Result<Json<Vec<FileEntry>>, ApiError> {
     let session = state.session.read().await;
     let commit = session
         .commit_of(&key)
         .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))?;
 
-    Ok(Json(session.files(&commit).await?))
+    Ok(Json(session.files(&commit, base.choice()?).await?))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MergeListItem {
+    commit: String,
+    subject: String,
+    author: String,
+    date: String,
+}
+
+async fn mergelist(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<Json<Vec<MergeListItem>>, ApiError> {
+    let session = state.session.read().await;
+    let commit = session
+        .commit_of(&key)
+        .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))?;
+
+    let list = session
+        .merge_list(&commit)
+        .await?
+        .into_iter()
+        .map(|c| MergeListItem {
+            commit: c.hash,
+            subject: c.subject,
+            author: c.author,
+            date: c.date,
+        })
+        .collect();
+
+    Ok(Json(list))
 }
 
 #[derive(Deserialize)]
 struct DiffQuery {
     file: String,
+    base: Option<String>,
 }
 
 async fn diff(
@@ -141,8 +200,13 @@ async fn diff(
         .commit_of(&key)
         .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))?;
 
+    let base = BaseQuery {
+        base: query.base.clone(),
+    }
+    .choice()?;
+
     session
-        .diff(&commit, &query.file)
+        .diff(&commit, &query.file, base)
         .await?
         .map(Json)
         .ok_or_else(|| ApiError::not_found(format!("{} is not in the change", query.file)))
@@ -160,6 +224,14 @@ impl ApiError {
         Self {
             status: StatusCode::NOT_FOUND,
             code: "notFound",
+            message,
+        }
+    }
+
+    fn bad_request(message: String) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "badRequest",
             message,
         }
     }
@@ -440,6 +512,101 @@ mod tests {
 
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body["error"]["code"], "notFound");
+    }
+
+    async fn merged() -> Repo {
+        build_repo(&[
+            commit("base").file("f", "a\nb\nc\n"),
+            commit("side work")
+                .on_branch("side")
+                .file("f", "a\nB2\nc\n")
+                .file("only-side.txt", "side\n"),
+            commit("main work")
+                .on_branch("main")
+                .file("f", "a\nB1\nc\n"),
+            crate::testutil::merge("Merge side into main")
+                .from("side")
+                .file("f", "a\nRESOLVED\nc\n"),
+        ])
+        .await
+    }
+
+    #[tokio::test]
+    async fn the_merge_under_the_boundary_can_be_opened() {
+        let repo = merged().await;
+        let server = server(&repo).await;
+        let (_, session) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+
+        let merge_commit = session["series"]["boundary"]["commit"].as_str().unwrap();
+        assert_eq!(session["series"]["boundary"]["kind"], "merge");
+
+        let (status, files) = json(
+            server,
+            get_with_cookie(&format!("/api/changes/{merge_commit}/files"), TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let paths: Vec<_> = files
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(paths, ["f"], "the auto-merge shows the resolution alone");
+    }
+
+    #[tokio::test]
+    async fn the_base_selector_changes_what_the_merge_shows() {
+        let repo = merged().await;
+        let server = server(&repo).await;
+        let (_, session) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+        let m = session["series"]["boundary"]["commit"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let (_, first) = json(
+            server.clone(),
+            get_with_cookie(&format!("/api/changes/{m}/files?base=parent1"), TOKEN),
+        )
+        .await;
+        let mut paths: Vec<_> = first
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["path"].as_str().unwrap())
+            .collect();
+        paths.sort_unstable();
+        assert_eq!(paths, ["f", "only-side.txt"], "the whole branch");
+
+        let (status, body) = json(
+            server,
+            get_with_cookie(&format!("/api/changes/{m}/files?base=nonsense"), TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "badRequest");
+    }
+
+    #[tokio::test]
+    async fn the_merge_list_names_the_commits_it_brings_in() {
+        let repo = merged().await;
+        let server = server(&repo).await;
+        let (_, session) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+        let m = session["series"]["boundary"]["commit"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let (status, body) = json(
+            server,
+            get_with_cookie(&format!("/api/changes/{m}/mergelist"), TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body[0]["subject"], "side work");
     }
 
     #[tokio::test]

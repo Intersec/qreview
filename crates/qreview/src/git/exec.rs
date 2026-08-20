@@ -47,6 +47,18 @@ impl Git {
         let out = run_in(&self.root, args).await?;
         String::from_utf8(out.stdout).context("git printed output that is not UTF-8")
     }
+
+    /// Run git and return its output whether it succeeded or not.
+    ///
+    /// Some commands answer with a non-zero code and a useful stdout.
+    /// `merge-tree` does exactly that when the merge conflicts, which is the
+    /// case we care about most.
+    pub async fn output<S: AsRef<OsStr>>(&self, args: &[S]) -> Result<(bool, String)> {
+        let out = raw(&self.root, args).await?;
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+
+        Ok((out.status.success(), text))
+    }
 }
 
 async fn run_in<S: AsRef<OsStr>>(dir: &Path, args: &[S]) -> Result<std::process::Output> {

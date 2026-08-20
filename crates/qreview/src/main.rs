@@ -41,7 +41,7 @@ async fn text_report(session: &Session) -> Result<String> {
     for change in &session.series.changes {
         files.push(ChangeFiles {
             key: change.key.clone(),
-            files: session.files(&change.commit).await?,
+            files: session.files(&change.commit, None).await?,
         });
     }
     Ok(report::render(&session.series, &files))
