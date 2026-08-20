@@ -4,7 +4,6 @@
 //! model, the API, and the comment store arrive in M1 and M2. See
 //! `roadmap/plan.md`.
 
-mod assets;
 mod cli;
 
 use anyhow::{Context, Result};
@@ -13,11 +12,20 @@ use axum::body::Body;
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use clap::Parser;
+use qreview::assets;
+use qreview::git::{self, exec::Git};
 use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = cli::Cli::parse();
+
+    let cwd = std::env::current_dir().context("cannot read the working directory")?;
+    let git = Git::discover(&cwd).await?;
+    let head = git::commit::info(&git, "HEAD").await?;
+
+    println!("repository: {}", git.root().display());
+    println!("head:       {} {}", &head.hash[..12], head.subject);
 
     let app = Router::new().fallback(serve);
 

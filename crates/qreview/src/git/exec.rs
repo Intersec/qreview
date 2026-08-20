@@ -1,0 +1,149 @@
+//! Every call to git goes through here.
+//!
+//! git runs as a child process, never as a library. The tool must agree with
+//! what the developer sees in the terminal, `diff.algorithm` included.
+
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::Duration;
+
+use anyhow::{Context, Result, anyhow, bail};
+use tokio::process::Command;
+
+/// How long a single git call may take. Local git reads the object database
+/// and answers in milliseconds. A call that runs this long is stuck.
+const TIMEOUT: Duration = Duration::from_secs(30);
+
+/// A repository, addressed by its top level directory.
+#[derive(Clone, Debug)]
+pub struct Git {
+    root: PathBuf,
+}
+
+impl Git {
+    /// Find the repository that contains `cwd`.
+    pub async fn discover(cwd: &Path) -> Result<Self> {
+        let out = run_in(cwd, &["rev-parse", "--show-toplevel"]).await?;
+        let root = String::from_utf8(out.stdout)
+            .context("git printed a path that is not UTF-8")?
+            .trim()
+            .to_owned();
+
+        if root.is_empty() {
+            bail!("{} is not inside a git repository", cwd.display());
+        }
+        Ok(Self {
+            root: PathBuf::from(root),
+        })
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Run git and return its standard output as text.
+    pub async fn text<S: AsRef<OsStr>>(&self, args: &[S]) -> Result<String> {
+        let out = run_in(&self.root, args).await?;
+        String::from_utf8(out.stdout).context("git printed output that is not UTF-8")
+    }
+}
+
+async fn run_in<S: AsRef<OsStr>>(dir: &Path, args: &[S]) -> Result<std::process::Output> {
+    let out = raw(dir, args).await?;
+
+    if !out.status.success() {
+        let cmd = describe(args);
+        let err = String::from_utf8_lossy(&out.stderr);
+        let err = err.trim();
+        bail!("`git {cmd}` failed: {err}");
+    }
+    Ok(out)
+}
+
+async fn raw<S: AsRef<OsStr>>(dir: &Path, args: &[S]) -> Result<std::process::Output> {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(dir)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        // A pager, a prompt, or a translated message would all break parsing.
+        .env("GIT_PAGER", "cat")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("LC_ALL", "C");
+
+    let run = cmd.output();
+
+    match tokio::time::timeout(TIMEOUT, run).await {
+        Ok(Ok(out)) => Ok(out),
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(anyhow!("git is not on the PATH"))
+        }
+        Ok(Err(e)) => Err(e).with_context(|| format!("cannot run `git {}`", describe(args))),
+        Err(_) => Err(anyhow!(
+            "`git {}` did not answer in {}s",
+            describe(args),
+            TIMEOUT.as_secs()
+        )),
+    }
+}
+
+fn describe<S: AsRef<OsStr>>(args: &[S]) -> String {
+    args.iter()
+        .map(|a| a.as_ref().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{Commit, build_repo};
+
+    #[tokio::test]
+    async fn discover_finds_the_top_level() {
+        let repo = build_repo(&[Commit::new("first").file("a.txt", "a\n")]).await;
+        let git = Git::discover(repo.path()).await.unwrap();
+
+        assert_eq!(
+            git.root().canonicalize().unwrap(),
+            repo.path().canonicalize().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn discover_works_from_a_subdirectory() {
+        let repo = build_repo(&[Commit::new("first").file("src/a.txt", "a\n")]).await;
+        let git = Git::discover(&repo.path().join("src")).await.unwrap();
+
+        assert_eq!(
+            git.root().canonicalize().unwrap(),
+            repo.path().canonicalize().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_directory_outside_a_repository_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = Git::discover(dir.path()).await.unwrap_err().to_string();
+
+        assert!(
+            err.contains("not inside a git repository") || err.contains("failed"),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failing_command_carries_the_message_of_git() {
+        let repo = build_repo(&[Commit::new("first").file("a.txt", "a\n")]).await;
+        let git = Git::discover(repo.path()).await.unwrap();
+        let err = git
+            .text(&["rev-parse", "no-such-ref"])
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("rev-parse no-such-ref"), "{err}");
+    }
+}

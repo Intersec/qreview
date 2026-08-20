@@ -37,17 +37,19 @@ set.
 ```
 Cargo.toml            the workspace
 crates/
-  qreview/            the binary
+  qreview/
     src/
+      main.rs         the binary: arguments, server start, browser
       cli.rs          the arguments, clap
-      main.rs         the context, the server start, the browser
-      git/            the child process wrappers, the diff parser
+      lib.rs          everything below, so it can be tested without a process
+      git/            the child process wrapper, the diff parser
       series/         the walk, the boundaries, the guess
       gerrit/         the remote URL parser, the ssh query, the fetch
       store/          the comment storage, the anchoring
       lang/           the extension map, syntect, the class output
       api/            the axum routes
       model.rs        the types that cross the wire
+      testutil.rs     the repository fixture, test builds only
   xtask/              the release and changelog chores
 web/                  the Vue application, built by Vite
   src/
@@ -55,6 +57,9 @@ web/                  the Vue application, built by Vite
 tests/                the integration tests of the binary
 Makefile
 ```
+
+The library and the binary are one package. A binary alone would make every
+item that only a test calls look dead, and `-D warnings` would reject it.
 
 `model.rs` holds every type that crosses the wire, with
 `#[serde(rename_all = "camelCase")]`. The TypeScript shapes in section 4 are
