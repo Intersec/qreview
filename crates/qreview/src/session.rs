@@ -3,10 +3,11 @@
 //! The command line builds it, the server shares it, and the interface reads
 //! it through the API. Nothing here touches the working tree.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use std::sync::Arc;
 
+use crate::comments::{self, EditComment, NewComment, Target};
 use crate::diff;
 use crate::git::commit;
 use crate::git::exec::Git;
@@ -16,12 +17,17 @@ use crate::lang::Languages;
 use crate::model::{FileDiff, FileEntry, RepoInfo, RowKind, Series};
 use crate::repo;
 use crate::series::{self, Options, Plan};
+use crate::store::Store;
+use crate::store::model::{ChangeFile, Comment};
 
 pub struct Session {
     pub git: Git,
     pub repo: RepoInfo,
     pub langs: Languages,
     pub highlighter: Arc<Highlighter>,
+    pub store: Store,
+    /// The name comments are written under.
+    pub author: String,
     pub plan: Plan,
     pub series: Series,
 }
@@ -29,16 +35,17 @@ pub struct Session {
 impl Session {
     /// Open a repository and load the first batch of its series.
     pub async fn open(cwd: &std::path::Path, opts: &Options, langs: Languages) -> Result<Self> {
-        Self::with_highlighter(cwd, opts, langs, Arc::new(Highlighter::new())).await
+        Self::with(cwd, opts, langs, Arc::new(Highlighter::new()), None).await
     }
 
-    /// The same, with a highlighter the caller built, so a user grammar
-    /// directory is loaded once and not per session.
-    pub async fn with_highlighter(
+    /// The same, with the parts the caller owns: a highlighter built once for
+    /// the whole run, and a store rooted where the tests want it.
+    pub async fn with(
         cwd: &std::path::Path,
         opts: &Options,
         langs: Languages,
         highlighter: Arc<Highlighter>,
+        store: Option<Store>,
     ) -> Result<Self> {
         let git = Git::discover(cwd).await?;
         let repo = repo::info(&git).await?;
@@ -50,6 +57,12 @@ impl Session {
             .map(|c| c.commit.clone())
             .unwrap_or_else(|| plan.head.clone());
 
+        let store = match store {
+            Some(store) => store,
+            None => Store::open(&repo.id)?,
+        };
+        let author = comments::author_name(&git).await;
+
         let series = Series {
             repo: repo.clone(),
             head: plan.head.clone(),
@@ -58,14 +71,19 @@ impl Session {
             boundary: batch.boundary,
         };
 
-        Ok(Self {
+        let mut session = Self {
             git,
             repo,
             langs,
             highlighter,
+            store,
+            author,
             plan,
             series,
-        })
+        };
+        session.count_comments();
+
+        Ok(session)
     }
 
     /// Load the next batch, from the commit the boundary named.
@@ -85,6 +103,7 @@ impl Session {
         }
         self.series.changes.extend(batch.changes);
         self.series.boundary = batch.boundary;
+        self.count_comments();
 
         Ok(added)
     }
@@ -233,6 +252,67 @@ impl Session {
             .commit
             .clone()
             .filter(|commit| key == commit || key == format!("sha-{commit}"))
+    }
+
+    /// Put the comment counts on the series.
+    ///
+    /// A change file that cannot be read counts as zero here. The series must
+    /// still load, and the failure is said where the change opens.
+    fn count_comments(&mut self) {
+        for change in &mut self.series.changes {
+            let counts = comments::counts(&self.store, &change.key);
+            change.comment_count = counts.total;
+            change.unresolved_count = counts.unresolved;
+        }
+    }
+
+    /// The review of a change.
+    pub fn comments(&self, key: &str, subject: &str) -> Result<ChangeFile> {
+        comments::read(&self.store, key, subject)
+    }
+
+    /// Write a comment on a change.
+    pub async fn add_comment(&self, key: &str, new: NewComment) -> Result<Comment> {
+        let change = self
+            .series
+            .changes
+            .iter()
+            .find(|c| c.key == key)
+            .map(|c| (c.commit.clone(), c.subject.clone()));
+
+        let (rev, subject) = match change {
+            Some(pair) => pair,
+            None => {
+                let commit = self
+                    .commit_of(key)
+                    .with_context(|| format!("no change {key} in the series"))?;
+                let info = commit::info(&self.git, &commit).await?;
+                (commit, info.subject)
+            }
+        };
+        let base = self.base_of(&rev, None).await?;
+
+        Target {
+            store: &self.store,
+            git: &self.git,
+            rev: &rev,
+            base: &base,
+            key,
+            subject: &subject,
+            author: &self.author,
+            // One patch set until M5 adds the rest.
+            patch_set: 1,
+        }
+        .add(new)
+        .await
+    }
+
+    pub fn edit_comment(&self, key: &str, id: &str, edit: EditComment) -> Result<Comment> {
+        comments::edit(&self.store, key, id, edit)
+    }
+
+    pub fn delete_comment(&self, key: &str, id: &str) -> Result<usize> {
+        comments::delete(&self.store, key, id)
     }
 
     /// The commits a merge brings in.

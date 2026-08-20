@@ -15,9 +15,11 @@ use axum::{Json, Router, middleware};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
+use crate::comments::{EditComment, NewComment};
 use crate::git::merge::Base;
 use crate::model::{ChangeSummary, FileDiff, FileEntry, Series};
 use crate::session::Session;
+use crate::store::model::{ChangeFile, Comment};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -47,6 +49,14 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/files", get(files))
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/mergelist", get(mergelist))
+        .route(
+            "/api/changes/{key}/comments",
+            get(comments).post(add_comment),
+        )
+        .route(
+            "/api/changes/{key}/comments/{id}",
+            axum::routing::patch(edit_comment).delete(delete_comment),
+        )
         .fallback(interface)
         .layer(middleware::from_fn_with_state(state.clone(), auth::guard))
         .with_state(state)
@@ -212,6 +222,59 @@ async fn diff(
         .ok_or_else(|| ApiError::not_found(format!("{} is not in the change", query.file)))
 }
 
+async fn comments(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<Json<ChangeFile>, ApiError> {
+    let session = state.session.read().await;
+    let subject = session
+        .series
+        .changes
+        .iter()
+        .find(|c| c.key == key)
+        .map(|c| c.subject.clone())
+        .unwrap_or_default();
+
+    Ok(Json(session.comments(&key, &subject)?))
+}
+
+async fn add_comment(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Json(new): Json<NewComment>,
+) -> Result<(StatusCode, Json<Comment>), ApiError> {
+    let session = state.session.read().await;
+    let comment = session.add_comment(&key, new).await?;
+
+    Ok((StatusCode::CREATED, Json(comment)))
+}
+
+async fn edit_comment(
+    State(state): State<AppState>,
+    Path((key, id)): Path<(String, String)>,
+    Json(edit): Json<EditComment>,
+) -> Result<Json<Comment>, ApiError> {
+    let session = state.session.read().await;
+
+    Ok(Json(session.edit_comment(&key, &id, edit)?))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Deleted {
+    deleted: usize,
+}
+
+async fn delete_comment(
+    State(state): State<AppState>,
+    Path((key, id)): Path<(String, String)>,
+) -> Result<Json<Deleted>, ApiError> {
+    let session = state.session.read().await;
+    let deleted = session.delete_comment(&key, &id)?;
+
+    Ok(Json(Deleted { deleted }))
+}
+
 /// One error shape for every route.
 pub struct ApiError {
     status: StatusCode,
@@ -284,12 +347,26 @@ mod tests {
 
     const TOKEN: &str = "0123456789abcdef";
 
+    /// A server whose comment store is a temporary directory. A test must
+    /// never write into the state directory of the person running it.
     async fn server(repo: &Repo) -> Router {
-        let session = Session::open(repo.path(), &Options::new(), Languages::new())
-            .await
-            .unwrap();
+        let session = session_of(repo, Options::new()).await;
 
         app(AppState::new(session, TOKEN.to_owned()))
+    }
+
+    async fn session_of(repo: &Repo, opts: Options) -> Session {
+        let store = crate::store::Store::at(repo.path().join(".qreview-test").as_path());
+
+        Session::with(
+            repo.path(),
+            &opts,
+            Languages::new(),
+            std::sync::Arc::new(crate::highlight::Highlighter::new()),
+            Some(store),
+        )
+        .await
+        .unwrap()
     }
 
     async fn fixture() -> Repo {
@@ -609,6 +686,236 @@ mod tests {
         assert_eq!(body[0]["subject"], "side work");
     }
 
+    fn post(uri: &str, body: &str) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(header::COOKIE, format!("{}={TOKEN}", auth::COOKIE))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_owned()))
+            .unwrap()
+    }
+
+    fn send(method: &str, uri: &str, body: &str) -> Request<Body> {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::COOKIE, format!("{}={TOKEN}", auth::COOKIE))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_owned()))
+            .unwrap()
+    }
+
+    const LINE_COMMENT: &str = r#"{"scope":"line","file":"src/a.blk","side":"new","startLine":2,"body":"this reads wrong"}"#;
+
+    #[tokio::test]
+    async fn a_line_comment_records_where_it_sits() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        let (status, body) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", LINE_COMMENT),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(body["body"], "this reads wrong");
+        assert_eq!(body["author"], "Test Author");
+        assert_eq!(body["anchor"]["file"], "src/a.blk");
+        assert_eq!(body["anchor"]["startLine"], 2);
+        assert!(
+            body["anchor"]["blob"].is_string(),
+            "the blob is what the anchor is read from: {body}"
+        );
+        assert!(
+            body["anchor"]["lineHash"]
+                .as_str()
+                .unwrap()
+                .starts_with("sha256:"),
+            "{body}"
+        );
+        assert!(
+            body["anchor"]["context"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("TWO")),
+            "the context must hold the line itself: {body}"
+        );
+
+        let (_, back) = json(
+            server,
+            get_with_cookie("/api/changes/I8f3ac21/comments", TOKEN),
+        )
+        .await;
+        assert_eq!(back["comments"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_comment_with_no_text_is_refused() {
+        let repo = fixture().await;
+        let (status, _) = json(
+            server(&repo).await,
+            post(
+                "/api/changes/I8f3ac21/comments",
+                r#"{"scope":"change","body":"   "}"#,
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn a_thread_is_resolved_on_its_first_comment() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        let (_, first) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", LINE_COMMENT),
+        )
+        .await;
+        let parent = first["id"].as_str().unwrap().to_owned();
+
+        let (status, reply) = json(
+            server.clone(),
+            post(
+                "/api/changes/I8f3ac21/comments",
+                &format!(r#"{{"scope":"change","parentId":"{parent}","body":"I disagree"}}"#),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let reply_id = reply["id"].as_str().unwrap().to_owned();
+
+        let (status, _) = json(
+            server.clone(),
+            send(
+                "PATCH",
+                &format!("/api/changes/I8f3ac21/comments/{reply_id}"),
+                r#"{"resolved":true}"#,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "a reply carries no resolved flag"
+        );
+
+        let (status, done) = json(
+            server,
+            send(
+                "PATCH",
+                &format!("/api/changes/I8f3ac21/comments/{parent}"),
+                r#"{"resolved":true}"#,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(done["resolved"], true);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_comment_takes_its_replies_with_it() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        let (_, first) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", LINE_COMMENT),
+        )
+        .await;
+        let parent = first["id"].as_str().unwrap().to_owned();
+
+        json(
+            server.clone(),
+            post(
+                "/api/changes/I8f3ac21/comments",
+                &format!(r#"{{"scope":"change","parentId":"{parent}","body":"an answer"}}"#),
+            ),
+        )
+        .await;
+
+        let (status, body) = json(
+            server.clone(),
+            send(
+                "DELETE",
+                &format!("/api/changes/I8f3ac21/comments/{parent}"),
+                "",
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["deleted"], 2,
+            "a reply with nothing above it is unreadable"
+        );
+
+        let (_, left) = json(
+            server,
+            get_with_cookie("/api/changes/I8f3ac21/comments", TOKEN),
+        )
+        .await;
+        assert!(left["comments"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_series_carries_the_comment_counts() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", LINE_COMMENT),
+        )
+        .await;
+
+        // A new session reads the store again, the way a restart would.
+        let session = session_of(&repo, Options::new()).await;
+        let fresh = app(AppState::new(session, TOKEN.to_owned()));
+        let (_, body) = json(fresh, get_with_cookie("/api/session", TOKEN)).await;
+
+        let change = &body["series"]["changes"][0];
+        assert_eq!(change["key"], "I8f3ac21");
+        assert_eq!(change["commentCount"], 1);
+        assert_eq!(change["unresolvedCount"], 1);
+    }
+
+    #[tokio::test]
+    async fn an_amend_keeps_the_comments() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        json(server, post("/api/changes/I8f3ac21/comments", LINE_COMMENT)).await;
+        let before = repo.sha("HEAD").await;
+
+        std::fs::write(repo.path().join("src/a.blk"), "one\nTHREE\n").unwrap();
+        repo.git(&["add", "-A"]).await;
+        repo.git(&["commit", "--amend", "--no-edit"]).await;
+        assert_ne!(
+            repo.sha("HEAD").await,
+            before,
+            "the amend makes a new commit"
+        );
+
+        let session = session_of(&repo, Options::new()).await;
+        let after = app(AppState::new(session, TOKEN.to_owned()));
+        let (status, body) = json(
+            after,
+            get_with_cookie("/api/changes/I8f3ac21/comments", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["comments"][0]["body"], "this reads wrong",
+            "the Change-Id is the key, so the amend keeps the review"
+        );
+    }
+
     #[tokio::test]
     async fn extend_appends_and_never_reorders() {
         let commits: Vec<_> = (1..=9)
@@ -618,10 +925,10 @@ mod tests {
 
         let mut opts = Options::new();
         opts.guess_max = 3;
-        let session = Session::open(repo.path(), &opts, Languages::new())
-            .await
-            .unwrap();
-        let server = app(AppState::new(session, TOKEN.to_owned()));
+        let server = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
 
         let before = json(server.clone(), get_with_cookie("/api/session", TOKEN))
             .await

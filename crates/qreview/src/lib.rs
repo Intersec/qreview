@@ -6,6 +6,7 @@
 
 pub mod api;
 pub mod assets;
+pub mod comments;
 pub mod diff;
 pub mod git;
 pub mod highlight;
@@ -16,6 +17,7 @@ pub mod repo;
 pub mod report;
 pub mod series;
 pub mod session;
+pub mod store;
 
 #[cfg(test)]
 mod testutil;

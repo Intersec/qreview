@@ -103,15 +103,15 @@ change of the batch, and loads the next batch on demand.*
 *Exit: a whole review of a series can be written and found again after a
 restart.*
 
-- [ ] The store: the layout, the repository identity, the atomic write
-- [ ] A read that survives a corrupt file and never deletes it
-- [ ] The comment routes, create, edit, delete, resolve
+- [x] The store: the layout, the repository identity, the atomic write
+- [x] A read that survives a corrupt file and never deletes it
+- [x] The comment routes, create, edit, delete, resolve
 - [ ] A comment on a line, on a range, on a file, on the change
-- [ ] Threads and replies
-- [ ] The draft mark
+- [x] Threads and replies
+- [x] The draft mark
 - [ ] Markdown in the body
-- [ ] The comment count on the series pane
-- [ ] Make sure that an amend keeps the comments
+- [x] The comment count on the series pane
+- [x] Make sure that an amend keeps the comments
 
 ## M5 — Patch sets
 

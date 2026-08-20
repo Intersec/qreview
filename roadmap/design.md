@@ -337,7 +337,9 @@ trailing `.git`, so `ssh://review.example.com:29418/myproject` and
 `review.example.com:myproject.git` are the same repository. A repository with no remote falls back to the hash of the
 real path of the top level directory.
 
-One file per change keeps a write small and a manual repair possible.
+One file per change keeps a write small and a manual repair possible. A
+comment route is scoped under its change for the same reason: one file is
+read, and one file is written.
 
 ### 5.2 The file of a change
 
@@ -489,8 +491,8 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
 | `GET /api/changes/:key/comments` | Every comment of the change |
 | `POST /api/changes/:key/comments` | Create a comment or a reply |
-| `PATCH /api/comments/:id` | Change the body, or resolve the thread |
-| `DELETE /api/comments/:id` | Delete a comment |
+| `PATCH /api/changes/:key/comments/:id` | Change the body, or resolve the thread |
+| `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |
 | `POST /api/changes/:key/patchsets/fetch` | Fetch one Gerrit patch set |
 | `GET /api/export?scope=change&key=...` | The export text |
 

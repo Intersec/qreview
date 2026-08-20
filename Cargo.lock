@@ -674,6 +674,7 @@ dependencies = [
  "similar",
  "syntect",
  "tempfile",
+ "time",
  "tokio",
  "tower",
  "two-face",
