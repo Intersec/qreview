@@ -721,8 +721,9 @@ tr.talk td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl;
-  text-align: left;
+  /* Not right to left here: it would carry the trailing slash to the front
+     and print `/src` for `src/`. A directory is short enough to cut at the
+     end. */
 }
 .file-row .file-path {
   direction: ltr;
