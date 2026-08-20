@@ -154,7 +154,7 @@ first try. No Node, no cargo, no install step.*
 - [x] The README: install, use, and the custom file types section
 - [x] `cargo xtask release`: the changelog collection, the version bump, the
       tag
-- [ ] `make dist`, the musl binary, and the size of it written in `stack.md`
+- [x] `make dist`, the musl binary, and the size of it written in `stack.md`
 - [ ] Tag `v0.1.0`
 
 ---

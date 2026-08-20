@@ -132,6 +132,11 @@ musl with its own bundled linker. `make dist` adds the target when it is
 missing, so the only prerequisite is rustup, which asdf already uses to
 install Rust.
 
+Measured again at v0.1.0, with the interface and 199 grammars inside it:
+**6.2 MB**, still statically linked, and it serves a review with `web/dist`
+deleted. The grammar set is most of the growth, and it is what makes a `.blk`
+file read as C with no configuration.
+
 ## 2026-08-20 — Comments live in the state directory of the user
 
 **Decision.** Comments are stored under `~/.local/state/qreview/`, keyed by
