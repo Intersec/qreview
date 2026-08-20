@@ -11,6 +11,9 @@ use clap::Parser;
 use tokio::net::TcpListener;
 
 use qreview::api::{self, AppState, auth};
+use qreview::config;
+use qreview::git::exec::Git;
+use qreview::highlight::Highlighter;
 use qreview::lang::Languages;
 use qreview::report::{self, ChangeFiles};
 use qreview::series::Options;
@@ -21,13 +24,33 @@ async fn main() -> Result<()> {
     let cli = cli::Cli::parse();
 
     let cwd = std::env::current_dir().context("cannot read the working directory")?;
+    let root = Git::discover(&cwd).await?.root().to_path_buf();
+    let config = config::load(&root)?;
+
     let mut opts = Options::new();
     opts.rev = cli.rev.clone();
     opts.base = cli.base.clone();
     opts.prevs = cli.prev.clone();
-    opts.gerrit = !cli.no_gerrit;
+    opts.max_commits = config.series.max_commits;
+    opts.guess_max = config.series.guess_max;
+    opts.batch_size = config.series.batch_size;
+    opts.integration_branch = config
+        .series
+        .integration_branch
+        .clone()
+        .or_else(|| config.gerrit.branch.clone());
+    // The option only ever switches Gerrit off, never on.
+    opts.gerrit = config.gerrit.enabled && !cli.no_gerrit;
 
-    let session = Session::open(&cwd, &opts, Languages::new()).await?;
+    let mut langs = Languages::new();
+    langs.extend(&config.languages);
+
+    let highlighter = match config::grammar_dir().filter(|dir| dir.is_dir()) {
+        Some(dir) => Highlighter::with_grammars(&dir),
+        None => Highlighter::new(),
+    };
+
+    let session = Session::with(&cwd, &opts, langs, std::sync::Arc::new(highlighter), None).await?;
 
     match cli.command {
         Some(cli::Command::Export { key, all }) => {
@@ -49,7 +72,7 @@ async fn main() -> Result<()> {
     print!("{}", text_report(&session).await?);
 
     let token = auth::new_token();
-    let state = AppState::new(session, token.clone());
+    let state = AppState::new(session, token.clone()).with_ui(config.ui.clone());
 
     serve(cli.port, api::app(state), &token, cli.no_open).await
 }

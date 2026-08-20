@@ -28,6 +28,8 @@ use crate::store::model::{ChangeFile, Comment};
 pub struct AppState {
     pub session: Arc<RwLock<Session>>,
     pub token: Arc<String>,
+    /// What the configuration asks the interface to start with.
+    pub ui: Arc<crate::config::Ui>,
 }
 
 impl AppState {
@@ -35,7 +37,13 @@ impl AppState {
         Self {
             session: Arc::new(RwLock::new(session)),
             token: Arc::new(token),
+            ui: Arc::new(crate::config::Config::default().ui),
         }
+    }
+
+    pub fn with_ui(mut self, ui: crate::config::Ui) -> Self {
+        self.ui = Arc::new(ui);
+        self
     }
 }
 
@@ -89,6 +97,7 @@ async fn interface(uri: axum::http::Uri) -> Response {
 struct SessionBody {
     version: &'static str,
     series: Series,
+    ui: crate::config::Ui,
 }
 
 async fn session(State(state): State<AppState>) -> Json<SessionBody> {
@@ -97,6 +106,7 @@ async fn session(State(state): State<AppState>) -> Json<SessionBody> {
     Json(SessionBody {
         version: env!("CARGO_PKG_VERSION"),
         series: session.series.clone(),
+        ui: (*state.ui).clone(),
     })
 }
 

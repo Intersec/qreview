@@ -1,0 +1,21 @@
+{
+  "languages": {
+    "blk": "c",
+    "pxc": "c",
+    "pyx": "python",
+    "iop": "d"
+  },
+  "gerrit": {
+    "enabled": true,
+    "branch": null
+  },
+  "series": {
+    "maxCommits": 50,
+    "guessMax": 10,
+    "batchSize": 5,
+    "integrationBranch": null
+  },
+  "ui": {
+    "diff": "unified"
+  }
+}

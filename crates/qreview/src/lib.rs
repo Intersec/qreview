@@ -8,6 +8,7 @@ pub mod anchor;
 pub mod api;
 pub mod assets;
 pub mod comments;
+pub mod config;
 pub mod diff;
 pub mod export;
 pub mod gerrit;

@@ -551,16 +551,23 @@ Three layers, the later one wins:
 ```json
 {
   "languages": { "blk": "c", "pxc": "c" },
-  "gerrit": { "enabled": true, "timeoutMs": 5000, "branch": null },
+  "gerrit": { "enabled": true, "branch": null },
   "series": {
     "maxCommits": 50,
     "guessMax": 10,
     "batchSize": 5,
     "integrationBranch": null
   },
-  "ui": { "theme": "auto", "diff": "side-by-side", "tabWidth": 4 }
+  "ui": { "diff": "unified" }
 }
 ```
+
+A key nobody knows is refused, and the error names it. A configuration that
+is silently ignored is worse than one that refuses to start, because nobody
+notices the typo. `examples/` holds a copy of both files.
+
+A language map is merged, not replaced: a repository adds its own file types
+without repeating the ones the tool already knows.
 
 ## 11. Command line
 

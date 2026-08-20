@@ -1,0 +1,12 @@
+{
+  "languages": {
+    "blk": "c",
+    "blkk": "c",
+    "pxc": "c",
+    "pyx": "python",
+    "pxd": "python",
+    "pxi": "python",
+    "iop": "d",
+    "tpl": "jinja2"
+  }
+}

@@ -36,6 +36,8 @@ export const useReview = defineStore('review', () => {
   const patchSet = ref<number | undefined>(undefined);
   /// What that patch set is read against.
   const against = ref<string | undefined>(undefined);
+  /// The view the reader last chose. The configuration decides the first
+  /// time, and the choice sticks after that.
   const split = ref(localStorage.getItem('qreview.split') === 'yes');
   const mergeList = ref<MergeListItem[]>([]);
 
@@ -61,6 +63,10 @@ export const useReview = defineStore('review', () => {
       const body = await api.session();
       version.value = body.version;
       series.value = body.series;
+
+      if (localStorage.getItem('qreview.split') === null) {
+        split.value = body.ui.diff === 'side-by-side';
+      }
 
       const first = body.series.changes[0];
       if (first) {

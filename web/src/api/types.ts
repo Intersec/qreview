@@ -97,9 +97,15 @@ export interface FileDiff extends FileEntry {
   hunks: Hunk[];
 }
 
+export interface Ui {
+  /// `unified` or `side-by-side`.
+  diff: string;
+}
+
 export interface SessionBody {
   version: string;
   series: Series;
+  ui: Ui;
 }
 
 export interface MergeListItem {
