@@ -1,6 +1,7 @@
 //! The diff of a change: which files, and what changed inside one.
 
 pub mod parse;
+pub mod words;
 
 use anyhow::Result;
 
@@ -63,8 +64,14 @@ pub async fn file(
     }
 
     let patch = git.text(&call).await?;
+    let mut found = parse(&patch).into_iter().find(|f| f.file.path == path);
 
-    Ok(parse(&patch).into_iter().find(|f| f.file.path == path))
+    if let Some(diff) = found.as_mut() {
+        for hunk in &mut diff.hunks {
+            words::mark(hunk);
+        }
+    }
+    Ok(found)
 }
 
 fn parse_numstat(out: &str) -> Vec<FileEntry> {
