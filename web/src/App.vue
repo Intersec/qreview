@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import DiffView from './components/DiffView.vue';
 import FileList from './components/FileList.vue';
@@ -23,7 +23,68 @@ const {
   split,
 } = storeToRefs(review);
 
-onMounted(() => review.load());
+const fileList = ref<InstanceType<typeof FileList> | null>(null);
+
+/// Move through the review without the mouse.
+///
+/// j and k walk the files, n and p walk the changes, u swaps the two diff
+/// views, and / jumps to the filter. A key typed into a field is the text of
+/// that field and nothing else.
+function onKey(event: KeyboardEvent) {
+  const target = event.target as HTMLElement | null;
+  const typing =
+    target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+  if (typing || event.metaKey || event.ctrlKey || event.altKey) {
+    return;
+  }
+
+  const step = (list: string[], current: string | null, by: number): string | null => {
+    if (list.length === 0) {
+      return null;
+    }
+    const at = current === null ? -1 : list.indexOf(current);
+    const next = Math.min(Math.max(at + by, 0), list.length - 1);
+    return list[next] ?? null;
+  };
+
+  const paths = files.value.filter((f) => !f.binary).map((f) => f.path);
+  const keys = series.value?.changes.map((c) => c.key) ?? [];
+
+  switch (event.key) {
+    case 'j':
+    case 'k': {
+      const path = step(paths, filePath.value, event.key === 'j' ? 1 : -1);
+      if (path) {
+        review.openFile(path);
+      }
+      break;
+    }
+    case 'n':
+    case 'p': {
+      const key = step(keys, changeKey.value, event.key === 'n' ? 1 : -1);
+      if (key) {
+        review.openChange(key);
+      }
+      break;
+    }
+    case 'u':
+      review.setSplit(!split.value);
+      break;
+    case '/':
+      event.preventDefault();
+      fileList.value?.focusFilter();
+      break;
+    default:
+      return;
+  }
+}
+
+onMounted(() => {
+  review.load();
+  window.addEventListener('keydown', onKey);
+});
+
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
@@ -57,6 +118,7 @@ onMounted(() => review.load());
         @review-merge="review.openMerge()"
       />
       <FileList
+        ref="fileList"
         class="border-b border-slate-200 md:border-b-0 md:border-r dark:border-slate-700"
         :files="files"
         :selected="filePath"

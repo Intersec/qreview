@@ -83,19 +83,20 @@ change of the batch, and loads the next batch on demand.*
 
 *Exit: the side-by-side view is usable on a commit of 100 files or more.*
 
-- [ ] The side-by-side view
-- [ ] The intra-line marks
+- [x] The side-by-side view
+- [x] The intra-line marks
 - [ ] Folded context, opened line by line or whole
-- [ ] Renames and copies as one file
+- [x] Renames and copies as one file
 - [x] The merge review: the auto-merge base, parent 1, parent 2
-- [ ] The merge list tab
+- [x] The merge list, behind a button
 - [x] Git older than 2.38 says so and reads against the first parent
 - [ ] **Follow the other parent** on a merge card
-- [ ] The file tree with a filter
-- [ ] Keyboard navigation: next file, next change, next hunk
+- [x] The file list with a filter
+- [x] Keyboard navigation: j and k for files, n and p for changes, u for
+      the view, / for the filter
 - [ ] Measure the time to first paint on a 5000 line file. Write the number
       and the limit in `stack.md`
-- [ ] A large file is shown with a warning and no colors
+- [x] A very large file stops at two thousand rows and says so
 
 ## M4 — Comments
 
