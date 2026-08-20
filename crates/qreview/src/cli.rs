@@ -1,10 +1,13 @@
 //! The command line.
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "qreview", version, about, long_about = None)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
     /// A revision, or a `revA..revB` range. The current series by default.
     pub rev: Option<String>,
 
@@ -27,4 +30,21 @@ pub struct Cli {
     /// The port to listen on. 0 asks the system for a free one.
     #[arg(long, default_value_t = 0)]
     pub port: u16,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Print the review as Markdown, to paste into a session.
+    Export {
+        /// One change. The whole series when it is missing.
+        #[arg(long, value_name = "CHANGE-ID")]
+        key: Option<String>,
+
+        /// Include the threads somebody marked resolved.
+        #[arg(long)]
+        all: bool,
+    },
+
+    /// List the changes this repository has a review for.
+    List,
 }

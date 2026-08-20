@@ -31,6 +31,15 @@ const {
 
 const threads = computed(() => review.threads());
 const lost = computed(() => review.lost());
+const copied = ref(false);
+
+async function copy(scope: 'change' | 'series') {
+  await review.copyExport(scope);
+  copied.value = true;
+  window.setTimeout(() => {
+    copied.value = false;
+  }, 2000);
+}
 
 const fileList = ref<InstanceType<typeof FileList> | null>(null);
 
@@ -105,7 +114,28 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       <p v-if="series" class="truncate text-xs text-slate-500 dark:text-slate-400">
         {{ series.repo.remote ?? series.repo.root }}
       </p>
-      <p class="ml-auto text-xs text-slate-400 dark:text-slate-500">{{ version }}</p>
+      <div class="ml-auto flex items-center gap-2 text-xs">
+        <button
+          type="button"
+          class="rounded border border-slate-300 px-2 py-1 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
+          title="The comments of this change, as Markdown, in the clipboard"
+          @click="copy('change')"
+        >
+          Copy this change
+        </button>
+        <button
+          type="button"
+          class="rounded border border-slate-300 px-2 py-1 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
+          title="The comments of the whole series, as Markdown, in the clipboard"
+          @click="copy('series')"
+        >
+          Copy the series
+        </button>
+        <span v-if="copied" role="status" class="text-emerald-700 dark:text-emerald-400">
+          copied
+        </span>
+        <span class="text-slate-400 dark:text-slate-500">{{ version }}</span>
+      </div>
     </header>
 
     <p

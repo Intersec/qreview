@@ -68,6 +68,25 @@ export const api = {
   mergeList: (key: string) =>
     call<MergeListItem[]>(`/api/changes/${encodeURIComponent(key)}/mergelist`),
 
+  /// The review as Markdown. Not JSON: it is made to be pasted.
+  exportText: async (key?: string, all = false): Promise<string> => {
+    const params = new URLSearchParams();
+    if (key) {
+      params.set('scope', 'change');
+      params.set('key', key);
+    }
+    if (all) {
+      params.set('all', 'true');
+    }
+    const response = await fetch(`/api/export?${params.toString()}`, {
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new ApiError('failed', response.statusText);
+    }
+    return response.text();
+  },
+
   comments: (key: string, ps?: number) =>
     call<Review>(`/api/changes/${encodeURIComponent(key)}/comments${query({ ps: num(ps) })}`),
 

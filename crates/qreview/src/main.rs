@@ -28,12 +28,54 @@ async fn main() -> Result<()> {
     opts.gerrit = !cli.no_gerrit;
 
     let session = Session::open(&cwd, &opts, Languages::new()).await?;
+
+    match cli.command {
+        Some(cli::Command::Export { key, all }) => {
+            let options = qreview::export::Options { all };
+            let text = match key {
+                Some(key) => qreview::export::change(&session, &key, options).await?,
+                None => qreview::export::series(&session, options).await?,
+            };
+            print!("{text}");
+            return Ok(());
+        }
+        Some(cli::Command::List) => {
+            print!("{}", list(&session));
+            return Ok(());
+        }
+        None => {}
+    }
+
     print!("{}", text_report(&session).await?);
 
     let token = auth::new_token();
     let state = AppState::new(session, token.clone());
 
     serve(cli.port, api::app(state), &token, cli.no_open).await
+}
+
+/// The reviews this repository has stored, whether the change is in the
+/// series being read or not.
+fn list(session: &Session) -> String {
+    let keys = session.store.keys();
+    if keys.is_empty() {
+        return "No review is stored for this repository.\n".to_owned();
+    }
+
+    let mut out = String::new();
+    for key in keys {
+        let Ok(file) = session.comments(&key, "") else {
+            out.push_str(&format!("{key}  (unreadable)\n"));
+            continue;
+        };
+        out.push_str(&format!(
+            "{key}  {} comments, {} unresolved  {}\n",
+            file.comments.len(),
+            file.unresolved(),
+            file.subject
+        ));
+    }
+    out
 }
 
 /// The series as text. The interface arrives in M2, see `roadmap/plan.md`.

@@ -147,6 +147,21 @@ export const useReview = defineStore('review', () => {
     });
   }
 
+  /// The review as Markdown, in the clipboard.
+  ///
+  /// The clipboard is refused outside a secure context in some browsers, and
+  /// the text is worth more than the convenience, so the failure hands it
+  /// back rather than swallowing it.
+  async function copyExport(scope: 'change' | 'series'): Promise<string | null> {
+    const key = scope === 'change' ? (changeKey.value ?? undefined) : undefined;
+    let text = '';
+    await guard(async () => {
+      text = await api.exportText(key);
+      await navigator.clipboard.writeText(text);
+    });
+    return error.value ? text : null;
+  }
+
   /// Bring a patch set that lives on Gerrit into this clone.
   async function fetchPatchSet(number: number) {
     const key = changeKey.value;
@@ -235,6 +250,7 @@ export const useReview = defineStore('review', () => {
     patchSets,
     gerrit,
     fetchPatchSet,
+    copyExport,
     patchSet,
     against,
     openPatchSet,

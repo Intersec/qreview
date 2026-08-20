@@ -52,6 +52,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/files", get(files))
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/mergelist", get(mergelist))
+        .route("/api/export", get(export))
         .route("/api/changes/{key}/patchsets", get(patchsets))
         .route(
             "/api/changes/{key}/patchsets/{number}/fetch",
@@ -326,6 +327,35 @@ async fn fetch_patch_set(
     let session = state.session.read().await;
 
     Ok(Json(session.fetch_patch_set(&key, number).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportQuery {
+    /// `change` or `series`. The whole series by default.
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
+    key: Option<String>,
+    /// Include the threads somebody marked resolved.
+    #[serde(default)]
+    all: bool,
+}
+
+async fn export(
+    State(state): State<AppState>,
+    Query(query): Query<ExportQuery>,
+) -> Result<String, ApiError> {
+    let session = state.session.read().await;
+    let opts = crate::export::Options { all: query.all };
+
+    match (query.scope.as_deref(), query.key) {
+        (Some("change"), Some(key)) => Ok(crate::export::change(&session, &key, opts).await?),
+        (Some("change"), None) => Err(ApiError::bad_request(
+            "a change export needs the key of the change".to_owned(),
+        )),
+        _ => Ok(crate::export::series(&session, opts).await?),
+    }
 }
 
 async fn comments(

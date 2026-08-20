@@ -9,6 +9,7 @@ pub mod api;
 pub mod assets;
 pub mod comments;
 pub mod diff;
+pub mod export;
 pub mod gerrit;
 pub mod git;
 pub mod highlight;
