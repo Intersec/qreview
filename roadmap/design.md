@@ -488,6 +488,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/changes/:key` | The change, its patch sets, its comment count |
 | `GET /api/changes/:key/files?ps=2&base=parent` | The file list with the statistics |
 | `GET /api/changes/:key/diff?ps=2&base=parent&file=...` | The hunks of one file |
+| `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
 | `GET /api/changes/:key/comments` | Every comment of the change |
 | `POST /api/changes/:key/comments` | Create a comment or a reply |
@@ -499,8 +500,9 @@ All routes are under `/api`, all answers are JSON, all errors carry
 Two static routes sit outside `/api`: `/` serves the interface, and
 `/theme/<name>.css` serves the stylesheet that names the syntax classes.
 
-On a merge, `base` takes `automerge` (the default), `parent1`, or `parent2`.
-On any other change, `base` takes `parent` or a patch set number.
+`ps` names the patch set to read, and the last one is the default. `base`
+takes `parent` (the default), `ps:<n>` to read one patch set against another,
+and on a merge `automerge` (its default), `parent1` or `parent2`.
 
 One file at a time on the diff route. A change with 200 files must not build
 200 diffs to show the first one.

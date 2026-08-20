@@ -18,6 +18,8 @@ use tokio::sync::RwLock;
 use crate::comments::{EditComment, NewComment};
 use crate::git::merge::Base;
 use crate::model::{ChangeSummary, FileDiff, FileEntry, Series};
+use crate::patchset::PatchSet;
+use crate::session::Against;
 use crate::session::Session;
 use crate::store::model::{ChangeFile, Comment};
 
@@ -49,6 +51,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/files", get(files))
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/mergelist", get(mergelist))
+        .route("/api/changes/{key}/patchsets", get(patchsets))
         .route(
             "/api/changes/{key}/comments",
             get(comments).post(add_comment),
@@ -130,35 +133,90 @@ async fn change(
 /// parent for a change, the auto-merge for a merge.
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-struct BaseQuery {
+struct ViewQuery {
+    /// Which patch set to read. The last one when it is missing.
+    ps: Option<usize>,
+    /// What to read it against.
     base: Option<String>,
 }
 
-impl BaseQuery {
-    fn choice(&self) -> Result<Option<Base>, ApiError> {
-        match self.base.as_deref() {
-            None | Some("") | Some("default") => Ok(None),
-            Some("automerge") => Ok(Some(Base::AutoMerge)),
-            Some("parent1") => Ok(Some(Base::Parent(1))),
-            Some("parent2") => Ok(Some(Base::Parent(2))),
-            Some(other) => Err(ApiError::bad_request(format!(
-                "base {other} is not one of automerge, parent1, parent2"
+/// A base is a word, or `ps:<n>` to read one patch set against another.
+fn parse_base(value: Option<&str>) -> Result<Option<Against>, ApiError> {
+    match value {
+        None | Some("") | Some("default") | Some("parent") => Ok(None),
+        Some("automerge") => Ok(Some(Against::Merge(Base::AutoMerge))),
+        Some("parent1") => Ok(Some(Against::Merge(Base::Parent(1)))),
+        Some("parent2") => Ok(Some(Against::Merge(Base::Parent(2)))),
+        Some(other) => match other
+            .strip_prefix("ps:")
+            .and_then(|n| n.parse::<usize>().ok())
+        {
+            // The number is turned into a commit by the caller, which is the
+            // only place that knows the patch sets of this change.
+            Some(number) => Ok(Some(Against::Tree(format!("ps:{number}")))),
+            None => Err(ApiError::bad_request(format!(
+                "base {other} is not one of parent, automerge, parent1, parent2, ps:<n>"
             ))),
-        }
+        },
     }
+}
+
+/// Turn a `ps:<n>` placeholder into the commit of that patch set.
+async fn resolve_base(
+    session: &Session,
+    key: &str,
+    against: Option<Against>,
+) -> Result<Against, ApiError> {
+    let Some(against) = against else {
+        return Ok(Against::Parent);
+    };
+
+    if let Against::Tree(name) = &against
+        && let Some(number) = name
+            .strip_prefix("ps:")
+            .and_then(|n| n.parse::<usize>().ok())
+    {
+        let commit = session
+            .target_of(key, Some(number))
+            .await
+            .map_err(|e| ApiError::not_found(e.to_string()))?;
+        return Ok(Against::Tree(commit));
+    }
+    Ok(against)
 }
 
 async fn files(
     State(state): State<AppState>,
     Path(key): Path<String>,
-    Query(base): Query<BaseQuery>,
+    Query(view): Query<ViewQuery>,
 ) -> Result<Json<Vec<FileEntry>>, ApiError> {
     let session = state.session.read().await;
-    let commit = session
-        .commit_of(&key)
-        .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))?;
+    let commit = target(&session, &key, view.ps).await?;
+    let against = resolve_base(&session, &key, parse_base(view.base.as_deref())?).await?;
 
-    Ok(Json(session.files(&commit, base.choice()?).await?))
+    Ok(Json(session.files(&commit, &against).await?))
+}
+
+/// The commit to read: a patch set when one is named, the change otherwise.
+async fn target(session: &Session, key: &str, ps: Option<usize>) -> Result<String, ApiError> {
+    if ps.is_some() {
+        return session
+            .target_of(key, ps)
+            .await
+            .map_err(|e| ApiError::not_found(e.to_string()));
+    }
+    session
+        .commit_of(key)
+        .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))
+}
+
+async fn patchsets(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<Json<Vec<PatchSet>>, ApiError> {
+    let session = state.session.read().await;
+
+    Ok(Json(session.patch_sets(&key).await?))
 }
 
 #[derive(Serialize)]
@@ -197,6 +255,7 @@ async fn mergelist(
 #[derive(Deserialize)]
 struct DiffQuery {
     file: String,
+    ps: Option<usize>,
     base: Option<String>,
 }
 
@@ -206,17 +265,11 @@ async fn diff(
     Query(query): Query<DiffQuery>,
 ) -> Result<Json<FileDiff>, ApiError> {
     let session = state.session.read().await;
-    let commit = session
-        .commit_of(&key)
-        .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))?;
-
-    let base = BaseQuery {
-        base: query.base.clone(),
-    }
-    .choice()?;
+    let commit = target(&session, &key, query.ps).await?;
+    let against = resolve_base(&session, &key, parse_base(query.base.as_deref())?).await?;
 
     session
-        .diff(&commit, &query.file, base)
+        .diff(&commit, &query.file, &against)
         .await?
         .map(Json)
         .ok_or_else(|| ApiError::not_found(format!("{} is not in the change", query.file)))
@@ -913,6 +966,93 @@ mod tests {
         assert_eq!(
             body["comments"][0]["body"], "this reads wrong",
             "the Change-Id is the key, so the amend keeps the review"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_prev_commit_becomes_an_older_patch_set() {
+        let repo = build_repo(&[
+            commit("base").file("a.txt", "0\n"),
+            commit("work: do a thing")
+                .file("a.txt", "one\n")
+                .change_id("Iwork"),
+        ])
+        .await;
+        let first = repo.sha("HEAD").await;
+
+        std::fs::write(repo.path().join("a.txt"), "two\n").unwrap();
+        repo.git(&["add", "-A"]).await;
+        repo.git(&["commit", "--amend", "--no-edit"]).await;
+
+        let mut opts = Options::new();
+        opts.prevs = vec![first.clone()];
+        let server = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
+
+        let (status, sets) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Iwork/patchsets", TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let sets = sets.as_array().unwrap();
+        assert_eq!(sets.len(), 2);
+        assert_eq!(sets[0]["number"], 1);
+        assert_eq!(sets[0]["origin"], "prev");
+        assert_eq!(sets[1]["origin"], "local");
+
+        // The series pane says how many versions the change has.
+        let (_, session) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+        assert_eq!(session["series"]["changes"][0]["patchSetCount"], 2);
+
+        // Patch set 1 against its own parent shows the first version.
+        let (_, one) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Iwork/diff?file=a.txt&ps=1", TOKEN),
+        )
+        .await;
+        let added: Vec<_> = one["hunks"][0]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["kind"] == "add")
+            .map(|r| r["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(added, ["one"]);
+
+        // Patch set 2 read against patch set 1 shows only what the amend did.
+        let (status, between) = json(
+            server,
+            get_with_cookie("/api/changes/Iwork/diff?file=a.txt&ps=2&base=ps:1", TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = between["hunks"][0]["rows"].as_array().unwrap();
+        let texts: Vec<_> = rows
+            .iter()
+            .map(|r| (r["kind"].as_str().unwrap(), r["text"].as_str().unwrap()))
+            .collect();
+        assert_eq!(texts, [("remove", "one"), ("add", "two")]);
+    }
+
+    #[tokio::test]
+    async fn a_patch_set_that_does_not_exist_is_a_named_error() {
+        let repo = fixture().await;
+        let (status, body) = json(
+            server(&repo).await,
+            get_with_cookie("/api/changes/I8f3ac21/files?ps=7", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("patch set 7"),
+            "{body}"
         );
     }
 

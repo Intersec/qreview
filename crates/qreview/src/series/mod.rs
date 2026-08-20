@@ -29,6 +29,8 @@ pub struct Options {
     pub batch_size: usize,
     /// The name of the integration branch, when the configuration names one.
     pub integration_branch: Option<String>,
+    /// Commits named with `--prev`, treated as older patch sets.
+    pub prevs: Vec<String>,
 }
 
 impl Options {
@@ -40,6 +42,7 @@ impl Options {
             guess_max: 10,
             batch_size: 5,
             integration_branch: None,
+            prevs: Vec::new(),
         }
     }
 }

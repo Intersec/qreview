@@ -24,6 +24,7 @@ async fn main() -> Result<()> {
     let mut opts = Options::new();
     opts.rev = cli.rev.clone();
     opts.base = cli.base.clone();
+    opts.prevs = cli.prev.clone();
 
     let session = Session::open(&cwd, &opts, Languages::new()).await?;
     print!("{}", text_report(&session).await?);
@@ -41,7 +42,9 @@ async fn text_report(session: &Session) -> Result<String> {
     for change in &session.series.changes {
         files.push(ChangeFiles {
             key: change.key.clone(),
-            files: session.files(&change.commit, None).await?,
+            files: session
+                .files(&change.commit, &qreview::session::Against::Parent)
+                .await?,
         });
     }
     Ok(report::render(&session.series, &files))

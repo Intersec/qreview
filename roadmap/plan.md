@@ -118,10 +118,10 @@ restart.*
 *Exit: `qreview <rev> --prev <sha> --prev <sha>` shows three patch sets and
 diffs any two of them.*
 
-- [ ] The patch set model and the selector
-- [ ] `--prev`, repeatable
-- [ ] A diff of a patch set against its parent
-- [ ] A diff between two patch sets
+- [x] The patch set model
+- [x] `--prev`, repeatable
+- [x] A diff of a patch set against its parent
+- [x] A diff between two patch sets
 - [ ] The label when the parents differ
 - [ ] The anchoring, the three branches of `design.md` section 5.3
 - [ ] The panel of the comments that could not be anchored

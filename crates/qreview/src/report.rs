@@ -127,7 +127,10 @@ mod tests {
         for change in &session.series.changes {
             files.push(ChangeFiles {
                 key: change.key.clone(),
-                files: session.files(&change.commit, None).await.unwrap(),
+                files: session
+                    .files(&change.commit, &crate::session::Against::Parent)
+                    .await
+                    .unwrap(),
             });
         }
         render(&session.series, &files)

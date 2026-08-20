@@ -12,6 +12,10 @@ pub struct Cli {
     #[arg(long, value_name = "REV")]
     pub base: Option<String>,
 
+    /// A commit to treat as an older patch set of a change. Repeatable.
+    #[arg(long = "prev", value_name = "SHA")]
+    pub prev: Vec<String>,
+
     /// Print the URL, open no browser.
     #[arg(long)]
     pub no_open: bool,

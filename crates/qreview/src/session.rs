@@ -15,6 +15,7 @@ use crate::git::merge::{self, Base};
 use crate::highlight::Highlighter;
 use crate::lang::Languages;
 use crate::model::{FileDiff, FileEntry, RepoInfo, RowKind, Series};
+use crate::patchset::{self, PatchSet};
 use crate::repo;
 use crate::series::{self, Options, Plan};
 use crate::store::Store;
@@ -30,6 +31,21 @@ pub struct Session {
     pub author: String,
     pub plan: Plan,
     pub series: Series,
+    /// The commits named with `--prev`, resolved.
+    pub prevs: Vec<String>,
+}
+
+/// What a diff is read against.
+#[derive(Clone, Debug, Default)]
+pub enum Against {
+    /// The parent of the commit, or the auto-merge when it is a merge.
+    #[default]
+    Parent,
+    /// One of the bases a merge offers.
+    Merge(Base),
+    /// A tree named outright, which is how one patch set is read against
+    /// another.
+    Tree(String),
 }
 
 impl Session {
@@ -71,6 +87,14 @@ impl Session {
             boundary: batch.boundary,
         };
 
+        let mut prevs = Vec::new();
+        for rev in &opts.prevs {
+            match commit::resolve(&git, rev).await {
+                Ok(hash) => prevs.push(hash),
+                Err(error) => eprintln!("qreview: --prev {rev} is not a commit: {error}"),
+            }
+        }
+
         let mut session = Self {
             git,
             repo,
@@ -80,8 +104,10 @@ impl Session {
             author,
             plan,
             series,
+            prevs,
         };
         session.count_comments();
+        session.count_patch_sets().await;
 
         Ok(session)
     }
@@ -104,6 +130,7 @@ impl Session {
         self.series.changes.extend(batch.changes);
         self.series.boundary = batch.boundary;
         self.count_comments();
+        self.count_patch_sets().await;
 
         Ok(added)
     }
@@ -113,11 +140,15 @@ impl Session {
     /// A normal change is diffed against its first parent, or against the
     /// empty tree when it is a root commit. A merge takes the base the reader
     /// picked, and the auto-merge by default.
-    pub async fn base_of(&self, rev: &str, base: Option<Base>) -> Result<String> {
+    pub async fn base_of(&self, rev: &str, against: &Against) -> Result<String> {
+        if let Against::Tree(tree) = against {
+            return Ok(tree.clone());
+        }
+
         let info = commit::info(&self.git, rev).await?;
 
-        if let Some(base) = base
-            && let Some(tree) = merge::base_of(&self.git, &info, base).await
+        if let Against::Merge(base) = against
+            && let Some(tree) = merge::base_of(&self.git, &info, *base).await
         {
             return Ok(tree);
         }
@@ -125,7 +156,7 @@ impl Session {
         // A merge with no base asked for reads against the auto-merge, the
         // way Gerrit shows one.
         if info.is_merge()
-            && base.is_none()
+            && matches!(against, Against::Parent)
             && let Some(tree) = merge::auto_merge_tree(&self.git, &info).await
         {
             return Ok(tree);
@@ -139,8 +170,8 @@ impl Session {
     }
 
     /// The files a change touches.
-    pub async fn files(&self, rev: &str, base: Option<Base>) -> Result<Vec<FileEntry>> {
-        let base = self.base_of(rev, base).await?;
+    pub async fn files(&self, rev: &str, against: &Against) -> Result<Vec<FileEntry>> {
+        let base = self.base_of(rev, against).await?;
         let mut entries = diff::files(&self.git, &base, rev).await?;
 
         for entry in &mut entries {
@@ -150,13 +181,8 @@ impl Session {
     }
 
     /// The diff of one file of a change.
-    pub async fn diff(
-        &self,
-        rev: &str,
-        path: &str,
-        base: Option<Base>,
-    ) -> Result<Option<FileDiff>> {
-        let base = self.base_of(rev, base).await?;
+    pub async fn diff(&self, rev: &str, path: &str, against: &Against) -> Result<Option<FileDiff>> {
+        let base = self.base_of(rev, against).await?;
         let old = diff::files(&self.git, &base, rev)
             .await?
             .into_iter()
@@ -266,6 +292,49 @@ impl Session {
         }
     }
 
+    /// The patch sets of a change, oldest first.
+    pub async fn patch_sets(&self, key: &str) -> Result<Vec<PatchSet>> {
+        let rev = self
+            .commit_of(key)
+            .with_context(|| format!("no change {key} in the series"))?;
+        let info = commit::info(&self.git, &rev).await?;
+
+        patchset::of_change(&self.git, &info, &self.prevs).await
+    }
+
+    /// The commit of a patch set, or of the change when none is named.
+    pub async fn target_of(&self, key: &str, patch_set: Option<usize>) -> Result<String> {
+        let rev = self
+            .commit_of(key)
+            .with_context(|| format!("no change {key} in the series"))?;
+
+        let Some(number) = patch_set else {
+            return Ok(rev);
+        };
+
+        self.patch_sets(key)
+            .await?
+            .into_iter()
+            .find(|set| set.number == number)
+            .map(|set| set.commit)
+            .with_context(|| format!("change {key} has no patch set {number}"))
+    }
+
+    async fn count_patch_sets(&mut self) {
+        if self.prevs.is_empty() {
+            return;
+        }
+
+        let keys: Vec<_> = self.series.changes.iter().map(|c| c.key.clone()).collect();
+        let mut counts = Vec::with_capacity(keys.len());
+        for key in &keys {
+            counts.push(self.patch_sets(key).await.map(|s| s.len()).unwrap_or(1));
+        }
+        for (change, count) in self.series.changes.iter_mut().zip(counts) {
+            change.patch_set_count = count;
+        }
+    }
+
     /// The review of a change.
     pub fn comments(&self, key: &str, subject: &str) -> Result<ChangeFile> {
         comments::read(&self.store, key, subject)
@@ -290,7 +359,7 @@ impl Session {
                 (commit, info.subject)
             }
         };
-        let base = self.base_of(&rev, None).await?;
+        let base = self.base_of(&rev, &Against::Parent).await?;
 
         Target {
             store: &self.store,
