@@ -60,7 +60,7 @@ left is in [`plan.md`](./plan.md).
 - ✅ Intra-line marks on a changed line
 - ✅ Renames and copies shown as one file, not two
 - ✅ A binary file, an empty file, and a file with no trailing newline
-- ⬜ Folded context, opened line by line or whole
+- ✅ Folded context between hunks, opened whole or ten lines at a time
 - ⬜ Whitespace changes shown or hidden
 - ✅ A file too large is shown with a warning and no colors
 - ✅ The file tree, with a filter

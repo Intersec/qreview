@@ -127,6 +127,10 @@ pub struct FileDiff {
     #[serde(flatten)]
     pub file: FileEntry,
     pub hunks: Vec<Hunk>,
+    /// How many lines the new side has, so the interface knows how much
+    /// context sits between the hunks and after the last one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_count: Option<usize>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

@@ -3,13 +3,21 @@
 // `npm run shots` writes them under e2e/.shots. They are not a test: nothing
 // passes or fails here, it only makes the interface visible.
 
-import { chromium } from '@playwright/test';
-import config from '../playwright.config.ts';
+import { chromium, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import config from '../playwright.config.ts';
 import { start } from './server.ts';
 
 const OUT = join(import.meta.dirname, '.shots');
+
+async function openLongFile(page: Page) {
+  await page.getByRole('button', { name: /long: touch two places/ }).click();
+  const file = page.getByRole('button', { name: /src\/long\.c/ });
+  await file.waitFor();
+  await file.click();
+  await page.locator('.file-bar h2', { hasText: 'src/long.c' }).waitFor();
+}
 
 const server = await start();
 mkdirSync(OUT, { recursive: true });
@@ -24,23 +32,39 @@ for (const scheme of ['light', 'dark'] as const) {
     viewport: { width: 1600, height: 1000 },
     colorScheme: scheme,
   });
-  const errors: string[] = [];
+  const complaints: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning') {
-      errors.push(`${message.type()}: ${message.text()}`);
+      complaints.push(`${message.type()}: ${message.text()}`);
     }
   });
 
   await page.goto(server.url);
-  await page.getByRole('button', { name: /long: touch two places/ }).click();
-  await page.getByRole('button', { name: /src\/long\.c/ }).click();
+  await openLongFile(page);
   await page.screenshot({ path: join(OUT, `${scheme}-unified.png`) });
 
-  await page.getByRole('button', { name: /Side by side|Unified/ }).click();
+  // The context between the two hunks, opened.
+  await page
+    .getByRole('button', { name: /common lines/ })
+    .first()
+    .click();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(OUT, `${scheme}-expanded.png`) });
+
+  await page.getByRole('button', { name: 'Side by side' }).click();
   await page.screenshot({ path: join(OUT, `${scheme}-split.png`) });
 
-  if (errors.length) {
-    console.log(`${scheme}: the page complained\n  ${errors.join('\n  ')}`);
+  // A comment, open on its line.
+  await page.getByRole('button', { name: /net: retry the read/ }).click();
+  const blk = page.getByRole('button', { name: /src\/net\.blk/ });
+  await blk.waitFor();
+  await blk.click();
+  await page.locator('td.gutter-comment').nth(2).click();
+  await page.getByRole('textbox').first().fill('This loop never ends when the socket closes.');
+  await page.screenshot({ path: join(OUT, `${scheme}-comment.png`) });
+
+  if (complaints.length) {
+    console.log(`${scheme}: the page complained\n  ${complaints.join('\n  ')}`);
   }
   await page.close();
 }

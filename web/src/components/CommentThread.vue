@@ -23,71 +23,58 @@ function when(comment: Comment): string {
 </script>
 
 <template>
-  <article
-    class="my-1 rounded border border-slate-300 bg-white p-2 text-sm dark:border-slate-600 dark:bg-slate-800"
-    :class="first.resolved ? 'opacity-60' : ''"
-  >
-    <div
-      v-for="comment in all"
-      :key="comment.id"
-      class="border-slate-200 py-1 dark:border-slate-700 [&+&]:border-t"
-    >
-      <p class="flex items-baseline gap-2 text-xs text-slate-500 dark:text-slate-400">
-        <span class="font-medium text-slate-700 dark:text-slate-200">{{ comment.author }}</span>
+  <article class="talk-box" :class="first.resolved ? 'opacity-60' : ''">
+    <div v-for="comment in all" :key="comment.id">
+      <p class="talk-head">
+        <span class="talk-who">{{ comment.author }}</span>
         <span>{{ when(comment) }}</span>
-        <span v-if="comment.draft" class="rounded bg-amber-200 px-1 text-amber-900">draft</span>
-        <span v-if="comment.patchSet" class="ml-auto">patch set {{ comment.patchSet }}</span>
+        <span v-if="comment.draft" class="talk-tag">draft</span>
+        <span v-if="first.resolved && comment.id === first.id" class="talk-tag">resolved</span>
+        <span class="spacer"></span>
+        <span>patch set {{ comment.patchSet }}</span>
       </p>
 
+      <div class="talk-body">
+        <CommentBox
+          v-if="editing === comment.id"
+          :start="comment.body"
+          label="Edit the comment"
+          @save="
+            (body) => {
+              emit('edit', comment.id, body);
+              editing = null;
+            }
+          "
+          @cancel="editing = null"
+        />
+        <!-- eslint-disable-next-line vue/no-v-html -- sanitized in diff/markdown.ts -->
+        <div v-else class="prose-comment" v-html="render(comment.body)"></div>
+      </div>
+
+      <div v-if="editing !== comment.id" class="talk-foot">
+        <button type="button" class="action" @click="editing = comment.id">Edit</button>
+        <button type="button" class="action" @click="emit('remove', comment.id)">Delete</button>
+        <span class="spacer"></span>
+        <template v-if="comment.id === first.id">
+          <button type="button" class="action" @click="replying = !replying">Reply</button>
+          <button type="button" class="action" @click="emit('resolve', first.id, !first.resolved)">
+            {{ first.resolved ? 'Reopen' : 'Resolve' }}
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <div v-if="replying" class="talk-body">
       <CommentBox
-        v-if="editing === comment.id"
-        :start="comment.body"
-        label="Edit the comment"
+        label="Answer"
         @save="
-          (body) => {
-            emit('edit', comment.id, body);
-            editing = null;
+          (body, draft) => {
+            emit('reply', first.id, body, draft);
+            replying = false;
           }
         "
-        @cancel="editing = null"
+        @cancel="replying = false"
       />
-      <!-- eslint-disable-next-line vue/no-v-html -- sanitized in diff/markdown.ts -->
-      <div v-else class="prose-comment mt-1" v-html="render(comment.body)"></div>
-
-      <p class="mt-1 flex gap-2 text-xs">
-        <button type="button" class="underline" @click="editing = comment.id">Edit</button>
-        <button type="button" class="underline" @click="emit('remove', comment.id)">Delete</button>
-      </p>
     </div>
-
-    <div class="mt-2 flex items-center gap-2 text-xs">
-      <button
-        type="button"
-        class="rounded border border-slate-300 px-2 py-0.5 dark:border-slate-600"
-        @click="replying = !replying"
-      >
-        Reply
-      </button>
-      <button
-        type="button"
-        class="rounded border border-slate-300 px-2 py-0.5 dark:border-slate-600"
-        @click="emit('resolve', first.id, !first.resolved)"
-      >
-        {{ first.resolved ? 'Reopen' : 'Resolve' }}
-      </button>
-    </div>
-
-    <CommentBox
-      v-if="replying"
-      class="mt-2"
-      label="Answer"
-      @save="
-        (body, draft) => {
-          emit('reply', first.id, body, draft);
-          replying = false;
-        }
-      "
-      @cancel="replying = false"
-    />
   </article>
 </template>

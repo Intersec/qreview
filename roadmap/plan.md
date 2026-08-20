@@ -6,10 +6,8 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: v0.1.0 is cut.** M0 to M7 are done. Four things were left out on
-purpose and are listed under *After v0.1.0*: a comment on a range of lines,
-folded context between hunks, a whitespace toggle, and a per-change review
-state.
+**Status: v0.1.0 is cut. M8 is in progress**, the one the screenshots asked
+for: a side by side view that works, and a diff that reads like Gerrit.
 
 ---
 
@@ -162,16 +160,33 @@ first try. No Node, no cargo, no install step.*
 
 ---
 
-## After v0.1.0
+## M8 — It has to look like Gerrit
 
-Ordered by the value we expect, not by the effort:
+*Exit: a person who reviews in Gerrit every day opens qreview and is not
+surprised by anything.*
+
+- [x] The browser harness: Playwright on the browser already installed, a
+      real repository, and the binary under it
+- [x] `make shots`, so a change to the interface can be looked at
+- [x] The browser tests inside `make check`, and a plain skip without a
+      browser
+- [x] The side by side view: widths from a colgroup, colours on the row
+- [x] The gutter left plain, the way Gerrit leaves it
+- [x] The context bar between hunks: `+N common lines` and `+10`
+- [x] The `lines` route, which reads what the diff does not carry
+- [x] A comment card that reads like a Gerrit draft
+- [ ] The change header: the subject, the patch set, and where the file sits
+      in the series
+- [ ] A comment anchored under its own side in the side by side view
+- [ ] The file list as a tree, the way a large change needs it
+- [ ] A whitespace toggle
+- [ ] A per-change review state, kept between sessions
+
+## After that
 
 1. A comment on a range of lines. A comment on one line covers most of it.
-2. Folded context between hunks, opened line by line or whole. It needs a
-   route that reads lines the diff does not carry.
-3. A whitespace toggle, and a per-change review state.
-4. A rebase-aware diff between two patch sets.
-5. A JSON export, and a Claude Code skill that reads it.
+2. A rebase-aware diff between two patch sets.
+3. A JSON export, and a Claude Code skill that reads it.
 
 ## Session protocol
 

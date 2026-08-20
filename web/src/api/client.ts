@@ -11,6 +11,7 @@ import type {
   PatchSet,
   PatchSets,
   Review,
+  Row,
   Series,
   SessionBody,
 } from './types';
@@ -56,6 +57,16 @@ export const api = {
   diff: (key: string, file: string, ps?: number, base?: string) =>
     call<FileDiff>(
       `/api/changes/${encodeURIComponent(key)}/diff${query({ file, ps: num(ps), base })}`,
+    ),
+
+  lines: (key: string, file: string, from: number, to: number, ps?: number) =>
+    call<Row[]>(
+      `/api/changes/${encodeURIComponent(key)}/lines${query({
+        file,
+        from: String(from),
+        to: String(to),
+        ps: num(ps),
+      })}`,
     ),
 
   patchSets: (key: string) => call<PatchSets>(`/api/changes/${encodeURIComponent(key)}/patchsets`),

@@ -182,6 +182,16 @@ export const useReview = defineStore('review', () => {
     });
   }
 
+  /// A run of lines the diff does not carry, for opening the context.
+  async function loadLines(from: number, to: number) {
+    const key = changeKey.value;
+    const file = filePath.value;
+    if (!key || !file) {
+      return [];
+    }
+    return api.lines(key, file, from, to, patchSet.value);
+  }
+
   /// Where a comment lands in the patch set being read.
   function placement(id: string): Placed | undefined {
     return review.value?.placed.find((p) => p.id === id);
@@ -257,6 +267,7 @@ export const useReview = defineStore('review', () => {
     gerrit,
     fetchPatchSet,
     copyExport,
+    loadLines,
     patchSet,
     against,
     openPatchSet,

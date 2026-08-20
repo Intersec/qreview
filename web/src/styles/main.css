@@ -22,10 +22,11 @@
   --add-word: #aaf2aa;
   --remove-line: #ffebee;
   --remove-word: #ffcdd2;
-  --gutter-add: #b9f0b9;
-  --gutter-remove: #ffd4d8;
   --context-bar: #fff7d4;
   --context-ink: #6b5900;
+  --draft: #fff9d6;
+  --draft-edge: #e6d78a;
+  --action: #1a73e8;
 
   --tok-keyword: #a626a4;
   --tok-string: #1a7f37;
@@ -57,10 +58,11 @@
     --add-word: #35603f;
     --remove-line: #320f10;
     --remove-word: #6b2d2f;
-    --gutter-add: #1b5e2a;
-    --gutter-remove: #5a1f21;
     --context-bar: #2a2410;
     --context-ink: #d6bf6a;
+    --draft: #2c2712;
+    --draft-edge: #4d4326;
+    --action: #8ab4f8;
 
     --tok-keyword: #c678dd;
     --tok-string: #98c379;
@@ -202,12 +204,6 @@ table.code col.gut {
   user-select: none;
   white-space: nowrap;
 }
-.gutter-add {
-  background: var(--gutter-add);
-}
-.gutter-remove {
-  background: var(--gutter-remove);
-}
 .gutter-comment {
   cursor: pointer;
 }
@@ -241,6 +237,32 @@ table.code col.gut {
 .no-newline {
   margin-left: 6px;
   color: var(--ink-faint);
+}
+
+tr.context-bar td {
+  padding: 2px 0;
+  text-align: center;
+  background: var(--context-bar);
+  border-top: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge);
+}
+.context-button {
+  display: inline-block;
+  margin: 0 3px;
+  padding: 1px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--page);
+  color: var(--context-ink);
+  font-family: var(--code-font);
+  font-size: 11px;
+}
+.context-button:hover:not(:disabled) {
+  background: var(--pick);
+  color: var(--pick-edge);
+}
+.context-button:disabled {
+  opacity: 0.5;
 }
 
 tr.hunk td {
@@ -319,4 +341,110 @@ tr.talk td {
 }
 .prose-comment a {
   text-decoration: underline;
+}
+
+/* ------------------------------------------------- a comment, Gerrit-like */
+
+.talk-box {
+  max-width: 44rem;
+  margin: 4px 0;
+  border: 1px solid var(--draft-edge);
+  border-radius: 4px;
+  background: var(--draft);
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+.talk-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--draft-edge);
+  font-size: 11px;
+  color: var(--ink-quiet);
+}
+.talk-who {
+  font-weight: 600;
+  color: var(--ink);
+}
+.talk-tag {
+  border-radius: 2px;
+  padding: 0 4px;
+  background: var(--draft-edge);
+  color: var(--ink);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.talk-body {
+  padding: 6px 10px;
+}
+.talk-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 10px 6px;
+  font-size: 11px;
+}
+.talk-foot .spacer {
+  margin-left: auto;
+}
+.action {
+  color: var(--action);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.action:hover {
+  text-decoration: underline;
+}
+.action:disabled {
+  opacity: 0.45;
+  text-decoration: none;
+}
+.talk-text {
+  width: 100%;
+  min-height: 4.5rem;
+  padding: 6px 8px;
+  border: 1px solid var(--draft-edge);
+  border-radius: 3px;
+  background: var(--page);
+  color: var(--ink);
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+.talk-hint {
+  padding: 0 10px 6px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------- the boundary card */
+
+.boundary {
+  margin: 6px 8px 10px;
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--context-ink);
+  background: var(--context-bar);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--ink);
+}
+.boundary h3 {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--context-ink);
+}
+.boundary p {
+  margin-top: 3px;
+}
+.boundary .quiet {
+  color: var(--ink-quiet);
+}
+.boundary code {
+  font-family: var(--code-font);
+  font-size: 11px;
 }

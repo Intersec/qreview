@@ -223,6 +223,60 @@ impl Session {
         Ok(found)
     }
 
+    /// A run of lines of a file, as context rows.
+    ///
+    /// The diff carries only what changed and the few lines around it. This
+    /// is how the reader opens the rest, a piece at a time.
+    pub async fn lines(
+        &self,
+        rev: &str,
+        path: &str,
+        from: usize,
+        to: usize,
+    ) -> Result<Vec<crate::model::Row>> {
+        let language = self.langs.of(path).map(str::to_owned);
+        let Some((text, spans)) = self.read_and_paint(rev, path, language.as_deref()).await else {
+            return Ok(Vec::new());
+        };
+
+        let all: Vec<&str> = text.lines().collect();
+        let from = from.max(1);
+        let to = to.min(all.len());
+        let mut rows = Vec::new();
+
+        for number in from..=to {
+            let mut row = crate::model::Row {
+                kind: RowKind::Context,
+                old_line: None,
+                new_line: Some(number),
+                text: all[number - 1].to_owned(),
+                no_newline: false,
+                tokens: spans.get(number - 1).cloned().unwrap_or_default(),
+                words: Vec::new(),
+            };
+            crate::offsets::to_utf16(&mut row);
+            rows.push(row);
+        }
+        Ok(rows)
+    }
+
+    /// The text of a file and its syntax spans, both from the object
+    /// database.
+    async fn read_and_paint(
+        &self,
+        rev: &str,
+        path: &str,
+        language: Option<&str>,
+    ) -> Option<(String, crate::highlight::Lines)> {
+        let spec = format!("{rev}:{path}");
+        let blob = self.git.text(&["rev-parse", &spec]).await.ok()?;
+        let blob = blob.trim().to_owned();
+        let text = self.git.text(&["cat-file", "blob", &blob]).await.ok()?;
+        let lines = self.highlighter.lines(&blob, &text, language, path);
+
+        Some((text, lines))
+    }
+
     /// Put the syntax spans on every row.
     ///
     /// A line is highlighted with the whole file around it, never alone: a
@@ -240,6 +294,10 @@ impl Session {
         let old_side = self
             .blob(base, old_path.unwrap_or(&path), language, &path)
             .await;
+
+        file.line_count = new_side.as_ref().map(|(count, _)| *count);
+        let new_side = new_side.map(|(_, lines)| lines);
+        let old_side = old_side.map(|(_, lines)| lines);
 
         for hunk in &mut file.hunks {
             for row in &mut hunk.rows {
@@ -265,13 +323,14 @@ impl Session {
         path: &str,
         language: Option<&str>,
         for_path: &str,
-    ) -> Option<crate::highlight::Lines> {
+    ) -> Option<(usize, crate::highlight::Lines)> {
         let spec = format!("{rev}:{path}");
         let blob = self.git.text(&["rev-parse", &spec]).await.ok()?;
         let blob = blob.trim().to_owned();
         let text = self.git.text(&["cat-file", "blob", &blob]).await.ok()?;
+        let lines = self.highlighter.lines(&blob, &text, language, for_path);
 
-        Some(self.highlighter.lines(&blob, &text, language, for_path))
+        Some((text.lines().count(), lines))
     }
 
     /// The commit a change key names, inside the loaded series.

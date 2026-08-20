@@ -189,6 +189,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           :split="split"
           :threads="threads"
           :placement="review.placement"
+          :load-lines="review.loadLines"
           @update:split="review.setSplit"
           @add="review.addComment"
           @edit="(id, body) => review.editComment(id, { body })"

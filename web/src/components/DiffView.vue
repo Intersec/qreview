@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import CommentBox from './CommentBox.vue';
 import CommentThread from './CommentThread.vue';
+import ContextBar from './ContextBar.vue';
 import DiffRow from './DiffRow.vue';
+import { gaps, type Gap } from '@/diff/gaps';
 import { pairs } from '@/diff/pairs';
-import type { Comment, FileDiff, NewComment, Row, Side } from '@/api/types';
+import type { Comment, FileDiff, Hunk, NewComment, Row, Side } from '@/api/types';
 
 const props = defineProps<{
   diff: FileDiff;
@@ -12,6 +14,8 @@ const props = defineProps<{
   threads: { first: Comment; replies: Comment[] }[];
   /// Where a comment lands in the patch set being read.
   placement: (id: string) => { line: number | null; lost: boolean } | undefined;
+  /// Read a run of lines the diff does not carry.
+  loadLines: (from: number, to: number) => Promise<Row[]>;
 }>();
 const emit = defineEmits<{
   'update:split': [value: boolean];
@@ -27,6 +31,81 @@ const MAX_ROWS = 2000;
 
 /// Which line a comment box is open on, as `side:line`.
 const writing = ref<string | null>(null);
+
+/// The context a reader opened, and what is left to open, per gap.
+const opened = reactive(new Map<string, Row[]>());
+const left = reactive(new Map<string, { from: number; to: number }>());
+const loading = ref(false);
+
+/// A new file starts with nothing opened.
+watch(
+  () => [props.diff.path, props.diff.hunks],
+  () => {
+    opened.clear();
+    left.clear();
+  },
+);
+
+type Block = { kind: 'gap'; gap: Gap } | { kind: 'hunk'; hunk: Hunk };
+
+/// The gaps and the hunks, in the order they are read.
+const blocks = computed<Block[]>(() => {
+  const found = gaps(shown.value, props.diff.lineCount ?? null);
+  const out: Block[] = [];
+
+  shown.value.forEach((hunk, index) => {
+    const before = found.find((gap) => gap.key === `before-${index}`);
+    if (before) {
+      out.push({ kind: 'gap', gap: before });
+    }
+    out.push({ kind: 'hunk', hunk });
+  });
+
+  const after = found.find((gap) => gap.key === 'after');
+  if (after) {
+    out.push({ kind: 'gap', gap: after });
+  }
+  return out;
+});
+
+function rest(gap: Gap): { from: number; to: number } {
+  return left.get(gap.key) ?? { from: gap.from, to: gap.to };
+}
+
+function isOpen(gap: Gap): boolean {
+  const range = rest(gap);
+  return range.to < range.from;
+}
+
+function rowsOf(gap: Gap): Row[] {
+  return opened.get(gap.key) ?? [];
+}
+
+/// Open a run of the gap, and keep what is still closed.
+async function open(gap: Gap, from: number, to: number) {
+  if (loading.value) {
+    return;
+  }
+  loading.value = true;
+  try {
+    const fetched = await props.loadLines(from, to);
+    for (const row of fetched) {
+      row.oldLine = row.newLine === null ? null : row.newLine + gap.offset;
+    }
+
+    const before = rowsOf(gap);
+    const all = [...before, ...fetched].sort((a, b) => (a.newLine ?? 0) - (b.newLine ?? 0));
+    opened.set(gap.key, all);
+
+    const range = rest(gap);
+    left.set(gap.key, {
+      from: from <= range.from ? to + 1 : range.from,
+      to: to >= range.to ? from - 1 : range.to,
+    });
+  } finally {
+    loading.value = false;
+  }
+}
 
 const total = computed(() => props.diff.hunks.reduce((n, h) => n + h.rows.length, 0));
 const capped = computed(() => total.value > MAX_ROWS);
@@ -145,14 +224,32 @@ function toggle(row: Row | null) {
         <col class="gut" />
         <col />
       </colgroup>
-      <tbody v-for="(hunk, h) in shown" :key="h">
-        <tr class="hunk">
-          <td colspan="4">
-            @@ −{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@
-            <span v-if="hunk.header" class="hunk-header">{{ hunk.header }}</span>
-          </td>
-        </tr>
-        <template v-for="(pair, p) in pairs(hunk.rows)" :key="`${h}-${p}`">
+      <tbody v-for="(block, b) in blocks" :key="b">
+        <template v-if="block.kind === 'gap'">
+          <ContextBar
+            v-if="!isOpen(block.gap) && block.gap.key !== 'after'"
+            :from="rest(block.gap).from"
+            :to="rest(block.gap).to"
+            :columns="4"
+            :busy="loading"
+            @open="(from, to) => open(block.gap, from, to)"
+          />
+          <tr v-for="row in rowsOf(block.gap)" :key="`g${row.newLine}`">
+            <DiffRow :row="row" side="old" />
+            <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+          </tr>
+          <ContextBar
+            v-if="!isOpen(block.gap) && block.gap.key === 'after'"
+            :from="rest(block.gap).from"
+            :to="rest(block.gap).to"
+            :columns="4"
+            :busy="loading"
+            hunk-above
+            @open="(from, to) => open(block.gap, from, to)"
+          />
+        </template>
+
+        <template v-for="(pair, p) in pairs(block.hunk?.rows ?? [])" v-else :key="p">
           <tr>
             <DiffRow :row="pair.left" side="old" @comment="toggle(pair.left)" />
             <DiffRow :row="pair.right" side="new" commentable @comment="toggle(pair.right)" />
@@ -197,14 +294,32 @@ function toggle(row: Row | null) {
         <col class="gut" />
         <col />
       </colgroup>
-      <tbody v-for="(hunk, h) in shown" :key="h">
-        <tr class="hunk">
-          <td colspan="3">
-            @@ −{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@
-            <span v-if="hunk.header" class="hunk-header">{{ hunk.header }}</span>
-          </td>
-        </tr>
-        <template v-for="(row, r) in hunk.rows" :key="`${h}-${r}`">
+      <tbody v-for="(block, b) in blocks" :key="b">
+        <template v-if="block.kind === 'gap'">
+          <ContextBar
+            v-if="!isOpen(block.gap) && block.gap.key !== 'after'"
+            :from="rest(block.gap).from"
+            :to="rest(block.gap).to"
+            :columns="3"
+            :busy="loading"
+            @open="(from, to) => open(block.gap, from, to)"
+          />
+          <tr v-for="row in rowsOf(block.gap)" :key="`g${row.newLine}`">
+            <td class="gutter">{{ row.oldLine ?? '' }}</td>
+            <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+          </tr>
+          <ContextBar
+            v-if="!isOpen(block.gap) && block.gap.key === 'after'"
+            :from="rest(block.gap).from"
+            :to="rest(block.gap).to"
+            :columns="3"
+            :busy="loading"
+            hunk-above
+            @open="(from, to) => open(block.gap, from, to)"
+          />
+        </template>
+
+        <template v-for="(row, r) in block.hunk?.rows ?? []" v-else :key="r">
           <tr>
             <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
             <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />

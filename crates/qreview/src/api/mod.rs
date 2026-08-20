@@ -61,6 +61,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/mergelist", get(mergelist))
         .route("/api/export", get(export))
+        .route("/api/changes/{key}/lines", get(lines))
         .route("/api/changes/{key}/patchsets", get(patchsets))
         .route(
             "/api/changes/{key}/patchsets/{number}/fetch",
@@ -224,6 +225,37 @@ async fn target(session: &Session, key: &str, ps: Option<usize>) -> Result<Strin
     session
         .commit_of(key)
         .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LinesQuery {
+    file: String,
+    from: usize,
+    to: usize,
+    ps: Option<usize>,
+}
+
+/// The lines between two hunks, so the reader can open the context.
+async fn lines(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Query(query): Query<LinesQuery>,
+) -> Result<Json<Vec<crate::model::Row>>, ApiError> {
+    if query.to < query.from || query.to - query.from > 2000 {
+        return Err(ApiError::bad_request(
+            "ask for a run of 2000 lines or fewer".to_owned(),
+        ));
+    }
+
+    let session = state.session.read().await;
+    let commit = target(&session, &key, query.ps).await?;
+
+    Ok(Json(
+        session
+            .lines(&commit, &query.file, query.from, query.to)
+            .await?,
+    ))
 }
 
 #[derive(Serialize)]
@@ -1242,6 +1274,61 @@ mod tests {
             body["comments"][0]["body"], "why beta",
             "a comment is never dropped, only marked"
         );
+    }
+
+    #[tokio::test]
+    async fn the_lines_route_reads_the_context_the_diff_left_out() {
+        let long: String = (1..=30).map(|i| format!("line {i}\n")).collect();
+        let repo = build_repo(&[
+            commit("base").file("a.txt", &long),
+            commit("touch one line")
+                .file("a.txt", &long.replace("line 20\n", "LINE TWENTY\n"))
+                .change_id("Icontext"),
+        ])
+        .await;
+        let server = server(&repo).await;
+
+        // The diff carries a few lines around line 20 and nothing else.
+        let (_, diff) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Icontext/diff?file=a.txt", TOKEN),
+        )
+        .await;
+        assert_eq!(diff["lineCount"], 30, "the interface needs the length");
+        let first = diff["hunks"][0]["rows"][0]["newLine"].as_u64().unwrap();
+        assert!(first > 5, "the file starts well above the hunk");
+
+        let (status, rows) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Icontext/lines?file=a.txt&from=1&to=4", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0]["newLine"], 1);
+        assert_eq!(rows[0]["text"], "line 1");
+        assert_eq!(rows[3]["text"], "line 4");
+        assert_eq!(rows[0]["kind"], "context");
+
+        // Past the end of the file is a short answer, not a failure.
+        let (_, tail) = json(
+            server.clone(),
+            get_with_cookie(
+                "/api/changes/Icontext/lines?file=a.txt&from=28&to=99",
+                TOKEN,
+            ),
+        )
+        .await;
+        assert_eq!(tail.as_array().unwrap().len(), 3);
+
+        let (status, _) = json(
+            server,
+            get_with_cookie("/api/changes/Icontext/lines?file=a.txt&from=9&to=1", TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

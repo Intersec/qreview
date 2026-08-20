@@ -182,6 +182,7 @@ impl Builder {
 
     fn build(self) -> FileDiff {
         FileDiff {
+            line_count: None,
             file: FileEntry {
                 path: self.path,
                 old_path: match self.status {
