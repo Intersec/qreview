@@ -67,12 +67,12 @@ change of the batch, and loads the next batch on demand.*
 - [x] `GET /api/session`, `/api/changes/:key`, `/files`, `/diff`
 - [x] `POST /api/series/extend`, the next batch
 - [x] The 401 on a request with no token
-- [ ] The Vue application, the Vite build, Tailwind, Pinia
-- [ ] `rust-embed`, and the release binary that serves the interface alone
-- [ ] The three panes: the series, the files, the diff
-- [ ] The boundary card and the **Load 5 older** action
-- [ ] The unified diff view
-- [ ] The two theme stylesheets
+- [x] The Vue application, the Vite build, Tailwind, Pinia
+- [x] `rust-embed`, and the release binary that serves the interface alone
+- [x] The three panes: the series, the files, the diff
+- [x] The boundary card and the **Load 5 older** action
+- [x] The unified diff view
+- [x] The syntax theme, light and dark in one stylesheet
 - [x] `syntect`, the class output, and the spans on every row
 - [x] The highlight cache, keyed by blob hash
 - [x] The language map, and the example site map

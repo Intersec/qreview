@@ -1,1 +1,71 @@
 @import 'tailwindcss';
+
+/*
+ * The syntax theme.
+ *
+ * The server sends a class per token, never a colour, so a theme is this
+ * stylesheet and the light and dark pair costs no second pass. The classes
+ * come from the scope names of the grammar: `keyword control`, `string
+ * quoted`, `comment line`, and so on. Only the first two atoms are used.
+ */
+.code .keyword,
+.code .storage {
+  color: #a626a4;
+}
+.code .string {
+  color: #50a14f;
+}
+.code .comment {
+  color: #a0a1a7;
+  font-style: italic;
+}
+.code .constant {
+  color: #986801;
+}
+.code .entity {
+  color: #4078f2;
+}
+.code .support {
+  color: #0184bc;
+}
+.code .variable {
+  color: #e45649;
+}
+.code .invalid {
+  color: #ffffff;
+  background: #e45649;
+}
+
+/* What changed inside a line. It must read under any syntax colour. */
+.code .word {
+  border-radius: 2px;
+  background: rgb(250 204 21 / 0.45);
+}
+
+@media (prefers-color-scheme: dark) {
+  .code .keyword,
+  .code .storage {
+    color: #c678dd;
+  }
+  .code .string {
+    color: #98c379;
+  }
+  .code .comment {
+    color: #7f848e;
+  }
+  .code .constant {
+    color: #d19a66;
+  }
+  .code .entity {
+    color: #61afef;
+  }
+  .code .support {
+    color: #56b6c2;
+  }
+  .code .variable {
+    color: #e06c75;
+  }
+  .code .word {
+    background: rgb(161 98 7 / 0.55);
+  }
+}

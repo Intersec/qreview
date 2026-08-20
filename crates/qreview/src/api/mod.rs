@@ -33,16 +33,34 @@ impl AppState {
     }
 }
 
-/// The routes, behind the token guard.
-pub fn router(state: AppState) -> Router {
+/// The whole application: the routes, the interface, and the token guard.
+///
+/// The interface is inside the guard, not beside it. The first page load is
+/// what carries the token and takes the cookie back, so a page served
+/// outside the guard would never get one, and every API call would fail.
+pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/api/session", get(session))
         .route("/api/series/extend", post(extend))
         .route("/api/changes/{key}", get(change))
         .route("/api/changes/{key}/files", get(files))
         .route("/api/changes/{key}/diff", get(diff))
+        .fallback(interface)
         .layer(middleware::from_fn_with_state(state.clone(), auth::guard))
         .with_state(state)
+}
+
+/// The interface, out of the binary.
+async fn interface(uri: axum::http::Uri) -> Response {
+    match crate::assets::get(uri.path()) {
+        Some((body, mime)) => (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, mime)],
+            axum::body::Body::from(body),
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "the interface is not built").into_response(),
+    }
 }
 
 #[derive(Serialize)]
@@ -194,12 +212,12 @@ mod tests {
 
     const TOKEN: &str = "0123456789abcdef";
 
-    async fn app(repo: &Repo) -> Router {
+    async fn server(repo: &Repo) -> Router {
         let session = Session::open(repo.path(), &Options::new(), Languages::new())
             .await
             .unwrap();
 
-        router(AppState::new(session, TOKEN.to_owned()))
+        app(AppState::new(session, TOKEN.to_owned()))
     }
 
     async fn fixture() -> Repo {
@@ -238,7 +256,11 @@ mod tests {
     #[tokio::test]
     async fn a_request_without_the_token_is_refused() {
         let repo = fixture().await;
-        let response = app(&repo).await.oneshot(get("/api/session")).await.unwrap();
+        let response = server(&repo)
+            .await
+            .oneshot(get("/api/session"))
+            .await
+            .unwrap();
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
@@ -246,7 +268,7 @@ mod tests {
     #[tokio::test]
     async fn a_wrong_token_is_refused() {
         let repo = fixture().await;
-        let response = app(&repo)
+        let response = server(&repo)
             .await
             .oneshot(get("/api/session?t=wrong"))
             .await
@@ -258,7 +280,7 @@ mod tests {
     #[tokio::test]
     async fn the_token_in_the_query_hands_over_a_cookie() {
         let repo = fixture().await;
-        let response = app(&repo)
+        let response = server(&repo)
             .await
             .oneshot(get(&format!("/api/session?t={TOKEN}")))
             .await
@@ -278,7 +300,7 @@ mod tests {
     #[tokio::test]
     async fn the_cookie_alone_is_enough_afterwards() {
         let repo = fixture().await;
-        let response = app(&repo)
+        let response = server(&repo)
             .await
             .oneshot(get_with_cookie("/api/session", TOKEN))
             .await
@@ -291,7 +313,8 @@ mod tests {
     #[tokio::test]
     async fn the_session_route_answers_with_the_series() {
         let repo = fixture().await;
-        let (status, body) = json(app(&repo).await, get_with_cookie("/api/session", TOKEN)).await;
+        let (status, body) =
+            json(server(&repo).await, get_with_cookie("/api/session", TOKEN)).await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["series"]["changes"][0]["subject"], "second: go on");
@@ -304,7 +327,7 @@ mod tests {
     async fn the_file_list_carries_the_counts_and_the_language() {
         let repo = fixture().await;
         let (status, body) = json(
-            app(&repo).await,
+            server(&repo).await,
             get_with_cookie("/api/changes/I8f3ac21/files", TOKEN),
         )
         .await;
@@ -320,7 +343,7 @@ mod tests {
     async fn the_diff_route_answers_with_the_rows() {
         let repo = fixture().await;
         let (status, body) = json(
-            app(&repo).await,
+            server(&repo).await,
             get_with_cookie("/api/changes/I8f3ac21/diff?file=src/a.blk", TOKEN),
         )
         .await;
@@ -347,7 +370,7 @@ mod tests {
         .await;
 
         let (status, body) = json(
-            app(&repo).await,
+            server(&repo).await,
             get_with_cookie("/api/changes/Icolors/diff?file=src/net.blk", TOKEN),
         )
         .await;
@@ -391,7 +414,7 @@ mod tests {
     async fn a_file_the_change_does_not_touch_is_a_named_error() {
         let repo = fixture().await;
         let (status, body) = json(
-            app(&repo).await,
+            server(&repo).await,
             get_with_cookie("/api/changes/I8f3ac21/diff?file=nope.txt", TOKEN),
         )
         .await;
@@ -410,7 +433,7 @@ mod tests {
     async fn an_unknown_change_is_a_named_error() {
         let repo = fixture().await;
         let (status, body) = json(
-            app(&repo).await,
+            server(&repo).await,
             get_with_cookie("/api/changes/Inope/files", TOKEN),
         )
         .await;
@@ -431,9 +454,9 @@ mod tests {
         let session = Session::open(repo.path(), &opts, Languages::new())
             .await
             .unwrap();
-        let app = router(AppState::new(session, TOKEN.to_owned()));
+        let server = app(AppState::new(session, TOKEN.to_owned()));
 
-        let before = json(app.clone(), get_with_cookie("/api/session", TOKEN))
+        let before = json(server.clone(), get_with_cookie("/api/session", TOKEN))
             .await
             .1;
         assert_eq!(before["series"]["changes"].as_array().unwrap().len(), 3);
@@ -445,7 +468,7 @@ mod tests {
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(r#"{"count":2}"#))
             .unwrap();
-        let (status, after) = json(app, request).await;
+        let (status, after) = json(server, request).await;
 
         assert_eq!(status, StatusCode::OK);
         let changes = after["changes"].as_array().unwrap();

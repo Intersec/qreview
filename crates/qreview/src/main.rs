@@ -7,14 +7,10 @@ mod cli;
 
 use anyhow::{Context, Result};
 use axum::Router;
-use axum::body::Body;
-use axum::http::{StatusCode, Uri, header};
-use axum::response::{IntoResponse, Response};
 use clap::Parser;
 use tokio::net::TcpListener;
 
 use qreview::api::{self, AppState, auth};
-use qreview::assets;
 use qreview::lang::Languages;
 use qreview::report::{self, ChangeFiles};
 use qreview::series::Options;
@@ -35,7 +31,7 @@ async fn main() -> Result<()> {
     let token = auth::new_token();
     let state = AppState::new(session, token.clone());
 
-    serve(cli.port, api::router(state), &token).await
+    serve(cli.port, api::app(state), &token).await
 }
 
 /// The series as text. The interface arrives in M2, see `roadmap/plan.md`.
@@ -52,8 +48,6 @@ async fn text_report(session: &Session) -> Result<String> {
 }
 
 async fn serve(port: u16, app: Router, token: &str) -> Result<()> {
-    let app = app.fallback(assets_route);
-
     // The loopback address only. Never another interface.
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
@@ -70,16 +64,4 @@ async fn serve(port: u16, app: Router, token: &str) -> Result<()> {
         })
         .await
         .context("the server stopped with an error")
-}
-
-async fn assets_route(uri: Uri) -> Response {
-    match assets::get(uri.path()) {
-        Some((body, mime)) => (
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, mime)],
-            Body::from(body),
-        )
-            .into_response(),
-        None => (StatusCode::NOT_FOUND, "the interface is not built").into_response(),
-    }
 }
