@@ -6,7 +6,10 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: M0 to M6 are done, except a range comment. M7 is next.**
+**Status: v0.1.0 is cut.** M0 to M7 are done. Four things were left out on
+purpose and are listed under *After v0.1.0*: a comment on a range of lines,
+folded context between hunks, a whitespace toggle, and a per-change review
+state.
 
 ---
 
@@ -155,7 +158,7 @@ first try. No Node, no cargo, no install step.*
 - [x] `cargo xtask release`: the changelog collection, the version bump, the
       tag
 - [x] `make dist`, the musl binary, and the size of it written in `stack.md`
-- [ ] Tag `v0.1.0`
+- [x] Tag `v0.1.0`
 
 ---
 
@@ -163,8 +166,12 @@ first try. No Node, no cargo, no install step.*
 
 Ordered by the value we expect, not by the effort:
 
-1. A rebase-aware diff between two patch sets.
-2. A JSON export, and a Claude Code skill that reads it.
+1. A comment on a range of lines. A comment on one line covers most of it.
+2. Folded context between hunks, opened line by line or whole. It needs a
+   route that reads lines the diff does not carry.
+3. A whitespace toggle, and a per-change review state.
+4. A rebase-aware diff between two patch sets.
+5. A JSON export, and a Claude Code skill that reads it.
 
 ## Session protocol
 
