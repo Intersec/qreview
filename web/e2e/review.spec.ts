@@ -51,7 +51,7 @@ test('the keyboard walks the files the way Gerrit does', async ({ page }) => {
   await expect(page.locator('.file-bar h2')).toContainText('src/added.py');
 
   await page.keyboard.press(']');
-  await expect(page.locator('.file-bar h2')).toContainText('src/long.c');
+  await expect(page.locator('.file-bar h2')).toContainText('src/doc.h');
 
   await page.keyboard.press('[');
   await expect(page.locator('.file-bar h2')).toContainText('src/added.py');
@@ -115,15 +115,16 @@ test('the page reports no error to the console', async ({ page }) => {
 });
 
 test('the bar says which file of the change is open', async ({ page }) => {
-  await page.getByRole('button', { name: /long: touch two places/ }).click();
-  await expect(page.locator('.change-bar')).toContainText('File 1 of 3');
+  await openChange(page, /long: touch two places/);
+  await expect(page.locator('.change-bar')).toContainText('File 1 of 4');
   await expect(page.locator('.change-bar')).toContainText('long: touch two places');
 
   await page.getByRole('button', { name: 'Next' }).click();
-  await expect(page.locator('.change-bar')).toContainText('File 2 of 3');
+  await expect(page.locator('.change-bar')).toContainText('File 2 of 4');
 
   await page.getByRole('button', { name: 'Next' }).click();
-  await expect(page.locator('.change-bar')).toContainText('File 3 of 3');
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.locator('.change-bar')).toContainText('File 4 of 4');
   await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
 });
 

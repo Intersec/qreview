@@ -304,13 +304,15 @@ tr.context-bar td {
 .context-button:disabled {
   opacity: 0.5;
 }
-.context-side {
-  position: absolute;
-  left: 10px;
+.context-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
-.context-side.right {
-  left: auto;
-  right: 10px;
+.context-steps {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 /* A long line is not wrapped by default: a wrapped row is twice as tall,
@@ -349,30 +351,37 @@ tr.talk td {
 
 /* ------------------------------------------------------- the syntax */
 
-.code .keyword,
-.code .storage {
+/*
+ * Every class the server sends is prefixed with `tok-`.
+ *
+ * A scope atom is an English word and so is a utility class: without the
+ * prefix, `comment.block.documentation` reached the page as `comment block`
+ * and Tailwind's `display: block` broke every doc comment in two.
+ */
+.code .tok-keyword,
+.code .tok-storage {
   color: var(--tok-keyword);
 }
-.code .string {
+.code .tok-string {
   color: var(--tok-string);
 }
-.code .comment {
+.code .tok-comment {
   color: var(--tok-comment);
   font-style: italic;
 }
-.code .constant {
+.code .tok-constant {
   color: var(--tok-constant);
 }
-.code .entity {
+.code .tok-entity {
   color: var(--tok-entity);
 }
-.code .support {
+.code .tok-support {
   color: var(--tok-support);
 }
-.code .variable {
+.code .tok-variable {
   color: var(--tok-variable);
 }
-.code .invalid {
+.code .tok-invalid {
   color: #ffffff;
   background: #c5221f;
 }

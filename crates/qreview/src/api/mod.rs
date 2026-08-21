@@ -813,11 +813,11 @@ mod tests {
         assert!(
             classes
                 .iter()
-                .any(|c| c.starts_with("storage") || c.starts_with("keyword")),
+                .any(|c| c.starts_with("tok-storage") || c.starts_with("tok-keyword")),
             "{classes:?}"
         );
         assert!(
-            classes.iter().any(|c| c.starts_with("constant")),
+            classes.iter().any(|c| c.starts_with("tok-constant")),
             "the number is a constant: {classes:?}"
         );
 
@@ -829,7 +829,7 @@ mod tests {
             .map(|t| t["cls"].as_str().unwrap().to_owned())
             .collect();
         assert!(
-            comment.iter().any(|c| c.starts_with("comment")),
+            comment.iter().any(|c| c.starts_with("tok-comment")),
             "{comment:?}"
         );
     }

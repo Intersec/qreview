@@ -70,3 +70,24 @@ test('nothing is lost between the two views', async ({ page }) => {
 
   expect(split).toBe(unified);
 });
+
+test('a token never becomes a block of its own', async ({ page }) => {
+  await openFile(page, 'doc.h');
+
+  // `comment.block.documentation` reached the page as `comment block`, and
+  // a utility class of that name set `display: block`, so `/**` sat on a
+  // line of its own and the two sides drifted apart.
+  const displays = await page
+    .locator('td.code-cell span')
+    .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).display));
+
+  expect(displays.length).toBeGreaterThan(0);
+  expect([...new Set(displays)]).toEqual(['inline']);
+});
+
+test('a doc comment stays on the line it was written on', async ({ page }) => {
+  await openFile(page, 'doc.h');
+
+  const row = page.locator('tr', { hasText: 'Return whether the field' }).first();
+  await expect(row).toContainText('/** Return whether the field is a pointer or not.');
+});

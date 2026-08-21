@@ -155,6 +155,12 @@ fn push(spans: &mut Vec<Span>, start: usize, end: usize, cls: String) {
 }
 
 /// The class of the most specific scope that says something.
+///
+/// Every class is prefixed. A scope atom is an ordinary English word, and
+/// the interface is built on a framework whose utilities are ordinary
+/// English words too: `comment.block.documentation` became `comment block`,
+/// and `block` sets `display: block`, so every doc comment broke its own
+/// line in two.
 fn class_of(stack: &ScopeStack) -> Option<String> {
     for scope in stack.as_slice().iter().rev() {
         let name = scope.build_string();
@@ -166,8 +172,8 @@ fn class_of(stack: &ScopeStack) -> Option<String> {
             continue;
         }
         return match atoms.next() {
-            Some(second) => Some(format!("{first} {second}")),
-            None => Some(first.to_owned()),
+            Some(second) => Some(format!("tok-{first} tok-{second}")),
+            None => Some(format!("tok-{first}")),
         };
     }
     None
@@ -205,11 +211,11 @@ mod tests {
 
         let second: Vec<_> = out[1].iter().map(|s| s.cls.clone()).collect();
         assert!(
-            second.iter().any(|c| c.starts_with("keyword")),
+            second.iter().any(|c| c.starts_with("tok-keyword")),
             "no keyword class: {second:?}"
         );
         assert!(
-            second.iter().any(|c| c.starts_with("string")),
+            second.iter().any(|c| c.starts_with("tok-string")),
             "no string class: {second:?}"
         );
     }
@@ -245,7 +251,7 @@ mod tests {
         let second = classes(&out[1], "   two */");
 
         assert!(
-            second.iter().any(|(cls, _)| cls.starts_with("comment")),
+            second.iter().any(|(cls, _)| cls.starts_with("tok-comment")),
             "the parser must carry the state across lines: {second:?}"
         );
     }
@@ -260,7 +266,7 @@ mod tests {
         assert!(
             first
                 .iter()
-                .any(|c| c.starts_with("storage") || c.starts_with("keyword")),
+                .any(|c| c.starts_with("tok-storage") || c.starts_with("tok-keyword")),
             "{first:?}"
         );
     }
@@ -293,5 +299,33 @@ mod tests {
     #[test]
     fn an_empty_file_has_no_lines() {
         assert!(spans("", Some("c"), "a.c").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod names {
+    use super::*;
+
+    /// Every class the highlighter emits is prefixed.
+    ///
+    /// A scope atom is an English word, and so is a utility class. One that
+    /// slips through unprefixed can set `display`, `float` or `position` on
+    /// a piece of code and break the line it sits on.
+    #[test]
+    fn every_class_carries_the_prefix() {
+        let h = Highlighter::new();
+        let text = "/** A doc comment.\n *\n * More words.\n */\nint main(void) { return 0; }\n";
+        let lines = h.lines("blob-of-the-test", text, Some("c"), "a.c");
+
+        let mut seen = 0;
+        for line in lines.iter() {
+            for span in line {
+                for class in span.cls.split_whitespace() {
+                    assert!(class.starts_with("tok-"), "{class} is not prefixed");
+                    seen += 1;
+                }
+            }
+        }
+        assert!(seen > 0, "the fixture must produce some classes");
     }
 }

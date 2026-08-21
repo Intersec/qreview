@@ -143,6 +143,13 @@ export function build(): Fixture {
   write(repo, 'src/net.blk', 'int connect_once(int fd)\n{\n    return read(fd);\n}\n');
   write(repo, 'src/long.c', long);
   write(repo, 'src/spacing.c', 'int spaced(void)\n{\n    return 1;\n}\n');
+  // A doc comment, because its scope is `comment.block.documentation` and
+  // that once reached the page as a class that broke the line in two.
+  write(
+    repo,
+    'src/doc.h',
+    '/** Return whether the field is a pointer or not.\n *\n * \\\\param[in] fdesc the field description\n * \\\\return true when it is a pointer\n */\nint is_pointer(int fdesc);\n',
+  );
   write(repo, 'docs/old-name.md', '# A document\n\nIt has words in it.\n');
   commit(repo, 'base: start the tree');
 
@@ -191,6 +198,11 @@ export function build(): Fixture {
   // The only change here is the indentation, so it is what a whitespace
   // switch has to hide.
   write(repo, 'src/spacing.c', 'int spaced(void)\n{\n        return 1;\n}\n');
+  write(
+    repo,
+    'src/doc.h',
+    '/** Return whether the field is a pointer or not.\n *\n * \\\\param[in] fdesc the field description\n * \\\\return true when it is a pointer\n */\nbool is_pointer(int fdesc);\n',
+  );
   commit(
     repo,
     'long: touch two places far apart',
