@@ -180,6 +180,7 @@ fn how(state: &AppState, ws: Option<&str>) -> crate::diff::How {
 
     crate::diff::How {
         context: config.diff.context,
+        syntax: config.diff.syntax,
         // The query wins for one request; the panel decides the rest.
         ignore_ws: match ws {
             Some("ignore") => true,

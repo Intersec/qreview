@@ -1,7 +1,7 @@
 // The lines a diff does not carry, opened from the bar between two hunks.
 
 import { expect, test } from '@playwright/test';
-import { openChange, openFile } from './act.ts';
+import { openChange, openFile, useSplit } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -57,7 +57,7 @@ test('the short step up opens the end nearest the hunk above', async ({ page }) 
 });
 
 test('the context opens in the side by side view too', async ({ page }) => {
-  await page.getByRole('button', { name: 'Side by side' }).click();
+  await useSplit(page);
   await page.getByRole('button', { name: '+26 common lines' }).click();
 
   await expect(page.getByText('line 20', { exact: true })).toHaveCount(2);

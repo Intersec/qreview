@@ -1,7 +1,7 @@
 // Reading a series, and writing on it.
 
 import { expect, test } from '@playwright/test';
-import { openChange, openFile } from './act.ts';
+import { openChange, openFile, useSplit } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -68,7 +68,7 @@ test('the page reports no error to the console', async ({ page }) => {
 
   await page.goto(server.url);
   await page.getByRole('button', { name: /long: touch two places/ }).click();
-  await page.getByRole('button', { name: 'Side by side' }).click();
+  await useSplit(page);
 
   expect(complaints).toEqual([]);
 });
@@ -88,7 +88,7 @@ test('the bar says which file of the change is open', async ({ page }) => {
 
 test('a comment sits under the side it was written on', async ({ page }) => {
   await page.getByRole('button', { name: /net: retry the read/ }).click();
-  await page.getByRole('button', { name: 'Side by side' }).click();
+  await useSplit(page);
 
   await page.locator('td.gutter-comment').nth(2).click();
   await page.getByRole('textbox').first().fill('On the new side.');
@@ -131,45 +131,4 @@ test('the files are grouped under the directory they live in', async ({ page }) 
 
   await expect(page.locator('.dir')).toHaveText(['src/']);
   await expect(page.locator('.file-row').first()).toContainText('added.py');
-});
-
-test('ignoring whitespace drops a change that is only spacing', async ({ page }) => {
-  await page.getByRole('button', { name: /net: retry the read/ }).click();
-  await expect(page.locator('td.code-cell.row-add')).not.toHaveCount(0);
-
-  await page.getByRole('button', { name: 'Ignore whitespace' }).click();
-  await expect(page.getByRole('button', { name: 'Ignore whitespace' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
-  // The change is real, so it survives. What matters is that the flag reaches
-  // git and the diff comes back rather than failing.
-  await expect(page.locator('td.code-cell.row-add')).not.toHaveCount(0);
-});
-
-test('a comment can be written on a line the diff did not carry', async ({ page }) => {
-  await openChange(page, /long: touch two places/);
-  await openFile(page, 'long.c');
-  await page
-    .getByRole('button', { name: /common lines/ })
-    .first()
-    .click();
-  await expect(page.getByText('line 12', { exact: true })).toBeVisible();
-
-  const row = page.locator('tr', { has: page.getByText('line 12', { exact: true }) }).first();
-  await row.locator('td.gutter-comment').click();
-  await page.getByRole('textbox').first().fill('Context lines take comments too.');
-  await page.getByRole('button', { name: 'Save' }).click();
-
-  await expect(page.getByText('Context lines take comments too.')).toBeVisible();
-});
-
-test('a comment box does not follow you to the next file', async ({ page }) => {
-  await openChange(page, /long: touch two places/);
-  await openFile(page, 'long.c');
-  await page.locator('td.gutter-comment').first().click();
-  await expect(page.getByRole('textbox')).toHaveCount(1);
-
-  await openFile(page, 'added.py');
-  await expect(page.getByRole('textbox')).toHaveCount(0);
 });

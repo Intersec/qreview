@@ -1,7 +1,7 @@
 // The side-by-side view. Two columns of code, not two columns of margin.
 
 import { expect, test } from '@playwright/test';
-import { openChange, openFile } from './act.ts';
+import { openChange, openFile, useSplit } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -15,8 +15,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto(server.url);
   await openChange(page, /long: touch two places/);
   await openFile(page, 'long.c');
-  await page.getByRole('button', { name: 'Side by side' }).click();
-  await expect(page.getByRole('button', { name: 'Unified' })).toBeVisible();
+  await useSplit(page);
 });
 
 test('the gutters are narrow and the code has the room', async ({ page }) => {

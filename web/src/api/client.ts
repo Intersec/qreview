@@ -3,6 +3,7 @@
 
 import type {
   ChangeSummary,
+  Config,
   Comment,
   EditComment,
   FileDiff,
@@ -42,6 +43,13 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   session: () => call<SessionBody>('/api/session'),
+
+  saveConfig: (patch: object) =>
+    call<Config>('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
 
   extend: (count: number) =>
     call<Series>('/api/series/extend', {

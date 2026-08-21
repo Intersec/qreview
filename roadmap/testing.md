@@ -113,6 +113,11 @@ a real repository. It is part of `make check`.
   far apart, and a merge under the boundary.
 - **The token is read from what the binary prints**, never forced in, so the
   test walks the same path a person does.
+- **Nothing of the person running the tests is touched.** The harness points
+  `XDG_STATE_HOME` and `XDG_CONFIG_HOME` at the temporary directory, because
+  the interface writes both a review and a preferences file.
+- **A suite that writes a preference owns its server.** A setting survives
+  from one test to the next, so `prefs.spec.ts` starts one of its own.
 - **A console error fails a test.** One suite watches the console and expects
   it silent: a Vue warning about a dropped attribute is how the side by side
   view lost its colours.

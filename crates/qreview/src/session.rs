@@ -281,7 +281,7 @@ impl Session {
             let language = self.langs.of(path).map(str::to_owned);
             file.file.language = language.clone().unwrap_or_default();
 
-            if !file.file.binary {
+            if !file.file.binary && how.syntax {
                 self.paint(file, rev, &base, old.as_deref(), language.as_deref())
                     .await;
             }

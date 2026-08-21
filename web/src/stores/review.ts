@@ -6,6 +6,7 @@ import { computed, ref } from 'vue';
 import { api } from '@/api/client';
 import type {
   Comment,
+  Config,
   EditComment,
   FileDiff,
   FileEntry,
@@ -42,9 +43,12 @@ export const useReview = defineStore('review', () => {
   const against = ref<string | undefined>(undefined);
   /// The view the reader last chose. The configuration decides the first
   /// time, and the choice sticks after that.
-  const split = ref(localStorage.getItem('qreview.split') === 'yes');
-  const ignoreWs = ref(localStorage.getItem('qreview.ws') === 'ignore');
-  const wrap = ref(localStorage.getItem('qreview.wrap') === 'yes');
+  /// Everything the panel owns. It comes from the three layers on disk, so
+  /// the next run starts the same way and the command line agrees.
+  const config = ref<Config | null>(null);
+  const split = computed(() => config.value?.ui.diff === 'side-by-side');
+  const wrap = computed(() => config.value?.diff.wrap ?? false);
+  const ignoreWs = computed(() => config.value?.diff.ignoreWhitespace ?? false);
   const mergeList = ref<MergeListItem[]>([]);
 
   /// True while the reader is on the merge under the boundary.
@@ -69,10 +73,7 @@ export const useReview = defineStore('review', () => {
       const body = await api.session();
       version.value = body.version;
       series.value = body.series;
-
-      if (localStorage.getItem('qreview.split') === null) {
-        split.value = body.ui.diff === 'side-by-side';
-      }
+      config.value = body.config;
 
       const first = body.series.changes[0];
       if (first) {
@@ -294,22 +295,31 @@ export const useReview = defineStore('review', () => {
     });
   }
 
-  async function setIgnoreWs(value: boolean) {
-    ignoreWs.value = value;
-    localStorage.setItem('qreview.ws', value ? 'ignore' : 'keep');
-    if (filePath.value) {
-      await openFile(filePath.value);
-    }
-  }
+  /// Write what the panel changed, and read the file again as it landed.
+  async function savePrefs(patch: object) {
+    await guard(async () => {
+      config.value = await api.saveConfig(patch);
 
-  function setWrap(value: boolean) {
-    wrap.value = value;
-    localStorage.setItem('qreview.wrap', value ? 'yes' : 'no');
+      // A setting can change the file list as well as the diff: ignoring
+      // whitespace takes a file whose only change is spacing out of it.
+      const key = changeKey.value;
+      if (!key) {
+        return;
+      }
+      const base = against.value ?? mergeBase.value;
+      files.value = await api.files(key, patchSet.value, base, ignoreWs.value);
+
+      const stays = files.value.find((f) => f.path === filePath.value && !f.binary);
+      const first = stays ?? files.value.find((f) => !f.binary);
+      filePath.value = first?.path ?? null;
+      diff.value = first
+        ? await api.diff(key, first.path, patchSet.value, base, ignoreWs.value)
+        : null;
+    });
   }
 
   function setSplit(value: boolean) {
-    split.value = value;
-    localStorage.setItem('qreview.split', value ? 'yes' : 'no');
+    void savePrefs({ ui: { diff: value ? 'side-by-side' : 'unified' } });
   }
 
   return {
@@ -329,12 +339,12 @@ export const useReview = defineStore('review', () => {
     addComment,
     editComment,
     deleteComment,
+    config,
+    savePrefs,
     split,
     setSplit,
     ignoreWs,
-    setIgnoreWs,
     wrap,
-    setWrap,
     version,
     series,
     changeKey,

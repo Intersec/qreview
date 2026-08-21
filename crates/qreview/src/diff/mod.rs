@@ -27,6 +27,8 @@ pub struct How {
     pub context: usize,
     /// Leave out what differs only by spacing.
     pub ignore_ws: bool,
+    /// Colour the code.
+    pub syntax: bool,
 }
 
 impl Default for How {
@@ -35,6 +37,7 @@ impl Default for How {
         Self {
             context: 10,
             ignore_ws: false,
+            syntax: true,
         }
     }
 }

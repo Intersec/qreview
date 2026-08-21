@@ -39,7 +39,8 @@
   --code-font:
     'Roboto Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, monospace;
   --code-size: 12px;
-  --code-line: 17px;
+  --code-line: 1.42;
+  --tab-width: 4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -217,7 +218,7 @@ table.code col.gut {
   vertical-align: top;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  tab-size: 4;
+  tab-size: var(--tab-width);
 }
 .row-add {
   background: var(--add-line);
@@ -780,4 +781,57 @@ tr.talk td {
 }
 .rebased {
   color: var(--context-ink);
+}
+
+/* ---------------------------------------------------------- the panel */
+
+.veil {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.4);
+}
+.panel {
+  min-width: 22rem;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--page);
+  padding: 12px 16px;
+  font-size: 13px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.3);
+}
+.panel-title {
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.panel .row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+.panel .row > span {
+  flex: 1;
+  color: var(--ink-quiet);
+}
+.panel .number {
+  width: 4.5rem;
+}
+.panel-note {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.panel-note code {
+  font-family: var(--code-font);
+}
+.panel-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 10px;
 }

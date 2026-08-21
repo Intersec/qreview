@@ -11,6 +11,9 @@ import { tmpdir } from 'node:os';
 export interface Fixture {
   repo: string;
   state: string;
+  /// Where the preferences are written. Never the ones of the person
+  /// running the tests.
+  config: string;
   /// An older version of the last change, for `--prev`.
   previous?: string;
   remove(): void;
@@ -48,8 +51,10 @@ export function build(): Fixture {
   const base = mkdtempSync(join(tmpdir(), 'qreview-e2e-'));
   const repo = join(base, 'repo');
   const state = join(base, 'state');
+  const config = join(base, 'config');
   mkdirSync(repo);
   mkdirSync(state);
+  mkdirSync(config);
 
   git(repo, ['init', '--quiet', '--initial-branch=main', '.']);
   git(repo, ['config', 'user.name', 'Test Author']);
@@ -124,6 +129,7 @@ export function build(): Fixture {
   return {
     repo,
     state,
+    config,
     previous,
     remove: () => rmSync(base, { recursive: true, force: true }),
   };

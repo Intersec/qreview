@@ -11,6 +11,18 @@ export async function openChange(page: Page, subject: RegExp | string) {
   await change.first().click();
 }
 
+/// Put the diff in the side by side view, whatever it was in.
+///
+/// The view is a preference now, so it survives from one test to the next.
+export async function useSplit(page: Page) {
+  const toggle = page.getByRole('button', { name: /^(Unified|Side by side)$/ });
+  await toggle.waitFor();
+  if ((await toggle.textContent())?.trim() === 'Side by side') {
+    await toggle.click();
+  }
+  await expect(page.getByRole('button', { name: 'Unified' })).toBeVisible();
+}
+
 export async function openFile(page: Page, name: string) {
   const row = page.locator('.file-row', { hasText: name });
   await row.first().waitFor();

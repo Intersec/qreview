@@ -25,7 +25,12 @@ export async function start(options: { prev?: boolean } = {}): Promise<Running> 
 
   const child: ChildProcess = spawn(BINARY, args, {
     cwd: fixture.repo,
-    env: { ...process.env, XDG_STATE_HOME: fixture.state, NO_COLOR: '1' },
+    env: {
+      ...process.env,
+      XDG_STATE_HOME: fixture.state,
+      XDG_CONFIG_HOME: fixture.config,
+      NO_COLOR: '1',
+    },
   });
 
   const url = await new Promise<string>((resolve, reject) => {

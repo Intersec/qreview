@@ -102,12 +102,36 @@ export interface FileDiff extends FileEntry {
 export interface Ui {
   /// `unified` or `side-by-side`.
   diff: string;
+  /// `system`, `light` or `dark`.
+  theme: string;
+}
+
+export interface DiffPrefs {
+  context: number;
+  wrap: boolean;
+  ignoreWhitespace: boolean;
+  tabWidth: number;
+  fontSize: number;
+  syntax: boolean;
+}
+
+export interface Config {
+  languages: Record<string, string>;
+  gerrit: { enabled: boolean; branch: string | null };
+  series: {
+    maxCommits: number;
+    guessMax: number;
+    batchSize: number;
+    integrationBranch: string | null;
+  };
+  ui: Ui;
+  diff: DiffPrefs;
 }
 
 export interface SessionBody {
   version: string;
   series: Series;
-  ui: Ui;
+  config: Config;
 }
 
 export interface MergeListItem {

@@ -19,14 +19,11 @@ const props = defineProps<{
   /// The comments whose place in this patch set is gone.
   lost: Comment[];
   /// True when the diff leaves out what differs only by whitespace.
-  ignoreWs: boolean;
   /// True when a long line is folded rather than scrolled to.
   wrap: boolean;
 }>();
 const emit = defineEmits<{
   'update:split': [value: boolean];
-  'update:ignoreWs': [value: boolean];
-  'update:wrap': [value: boolean];
   add: [comment: NewComment];
   edit: [id: string, body: string];
   remove: [id: string];
@@ -242,24 +239,6 @@ function toggle(row: Row | null) {
         </button>
         <button type="button" class="chip" @click="about = about === 'change' ? null : 'change'">
           On the change
-        </button>
-        <button
-          type="button"
-          class="chip"
-          :aria-pressed="wrap"
-          title="Fold a long line instead of scrolling to its end"
-          @click="emit('update:wrap', !wrap)"
-        >
-          Wrap
-        </button>
-        <button
-          type="button"
-          class="chip"
-          :aria-pressed="ignoreWs"
-          title="Leave out the lines that differ only by whitespace"
-          @click="emit('update:ignoreWs', !ignoreWs)"
-        >
-          Ignore whitespace
         </button>
         <button
           type="button"

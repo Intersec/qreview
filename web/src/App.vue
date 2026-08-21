@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
+import PreferencesDialog from './components/PreferencesDialog.vue';
 import MergeBar from './components/MergeBar.vue';
 import PatchSetBar from './components/PatchSetBar.vue';
 import SidePane from './components/SidePane.vue';
@@ -22,8 +23,8 @@ const {
   mergeBase,
   mergeList,
   split,
-  ignoreWs,
   wrap,
+  config,
   patchSets,
   patchSet,
   against,
@@ -31,6 +32,12 @@ const {
 } = storeToRefs(review);
 
 const comments = computed(() => review.comments());
+/// The two settings the browser owns rather than the server.
+const codeStyle = computed(() => ({
+  '--code-size': `${config.value?.diff.fontSize ?? 12}px`,
+  '--tab-width': String(config.value?.diff.tabWidth ?? 4),
+}));
+
 const change = computed(() => series.value?.changes.find((c) => c.key === changeKey.value) ?? null);
 
 /// Move to the file before or after the one being read.
@@ -44,6 +51,7 @@ function stepFile(by: number) {
 }
 const lost = computed(() => review.lost());
 const copied = ref(false);
+const prefs = ref(false);
 const side = ref(localStorage.getItem('qreview.side') !== 'hidden');
 const pane = ref<InstanceType<typeof SidePane> | null>(null);
 
@@ -103,6 +111,12 @@ function onKey(event: KeyboardEvent) {
     case '[':
       toggleSide();
       break;
+    case ',':
+      prefs.value = true;
+      break;
+    case 'Escape':
+      prefs.value = false;
+      break;
     case '/':
       event.preventDefault();
       if (!side.value) {
@@ -124,7 +138,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :style="codeStyle">
     <header class="top-bar">
       <button
         type="button"
@@ -144,6 +158,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         </button>
         <button type="button" class="chip" title="The whole series" @click="copy('series')">
           Copy the series
+        </button>
+        <button type="button" class="chip" title="Preferences ( , )" @click="prefs = true">
+          ⚙
         </button>
         <span v-if="copied" role="status" class="copied">copied</span>
         <span class="quiet">{{ version }}</span>
@@ -190,15 +207,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           class="grow"
           :diff="diff"
           :split="split"
-          :ignore-ws="ignoreWs"
           :wrap="wrap"
           :comments="comments"
           :lost="lost"
           :placement="review.placement"
           :load-lines="review.loadLines"
           @update:split="review.setSplit"
-          @update:ignore-ws="review.setIgnoreWs"
-          @update:wrap="review.setWrap"
           @add="review.addComment"
           @edit="(id, body) => review.editComment(id, { body })"
           @remove="review.deleteComment"
@@ -212,5 +226,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
     </main>
 
     <p v-else class="note">Reading the repository…</p>
+
+    <PreferencesDialog
+      v-if="prefs && config"
+      :config="config"
+      @save="
+        (patch) => {
+          review.savePrefs(patch);
+          prefs = false;
+        }
+      "
+      @close="prefs = false"
+    />
   </div>
 </template>
