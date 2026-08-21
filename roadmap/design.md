@@ -356,9 +356,7 @@ read, and one file is written.
   "comments": [
     {
       "id": "c-01H...",
-      "parentId": null,
       "patchSet": 2,
-      "author": "A Developer",
       "createdAt": "2026-08-20T14:02:11Z",
       "updatedAt": "2026-08-20T14:02:11Z",
       "scope": "line",
@@ -378,12 +376,12 @@ read, and one file is written.
 ```
 
 `scope` is `line`, `range`, `file`, or `change`. A `file` comment has an anchor
-with no line. A `change` comment has no anchor. A reply sets `parentId`, which
-makes a thread.
+with no line. A `change` comment has no anchor.
 
-A thread is never resolved. Resolving is a conversation with a reviewer, and
-a review of your own series before the push has none: you correct the code
-and delete the remark.
+A comment stands alone. There is no author, no draft, no reply and no
+resolving: all four are for a conversation with a reviewer, and a review of
+your own series before the push has none. You write a remark, you correct the
+code, you delete the remark.
 
 A draft is a comment like any other, with `"draft": true`. Nothing publishes
 it anywhere, so a draft is only a mark that the author has not finished.
@@ -539,6 +537,7 @@ Rules for the format:
 
 - The comment follows the code, never the opposite. The reader needs the
   context first.
+- No author. One person wrote every line of it.
 - Four lines of code around the anchor, with the real line numbers.
 - The export names the commit and the patch set, so the session knows the
   state the remarks were written against.

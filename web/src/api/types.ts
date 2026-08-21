@@ -135,13 +135,10 @@ export interface Anchor {
 
 export interface Comment {
   id: string;
-  parentId: string | null;
   patchSet: number;
-  author: string;
   createdAt: string;
   updatedAt: string;
   scope: Scope;
-  draft: boolean;
   body: string;
   anchor: Anchor | null;
 }
@@ -154,19 +151,16 @@ export interface ChangeFile {
 }
 
 export interface NewComment {
-  parentId?: string;
   scope: Scope;
   file?: string;
   side?: Side;
   startLine?: number;
   endLine?: number;
   body: string;
-  draft?: boolean;
 }
 
 export interface EditComment {
   body?: string;
-  draft?: boolean;
 }
 
 export type Origin = 'local' | 'prev' | 'gerrit';

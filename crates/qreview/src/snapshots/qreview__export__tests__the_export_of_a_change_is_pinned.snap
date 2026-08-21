@@ -13,7 +13,7 @@ Commit <hash> (patch set 1) · 2 comments
 4 |         read(fd);
 5 |     }
 ```
-**Test Author** — This loop never ends when the socket closes.
+This loop never ends when the socket closes.
 
 ## The change
-**Test Author** — The whole change needs a test.
+The whole change needs a test.

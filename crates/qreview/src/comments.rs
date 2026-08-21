@@ -21,8 +21,6 @@ const CONTEXT: usize = 3;
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewComment {
-    #[serde(default)]
-    pub parent_id: Option<String>,
     pub scope: Scope,
     #[serde(default)]
     pub file: Option<String>,
@@ -33,8 +31,6 @@ pub struct NewComment {
     #[serde(default)]
     pub end_line: Option<usize>,
     pub body: String,
-    #[serde(default)]
-    pub draft: bool,
 }
 
 /// What the interface sends to change one.
@@ -43,8 +39,6 @@ pub struct NewComment {
 pub struct EditComment {
     #[serde(default)]
     pub body: Option<String>,
-    #[serde(default)]
-    pub draft: Option<bool>,
 }
 
 /// What the change owes the series pane.
@@ -64,7 +58,6 @@ pub struct Target<'a> {
     pub base: &'a str,
     pub key: &'a str,
     pub subject: &'a str,
-    pub author: &'a str,
     pub patch_set: usize,
 }
 
@@ -103,13 +96,6 @@ impl Target<'_> {
         }
 
         let mut file = self.store.load(self.key, self.subject)?;
-
-        if let Some(parent) = &new.parent_id
-            && !file.comments.iter().any(|c| &c.id == parent)
-        {
-            bail!("no comment {parent} to answer");
-        }
-
         let now = now();
         let anchor = match new.scope {
             Scope::Change => None,
@@ -118,13 +104,10 @@ impl Target<'_> {
 
         let comment = Comment {
             id: new_id(),
-            parent_id: new.parent_id,
             patch_set: self.patch_set,
-            author: self.author.to_owned(),
             created_at: now.clone(),
             updated_at: now,
             scope: new.scope,
-            draft: new.draft,
             body: new.body.trim_end().to_owned(),
             anchor,
         };
@@ -151,9 +134,6 @@ pub fn edit(store: &Store, key: &str, id: &str, edit: EditComment) -> Result<Com
         }
         found.body = body.trim_end().to_owned();
     }
-    if let Some(draft) = edit.draft {
-        found.draft = draft;
-    }
     found.updated_at = now();
 
     let updated = found.clone();
@@ -162,7 +142,7 @@ pub fn edit(store: &Store, key: &str, id: &str, edit: EditComment) -> Result<Com
     Ok(updated)
 }
 
-/// Delete a comment, and the replies under it.
+/// Delete a comment.
 pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
     let mut file = store.load(key, "")?;
     let before = file.comments.len();
@@ -171,9 +151,7 @@ pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
         bail!("no comment {id}");
     }
 
-    // A reply with no comment above it is unreadable, so a thread goes whole.
-    file.comments
-        .retain(|c| c.id != id && c.parent_id.as_deref() != Some(id));
+    file.comments.retain(|c| c.id != id);
     store.save(&file)?;
 
     Ok(before - file.comments.len())
@@ -256,14 +234,4 @@ fn now() -> String {
     OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
-}
-
-/// The name git commits with.
-pub async fn author_name(git: &Git) -> String {
-    git.text(&["config", "--get", "user.name"])
-        .await
-        .map(|name| name.trim().to_owned())
-        .ok()
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "you".to_owned())
 }

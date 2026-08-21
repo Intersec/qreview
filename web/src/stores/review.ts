@@ -95,16 +95,28 @@ export const useReview = defineStore('review', () => {
       mergeList.value = [];
       patchSet.value = undefined;
       against.value = undefined;
-      const [versions, comments, list] = await Promise.all([
-        api.patchSets(key).catch(() => ({ sets: [], gerrit: null })),
+      patchSets.value = [];
+      gerrit.value = null;
+
+      // The patch sets are asked for on their own. That call reaches Gerrit
+      // over ssh, and the file list must not wait a second for it.
+      void api
+        .patchSets(key)
+        .then((versions) => {
+          if (mine === generation) {
+            patchSets.value = versions.sets;
+            gerrit.value = versions.gerrit;
+          }
+        })
+        .catch(() => undefined);
+
+      const [comments, list] = await Promise.all([
         api.comments(key),
         api.files(key, undefined, base, ignoreWs.value),
       ]);
       if (mine !== generation) {
         return;
       }
-      patchSets.value = versions.sets;
-      gerrit.value = versions.gerrit;
       review.value = comments;
       files.value = list;
       diff.value = null;
@@ -238,16 +250,9 @@ export const useReview = defineStore('review', () => {
     return comments.filter((c) => placement(c.id)?.lost);
   }
 
-  /// The threads of the change: a first comment and the replies under it.
-  function threads(): { first: Comment; replies: Comment[] }[] {
-    const comments = review.value?.comments ?? [];
-
-    return comments
-      .filter((c) => c.parentId === null)
-      .map((first) => ({
-        first,
-        replies: comments.filter((c) => c.parentId === first.id),
-      }));
+  /// The comments of the change being read.
+  function comments(): Comment[] {
+    return review.value?.comments ?? [];
   }
 
   async function reload() {
@@ -305,6 +310,7 @@ export const useReview = defineStore('review', () => {
 
   return {
     review,
+    comments,
     patchSets,
     gerrit,
     fetchPatchSet,
@@ -316,7 +322,6 @@ export const useReview = defineStore('review', () => {
     openPatchSet,
     placement,
     lost,
-    threads,
     addComment,
     editComment,
     deleteComment,

@@ -50,7 +50,7 @@ pub async fn change(session: &Session, key: &str, opts: Options) -> Result<Strin
         return Ok(out);
     }
 
-    for (first, replies) in threads {
+    for first in threads {
         let _ = writeln!(out);
         let _ = writeln!(out, "## {}", place_of(first));
 
@@ -60,10 +60,7 @@ pub async fn change(session: &Session, key: &str, opts: Options) -> Result<Strin
             let _ = writeln!(out, "```");
         }
 
-        let _ = writeln!(out, "**{}** — {}", first.author, one_line(&first.body));
-        for reply in replies {
-            let _ = writeln!(out, "> **{}** — {}", reply.author, one_line(&reply.body));
-        }
+        let _ = writeln!(out, "{}", one_line(&first.body));
     }
     Ok(out)
 }
@@ -91,19 +88,9 @@ pub async fn series(session: &Session, opts: Options) -> Result<String> {
     Ok(out)
 }
 
-/// The threads worth exporting, first comment and replies.
-fn threads_of(comments: &[Comment], _opts: Options) -> Vec<(&Comment, Vec<&Comment>)> {
-    comments
-        .iter()
-        .filter(|c| c.parent_id.is_none())
-        .map(|first| {
-            let replies = comments
-                .iter()
-                .filter(|c| c.parent_id.as_deref() == Some(first.id.as_str()))
-                .collect();
-            (first, replies)
-        })
-        .collect()
+/// The comments worth exporting.
+fn threads_of(comments: &[Comment], _opts: Options) -> Vec<&Comment> {
+    comments.iter().collect()
 }
 
 fn place_of(comment: &Comment) -> String {
@@ -201,14 +188,12 @@ mod tests {
 
     fn line_comment(file: &str, line: usize, body: &str) -> NewComment {
         NewComment {
-            parent_id: None,
             scope: Scope::Line,
             file: Some(file.to_owned()),
             side: Some(Side::New),
             start_line: Some(line),
             end_line: Some(line),
             body: body.to_owned(),
-            draft: false,
         }
     }
 
@@ -243,14 +228,12 @@ mod tests {
             .add_comment(
                 "Iretry",
                 NewComment {
-                    parent_id: None,
                     scope: Scope::Change,
                     file: None,
                     side: None,
                     start_line: None,
                     end_line: None,
                     body: "The whole change needs a test.".to_owned(),
-                    draft: false,
                 },
             )
             .await
@@ -277,41 +260,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_reply_is_quoted_under_the_comment_it_answers() {
-        let repo = reviewed().await;
-        let session = session_of(&repo).await;
-
-        let first = session
-            .add_comment("Iretry", line_comment("src/net.blk", 3, "why?"))
-            .await
-            .unwrap();
-        session
-            .add_comment(
-                "Iretry",
-                NewComment {
-                    parent_id: Some(first.id),
-                    scope: Scope::Change,
-                    file: None,
-                    side: None,
-                    start_line: None,
-                    end_line: None,
-                    body: "because of the timeout".to_owned(),
-                    draft: false,
-                },
-            )
-            .await
-            .unwrap();
-
-        let text = change(&session, "Iretry", Options::default())
-            .await
-            .unwrap();
-        assert!(
-            text.contains("> **Test Author** — because of the timeout"),
-            "{text}"
-        );
-    }
-
-    #[tokio::test]
     async fn a_body_over_several_lines_is_exported_on_one() {
         let repo = reviewed().await;
         let session = session_of(&repo).await;
@@ -327,7 +275,7 @@ mod tests {
         let text = change(&session, "Iretry", Options::default())
             .await
             .unwrap();
-        assert!(text.contains("— one line and another one"), "{text}");
+        assert!(text.contains("one line and another one"), "{text}");
     }
 
     #[tokio::test]

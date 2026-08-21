@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import CommentBox from './CommentBox.vue';
-import CommentThread from './CommentThread.vue';
+import CommentCard from './CommentCard.vue';
 import ContextBar from './ContextBar.vue';
 import DiffRow from './DiffRow.vue';
 import { gaps, type Gap } from '@/diff/gaps';
@@ -11,7 +11,7 @@ import type { Comment, FileDiff, Hunk, NewComment, Row, Side } from '@/api/types
 const props = defineProps<{
   diff: FileDiff;
   split: boolean;
-  threads: { first: Comment; replies: Comment[] }[];
+  comments: Comment[];
   /// Where a comment lands in the patch set being read.
   placement: (id: string) => { line: number | null; lost: boolean } | undefined;
   /// Read a run of lines the diff does not carry.
@@ -36,6 +36,9 @@ const MAX_ROWS = 2000;
 /// Which line a comment box is open on, as `side:line`.
 const writing = ref<string | null>(null);
 
+/// Which of the two "write about" boxes is open.
+const about = ref<'change' | 'file' | null>(null);
+
 /// The context a reader opened, and what is left to open, per gap.
 const opened = reactive(new Map<string, Row[]>());
 const left = reactive(new Map<string, { from: number; to: number }>());
@@ -47,6 +50,10 @@ watch(
   () => {
     opened.clear();
     left.clear();
+    // A box left open would come back on whatever line of the new file
+    // happens to carry the same number.
+    writing.value = null;
+    about.value = null;
   },
 );
 
@@ -150,15 +157,15 @@ function at(row: Row | null) {
   if (line === null) {
     return [];
   }
-  return props.threads.filter((t) => {
-    if (t.first.anchor?.file !== props.diff.path || t.first.anchor.side !== sideOf(row)) {
+  return props.comments.filter((comment) => {
+    if (comment.anchor?.file !== props.diff.path || comment.anchor.side !== sideOf(row)) {
       return false;
     }
-    const placed = props.placement(t.first.id);
+    const placed = props.placement(comment.id);
     if (placed?.lost) {
       return false;
     }
-    return (placed?.line ?? t.first.anchor.startLine) === line;
+    return (placed?.line ?? comment.anchor.startLine) === line;
   });
 }
 
@@ -168,7 +175,7 @@ function talkative(row: Row | null): boolean {
   return row !== null && (at(row).length > 0 || writing.value === key(row));
 }
 
-function write(row: Row, body: string, draft: boolean) {
+function write(row: Row, body: string) {
   const line = lineOf(row);
   if (line === null) {
     return;
@@ -179,7 +186,6 @@ function write(row: Row, body: string, draft: boolean) {
     side: sideOf(row),
     startLine: line,
     body,
-    draft,
   });
   writing.value = null;
 }
@@ -187,23 +193,19 @@ function write(row: Row, body: string, draft: boolean) {
 /// A comment about the whole change, or about this file. Neither belongs to
 /// a line, so both sit above the diff rather than in a pane of their own.
 const loose = computed(() =>
-  props.threads.filter(
-    (t) =>
-      t.first.scope === 'change' ||
-      (t.first.scope === 'file' && t.first.anchor?.file === props.diff.path),
+  props.comments.filter(
+    (comment) =>
+      comment.scope === 'change' ||
+      (comment.scope === 'file' && comment.anchor?.file === props.diff.path),
   ),
 );
 
-/// Which of the two "write about" boxes is open.
-const about = ref<'change' | 'file' | null>(null);
-
-function writeAbout(scope: 'change' | 'file', body: string, draft: boolean) {
+function writeAbout(scope: 'change' | 'file', body: string) {
   emit('add', {
     scope,
     file: scope === 'file' ? props.diff.path : undefined,
     side: scope === 'file' ? 'new' : undefined,
     body,
-    draft,
   });
   about.value = null;
 }
@@ -262,16 +264,14 @@ function toggle(row: Row | null) {
       <CommentBox
         v-if="about"
         :label="about === 'change' ? 'A remark about the change' : 'A remark about the file'"
-        @save="(body, draft) => writeAbout(about!, body, draft)"
+        @save="(body) => writeAbout(about!, body)"
         @cancel="about = null"
       />
 
-      <CommentThread
-        v-for="thread in loose"
-        :key="thread.first.id"
-        :first="thread.first"
-        :replies="thread.replies"
-        @reply="(id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })"
+      <CommentCard
+        v-for="comment in loose"
+        :key="comment.id"
+        :comment="comment"
         @edit="(id, body) => emit('edit', id, body)"
         @remove="(id) => emit('remove', id)"
       />
@@ -310,10 +310,30 @@ function toggle(row: Row | null) {
             :busy="loading"
             @open="(from, to) => open(block.gap, from, to)"
           />
-          <tr v-for="row in rowsOf(block.gap)" :key="`g${row.newLine}`">
-            <DiffRow :row="row" side="old" />
-            <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
-          </tr>
+          <template v-for="row in rowsOf(block.gap)" :key="`g${row.newLine}`">
+            <tr>
+              <DiffRow :row="row" side="old" />
+              <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+            </tr>
+            <tr v-if="talkative(row)" class="talk">
+              <td colspan="2"></td>
+              <td colspan="2">
+                <CommentCard
+                  v-for="comment in at(row)"
+                  :key="comment.id"
+                  :comment="comment"
+                  @edit="(id, body) => emit('edit', id, body)"
+                  @remove="(id) => emit('remove', id)"
+                />
+                <CommentBox
+                  v-if="writing === key(row)"
+                  label="A remark about this line"
+                  @save="(body) => write(row, body)"
+                  @cancel="writing = null"
+                />
+              </td>
+            </tr>
+          </template>
           <ContextBar
             v-if="!isOpen(block.gap) && block.gap.key === 'after'"
             :from="rest(block.gap).from"
@@ -334,40 +354,32 @@ function toggle(row: Row | null) {
                both, so the two columns keep meaning what they mean. -->
           <tr v-if="talkative(pair.left) || talkative(pair.right)" class="talk">
             <td colspan="2">
-              <CommentThread
-                v-for="thread in at(pair.left)"
-                :key="thread.first.id"
-                :first="thread.first"
-                :replies="thread.replies"
-                @reply="
-                  (id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })
-                "
+              <CommentCard
+                v-for="comment in at(pair.left)"
+                :key="comment.id"
+                :comment="comment"
                 @edit="(id, body) => emit('edit', id, body)"
                 @remove="(id) => emit('remove', id)"
               />
               <CommentBox
                 v-if="pair.left && writing === key(pair.left)"
                 label="A remark about this line"
-                @save="(body, draft) => write(pair.left!, body, draft)"
+                @save="(body) => write(pair.left!, body)"
                 @cancel="writing = null"
               />
             </td>
             <td colspan="2">
-              <CommentThread
-                v-for="thread in at(pair.right)"
-                :key="thread.first.id"
-                :first="thread.first"
-                :replies="thread.replies"
-                @reply="
-                  (id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })
-                "
+              <CommentCard
+                v-for="comment in at(pair.right)"
+                :key="comment.id"
+                :comment="comment"
                 @edit="(id, body) => emit('edit', id, body)"
                 @remove="(id) => emit('remove', id)"
               />
               <CommentBox
                 v-if="pair.right && writing === key(pair.right)"
                 label="A remark about this line"
-                @save="(body, draft) => write(pair.right!, body, draft)"
+                @save="(body) => write(pair.right!, body)"
                 @cancel="writing = null"
               />
             </td>
@@ -392,10 +404,29 @@ function toggle(row: Row | null) {
             :busy="loading"
             @open="(from, to) => open(block.gap, from, to)"
           />
-          <tr v-for="row in rowsOf(block.gap)" :key="`g${row.newLine}`">
-            <td class="gutter">{{ row.oldLine ?? '' }}</td>
-            <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
-          </tr>
+          <template v-for="row in rowsOf(block.gap)" :key="`g${row.newLine}`">
+            <tr>
+              <td class="gutter">{{ row.oldLine ?? '' }}</td>
+              <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+            </tr>
+            <tr v-if="talkative(row)" class="talk">
+              <td colspan="3">
+                <CommentCard
+                  v-for="comment in at(row)"
+                  :key="comment.id"
+                  :comment="comment"
+                  @edit="(id, body) => emit('edit', id, body)"
+                  @remove="(id) => emit('remove', id)"
+                />
+                <CommentBox
+                  v-if="writing === key(row)"
+                  label="A remark about this line"
+                  @save="(body) => write(row, body)"
+                  @cancel="writing = null"
+                />
+              </td>
+            </tr>
+          </template>
           <ContextBar
             v-if="!isOpen(block.gap) && block.gap.key === 'after'"
             :from="rest(block.gap).from"
@@ -414,21 +445,17 @@ function toggle(row: Row | null) {
           </tr>
           <tr v-if="talkative(row)" class="talk">
             <td colspan="3">
-              <CommentThread
-                v-for="thread in at(row)"
-                :key="thread.first.id"
-                :first="thread.first"
-                :replies="thread.replies"
-                @reply="
-                  (id, body, draft) => emit('add', { parentId: id, scope: 'change', body, draft })
-                "
+              <CommentCard
+                v-for="comment in at(row)"
+                :key="comment.id"
+                :comment="comment"
                 @edit="(id, body) => emit('edit', id, body)"
                 @remove="(id) => emit('remove', id)"
               />
               <CommentBox
                 v-if="writing === key(row)"
                 label="A remark about this line"
-                @save="(body, draft) => write(row, body, draft)"
+                @save="(body) => write(row, body)"
                 @cancel="writing = null"
               />
             </td>

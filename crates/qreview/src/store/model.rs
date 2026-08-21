@@ -55,18 +55,11 @@ pub enum Side {
 #[serde(rename_all = "camelCase")]
 pub struct Comment {
     pub id: String,
-    /// Set on a reply. A reply and the comment it answers make a thread.
-    #[serde(default)]
-    pub parent_id: Option<String>,
     /// The patch set the comment was written against.
     pub patch_set: usize,
-    pub author: String,
     pub created_at: String,
     pub updated_at: String,
     pub scope: Scope,
-    /// A mark that the author has not finished. Nothing publishes it.
-    #[serde(default)]
-    pub draft: bool,
     pub body: String,
     #[serde(default)]
     pub anchor: Option<Anchor>,

@@ -292,13 +292,10 @@ mod tests {
 
         let comment = Comment {
             id: "c-1".to_owned(),
-            parent_id: None,
             patch_set: 1,
-            author: "a".to_owned(),
             created_at: "t".to_owned(),
             updated_at: "t".to_owned(),
             scope: Scope::Change,
-            draft: false,
             body: "b".to_owned(),
             anchor: None,
         };
@@ -317,13 +314,10 @@ mod tests {
 
         let comment = Comment {
             id: "c-1".to_owned(),
-            parent_id: None,
             patch_set: 1,
-            author: "a".to_owned(),
             created_at: "t".to_owned(),
             updated_at: "t".to_owned(),
             scope: Scope::Line,
-            draft: false,
             body: "b".to_owned(),
             anchor: Some(Anchor {
                 file: "gone.txt".to_owned(),

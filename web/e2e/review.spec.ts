@@ -91,10 +91,10 @@ test('a comment sits under the side it was written on', async ({ page }) => {
   await page.getByRole('textbox').first().fill('On the new side.');
   await page.getByRole('button', { name: 'Save' }).click();
 
-  const row = page.locator('tr.talk').first();
+  const row = page.locator('tr.talk', { hasText: 'On the new side.' }).first();
   await expect(row.locator('td')).toHaveCount(2);
-  await expect(row.locator('td').nth(0)).toBeEmpty();
   await expect(row.locator('td').nth(1)).toContainText('On the new side.');
+  await expect(row.locator('td').nth(0)).not.toContainText('On the new side.');
 });
 
 test('the sidebar hides and comes back', async ({ page }) => {
@@ -142,4 +142,31 @@ test('ignoring whitespace drops a change that is only spacing', async ({ page })
   // The change is real, so it survives. What matters is that the flag reaches
   // git and the diff comes back rather than failing.
   await expect(page.locator('td.code-cell.row-add')).not.toHaveCount(0);
+});
+
+test('a comment can be written on a line the diff did not carry', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+  await page
+    .getByRole('button', { name: /common lines/ })
+    .first()
+    .click();
+  await expect(page.getByText('line 12', { exact: true })).toBeVisible();
+
+  const row = page.locator('tr', { has: page.getByText('line 12', { exact: true }) }).first();
+  await row.locator('td.gutter-comment').click();
+  await page.getByRole('textbox').first().fill('Context lines take comments too.');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await expect(page.getByText('Context lines take comments too.')).toBeVisible();
+});
+
+test('a comment box does not follow you to the next file', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+  await page.locator('td.gutter-comment').first().click();
+  await expect(page.getByRole('textbox')).toHaveCount(1);
+
+  await openFile(page, 'added.py');
+  await expect(page.getByRole('textbox')).toHaveCount(0);
 });

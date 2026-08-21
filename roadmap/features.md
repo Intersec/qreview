@@ -86,9 +86,7 @@ left is in [`plan.md`](./plan.md).
 - ⬜ A comment on a range of lines
 - ✅ A comment on a file, shown above its diff
 - ✅ A comment on the whole change, shown above the diff
-- ✅ A reply, which makes a thread
 - ✅ Edit and delete a comment
-- ✅ A draft mark on a comment that is not finished
 - ✅ Markdown in the body of a comment
 - ✅ Storage under `~/.local/state/qreview`, one file per change
 - ✅ An atomic write, and a read that survives a corrupt file

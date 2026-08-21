@@ -28,8 +28,6 @@ pub struct Session {
     pub langs: Languages,
     pub highlighter: Arc<Highlighter>,
     pub store: Store,
-    /// The name comments are written under.
-    pub author: String,
     pub plan: Plan,
     pub series: Series,
     /// The commits named with `--prev`, resolved.
@@ -82,7 +80,6 @@ impl Session {
             Some(store) => store,
             None => Store::open(&repo.id)?,
         };
-        let author = comments::author_name(&git).await;
 
         let series = Series {
             repo: repo.clone(),
@@ -111,7 +108,6 @@ impl Session {
             langs,
             highlighter,
             store,
-            author,
             plan,
             series,
             prevs,
@@ -555,7 +551,6 @@ impl Session {
             base: &base,
             key,
             subject: &subject,
-            author: &self.author,
             // One patch set until M5 adds the rest.
             patch_set: 1,
         }

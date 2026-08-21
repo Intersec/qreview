@@ -950,7 +950,6 @@ mod tests {
 
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(body["body"], "this reads wrong");
-        assert_eq!(body["author"], "Test Author");
         assert_eq!(body["anchor"]["file"], "src/a.blk");
         assert_eq!(body["anchor"]["startLine"], 2);
         assert!(
@@ -996,7 +995,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_reply_hangs_under_the_comment_it_answers() {
+    async fn a_comment_is_deleted_on_its_own() {
         let repo = fixture().await;
         let server = server(&repo).await;
 
@@ -1005,66 +1004,20 @@ mod tests {
             post("/api/changes/I8f3ac21/comments", LINE_COMMENT),
         )
         .await;
-        let parent = first["id"].as_str().unwrap().to_owned();
-
-        let (status, reply) = json(
-            server.clone(),
-            post(
-                "/api/changes/I8f3ac21/comments",
-                &format!(r#"{{"scope":"change","parentId":"{parent}","body":"I disagree"}}"#),
-            ),
-        )
-        .await;
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(reply["parentId"], parent);
-
-        let (status, _) = json(
-            server,
-            post(
-                "/api/changes/I8f3ac21/comments",
-                r#"{"scope":"change","parentId":"c-nothing","body":"to nobody"}"#,
-            ),
-        )
-        .await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    #[tokio::test]
-    async fn deleting_a_comment_takes_its_replies_with_it() {
-        let repo = fixture().await;
-        let server = server(&repo).await;
-
-        let (_, first) = json(
-            server.clone(),
-            post("/api/changes/I8f3ac21/comments", LINE_COMMENT),
-        )
-        .await;
-        let parent = first["id"].as_str().unwrap().to_owned();
-
-        json(
-            server.clone(),
-            post(
-                "/api/changes/I8f3ac21/comments",
-                &format!(r#"{{"scope":"change","parentId":"{parent}","body":"an answer"}}"#),
-            ),
-        )
-        .await;
+        let id = first["id"].as_str().unwrap().to_owned();
 
         let (status, body) = json(
             server.clone(),
             send(
                 "DELETE",
-                &format!("/api/changes/I8f3ac21/comments/{parent}"),
+                &format!("/api/changes/I8f3ac21/comments/{id}"),
                 "",
             ),
         )
         .await;
 
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            body["deleted"], 2,
-            "a reply with nothing above it is unreadable"
-        );
+        assert_eq!(body["deleted"], 1);
 
         let (_, left) = json(
             server,

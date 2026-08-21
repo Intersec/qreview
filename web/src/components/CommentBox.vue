@@ -1,26 +1,22 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
-const props = defineProps<{ start?: string; label: string; draft?: boolean }>();
-const emit = defineEmits<{ save: [body: string, draft: boolean]; cancel: [] }>();
+const props = defineProps<{ start?: string; label: string }>();
+const emit = defineEmits<{ save: [body: string]; cancel: [] }>();
 
 const body = ref(props.start ?? '');
-const draft = ref(props.draft ?? false);
 
 function save() {
   if (body.value.trim() === '') {
     return;
   }
-  emit('save', body.value, draft.value);
+  emit('save', body.value);
 }
 </script>
 
 <template>
   <form class="talk-box" @submit.prevent="save">
-    <p class="talk-head">
-      <span class="talk-who">New</span>
-      <span>{{ label }}</span>
-    </p>
+    <p class="talk-head">{{ label }}</p>
 
     <div class="talk-body">
       <label class="sr-only" :for="`box-${label}`">{{ label }}</label>
@@ -34,14 +30,10 @@ function save() {
     </div>
 
     <div class="talk-foot">
-      <label class="flex items-center gap-1">
-        <input v-model="draft" type="checkbox" />
-        draft
-      </label>
+      <span class="talk-hint">Markdown. Ctrl+Enter saves.</span>
       <span class="spacer"></span>
       <button type="button" class="action" @click="emit('cancel')">Cancel</button>
       <button type="submit" class="action" :disabled="body.trim() === ''">Save</button>
     </div>
-    <p class="talk-hint">Markdown. Ctrl+Enter saves.</p>
   </form>
 </template>

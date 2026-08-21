@@ -29,7 +29,7 @@ const {
   gerrit,
 } = storeToRefs(review);
 
-const threads = computed(() => review.threads());
+const comments = computed(() => review.comments());
 const change = computed(() => series.value?.changes.find((c) => c.key === changeKey.value) ?? null);
 
 /// Move to the file before or after the one being read.
@@ -190,7 +190,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           :diff="diff"
           :split="split"
           :ignore-ws="ignoreWs"
-          :threads="threads"
+          :comments="comments"
           :lost="lost"
           :placement="review.placement"
           :load-lines="review.loadLines"

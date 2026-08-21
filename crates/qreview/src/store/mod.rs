@@ -139,13 +139,10 @@ mod tests {
     fn comment(id: &str, body: &str) -> Comment {
         Comment {
             id: id.to_owned(),
-            parent_id: None,
             patch_set: 1,
-            author: "Test Author".to_owned(),
             created_at: "2026-01-01T00:00:00Z".to_owned(),
             updated_at: "2026-01-01T00:00:00Z".to_owned(),
             scope: Scope::Line,
-            draft: false,
             body: body.to_owned(),
             anchor: Some(Anchor {
                 file: "src/a.blk".to_owned(),
@@ -264,22 +261,5 @@ mod tests {
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, ["______escape.json"]);
-    }
-
-    #[test]
-    fn a_reply_belongs_to_the_comment_above_it() {
-        let mut file = ChangeFile::new("I8f3a", "s");
-        file.comments.push(comment("c-1", "one"));
-        let mut reply = comment("c-2", "an answer");
-        reply.parent_id = Some("c-1".to_owned());
-        file.comments.push(reply);
-
-        let threads = file
-            .comments
-            .iter()
-            .filter(|c| c.parent_id.is_none())
-            .count();
-        assert_eq!(threads, 1);
-        assert_eq!(file.comments.len(), 2);
     }
 }
