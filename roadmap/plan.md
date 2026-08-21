@@ -186,11 +186,22 @@ surprised by anything.*
 - [x] A whitespace toggle
 - [x] A per-change read mark, kept between sessions
 
+## M9 — What the reader asked for after using it
+
+- [x] A comment stands alone: no author, no draft, no reply, no resolving
+- [x] Ten lines of context, not the three git gives
+- [x] A preferences panel, which writes the file the command line reads
+- [x] A theme the reader chooses
+- [x] The keys Gerrit uses, and `?` to list them
+- [ ] A mock Gerrit for the browser tests: a fake `ssh` on the PATH and a
+      bare repository as the remote
+
 ## After that
 
 1. A comment on a range of lines. A comment on one line covers most of it.
 2. A rebase-aware diff between two patch sets.
 3. A JSON export, and a Claude Code skill that reads it.
+4. An HTTP transport for Gerrit, for a server with ssh closed.
 
 ## Session protocol
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import CommentBox from './CommentBox.vue';
 import CommentCard from './CommentCard.vue';
 import ContextBar from './ContextBar.vue';
@@ -54,6 +54,7 @@ watch(
     // happens to carry the same number.
     writing.value = null;
     about.value = null;
+    cursor.value = null;
   },
 );
 
@@ -175,10 +176,83 @@ function talkative(row: Row | null): boolean {
   return row !== null && (at(row).length > 0 || writing.value === key(row));
 }
 
+/// The line the keyboard is on, as `side:line`.
+const cursor = ref<string | null>(null);
+
+/// Every row the reader can walk, in the order they are drawn.
+const walkable = computed<Row[]>(() => {
+  const out: Row[] = [];
+  for (const block of blocks.value) {
+    if (block.kind === 'gap') {
+      out.push(...rowsOf(block.gap));
+    } else if (block.hunk) {
+      out.push(...block.hunk.rows);
+    }
+  }
+  return out;
+});
+
+function place(row: Row | undefined) {
+  if (!row) {
+    return;
+  }
+  cursor.value = key(row);
+  void nextTick(() => {
+    document.querySelector('.row-cursor')?.scrollIntoView({ block: 'center' });
+  });
+}
+
+/// One line down or up.
+function moveLine(by: number) {
+  const list = walkable.value;
+  if (list.length === 0) {
+    return;
+  }
+  const at = list.findIndex((row) => key(row) === cursor.value);
+  const next = at === -1 ? 0 : Math.min(Math.max(at + by, 0), list.length - 1);
+  place(list[next]);
+}
+
+/// The first line of the next hunk, or of the one before.
+function moveHunk(by: number) {
+  const heads = blocks.value
+    .filter((block) => block.kind === 'hunk')
+    .map((block) => block.hunk?.rows[0])
+    .filter((row): row is Row => row !== undefined);
+  if (heads.length === 0) {
+    return;
+  }
+
+  const list = walkable.value;
+  const here = list.findIndex((row) => key(row) === cursor.value);
+  const found =
+    by > 0
+      ? heads.find((head) => list.indexOf(head) > here)
+      : [...heads].reverse().find((head) => list.indexOf(head) < here);
+
+  place(found ?? heads[by > 0 ? heads.length - 1 : 0]);
+}
+
+/// Write on the line the keyboard is on.
+function commentHere() {
+  if (cursor.value === null) {
+    moveLine(1);
+  }
+  if (cursor.value !== null) {
+    writing.value = cursor.value;
+  }
+}
+
+defineExpose({ moveLine, moveHunk, commentHere });
+
 /// The left column of a pair only speaks for a removed line.
 ///
 /// A context line is the same row on both sides, so without this both cells
 /// would draw the comment, and the box would appear twice.
+function onCursor(row: Row | null): boolean {
+  return row !== null && cursor.value === key(row);
+}
+
 function ownLeft(pair: { left: Row | null }): Row | null {
   return pair.left?.kind === 'remove' ? pair.left : null;
 }
@@ -344,7 +418,7 @@ function toggle(row: Row | null) {
         </template>
 
         <template v-for="(pair, p) in pairs(block.hunk?.rows ?? [])" v-else :key="p">
-          <tr>
+          <tr :class="onCursor(pair.right) || onCursor(ownLeft(pair)) ? 'row-cursor' : ''">
             <DiffRow :row="pair.left" side="old" @comment="toggle(pair.left)" />
             <DiffRow :row="pair.right" side="new" commentable @comment="toggle(pair.right)" />
           </tr>
@@ -436,7 +510,7 @@ function toggle(row: Row | null) {
         </template>
 
         <template v-for="(row, r) in block.hunk?.rows ?? []" v-else :key="r">
-          <tr>
+          <tr :class="onCursor(row) ? 'row-cursor' : ''">
             <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
             <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
           </tr>

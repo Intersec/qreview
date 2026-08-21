@@ -46,15 +46,56 @@ test('a comment on a line comes back after a reload', async ({ page }) => {
   await expect(page.getByText('This loop never ends.')).toBeVisible();
 });
 
-test('the keyboard walks the files', async ({ page }) => {
-  await page.getByRole('button', { name: /long: touch two places/ }).click();
-  await expect(page.locator('header h2')).toContainText('src/added.py');
+test('the keyboard walks the files the way Gerrit does', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await expect(page.locator('.file-bar h2')).toContainText('src/added.py');
+
+  await page.keyboard.press(']');
+  await expect(page.locator('.file-bar h2')).toContainText('src/long.c');
+
+  await page.keyboard.press('[');
+  await expect(page.locator('.file-bar h2')).toContainText('src/added.py');
+});
+
+test('the keyboard walks the lines and the hunks', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
 
   await page.keyboard.press('j');
-  await expect(page.locator('header h2')).toContainText('src/long.c');
+  await expect(page.locator('tr.row-cursor')).toHaveCount(1);
+  const first = await page.locator('tr.row-cursor').textContent();
 
-  await page.keyboard.press('k');
-  await expect(page.locator('header h2')).toContainText('src/added.py');
+  await page.keyboard.press('j');
+  expect(await page.locator('tr.row-cursor').textContent()).not.toBe(first);
+
+  // The second hunk starts at line 40, far below where j has walked.
+  await page.keyboard.press('n');
+  await expect(page.locator('tr.row-cursor')).toContainText('line 40');
+});
+
+test('c writes on the line the keyboard is on', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+
+  await page.keyboard.press('j');
+  await page.keyboard.press('j');
+  await page.keyboard.press('c');
+
+  await expect(page.getByRole('textbox')).toHaveCount(1);
+  await page.getByRole('textbox').fill('Written from the keyboard.');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Written from the keyboard.')).toBeVisible();
+});
+
+test('the question mark lists the keys', async ({ page }) => {
+  await page.keyboard.press('?');
+
+  const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  await expect(help).toBeVisible();
+  await expect(help).toContainText('The next or the previous hunk');
+
+  await page.keyboard.press('Escape');
+  await expect(help).toBeHidden();
 });
 
 test('the page reports no error to the console', async ({ page }) => {
@@ -103,13 +144,13 @@ test('a comment sits under the side it was written on', async ({ page }) => {
 test('the sidebar hides and comes back', async ({ page }) => {
   await expect(page.locator('.side')).toBeVisible();
 
-  await page.keyboard.press('[');
+  await page.keyboard.press('u');
   await expect(page.locator('.side')).toBeHidden();
 
   await page.reload();
   await expect(page.locator('.side')).toBeHidden();
 
-  await page.keyboard.press('[');
+  await page.keyboard.press('u');
   await expect(page.locator('.side')).toBeVisible();
 });
 

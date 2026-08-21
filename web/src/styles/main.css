@@ -873,3 +873,22 @@ tr.talk td {
   gap: 12px;
   margin-top: 10px;
 }
+
+/* The line the keyboard is on. */
+tr.row-cursor .gutter,
+tr.row-cursor .code-cell {
+  box-shadow:
+    inset 0 1px 0 var(--pick-edge),
+    inset 0 -1px 0 var(--pick-edge);
+}
+
+kbd {
+  min-width: 3.5rem;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  padding: 0 5px;
+  background: var(--pane);
+  font-family: var(--code-font);
+  font-size: 11px;
+  text-align: center;
+}

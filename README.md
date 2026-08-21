@@ -48,12 +48,20 @@ What the browser shows:
 - Two buttons that put the review in the clipboard, made to be pasted into a
   session with an AI agent.
 
+The keys are the ones Gerrit uses, so a reader who lives in Gerrit needs no
+second set of habits. `?` lists them in the interface.
+
 | Key | What it does |
 |---|---|
-| `j` / `k` | The next or the previous file |
-| `n` / `p` | The next or the previous change |
-| `u` | Swap unified and side by side |
-| `/` | Jump to the file filter |
+| `j` / `k` | The next or the previous line |
+| `n` / `p` | The next or the previous hunk |
+| `]` / `[` | The next or the previous file |
+| `J` / `K` | The next or the previous change |
+| `c` | Write on the line the keyboard is on |
+| `u` | Show or hide the series |
+| `/` | Filter the files |
+| `,` | Preferences |
+| `?` | The list of keys |
 
 Comments are stored under `~/.local/state/qreview`, keyed by `Change-Id`. An
 amend keeps them.
@@ -109,8 +117,9 @@ every reader of that repository gets the map with no setup:
 A grammar is data too. Drop a `.sublime-syntax` or `.tmLanguage` file in
 `~/.config/qreview/grammars/` and name it in the map. No rebuild.
 
-Personal settings go in `~/.config/qreview/config.json`. See
-`examples/config.json`.
+Personal settings go in `~/.config/qreview/config.json`. The preferences
+panel behind `,` writes that same file, so the next run starts the way you
+left it. See `examples/config.json`.
 
 ## Documentation
 

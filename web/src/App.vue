@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia';
 import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
 import PreferencesDialog from './components/PreferencesDialog.vue';
+import ShortcutHelp from './components/ShortcutHelp.vue';
 import MergeBar from './components/MergeBar.vue';
 import PatchSetBar from './components/PatchSetBar.vue';
 import SidePane from './components/SidePane.vue';
@@ -52,6 +53,8 @@ function stepFile(by: number) {
 const lost = computed(() => review.lost());
 const copied = ref(false);
 const prefs = ref(false);
+const helping = ref(false);
+const diffView = ref<InstanceType<typeof DiffView> | null>(null);
 const side = ref(localStorage.getItem('qreview.side') !== 'hidden');
 const pane = ref<InstanceType<typeof SidePane> | null>(null);
 
@@ -81,41 +84,51 @@ function onKey(event: KeyboardEvent) {
     return;
   }
 
-  const step = (list: string[], current: string | null, by: number): string | null => {
-    if (list.length === 0) {
-      return null;
-    }
-    const at = current === null ? -1 : list.indexOf(current);
-    const next = Math.min(Math.max(at + by, 0), list.length - 1);
-    return list[next] ?? null;
-  };
-
-  const keys = series.value?.changes.map((c) => c.key) ?? [];
-
   switch (event.key) {
+    // The same keys Gerrit uses.
     case 'j':
+      diffView.value?.moveLine(1);
+      break;
     case 'k':
-      stepFile(event.key === 'j' ? 1 : -1);
+      diffView.value?.moveLine(-1);
       break;
     case 'n':
-    case 'p': {
-      const key = step(keys, changeKey.value, event.key === 'n' ? 1 : -1);
-      if (key) {
-        review.openChange(key);
+      diffView.value?.moveHunk(1);
+      break;
+    case 'p':
+      diffView.value?.moveHunk(-1);
+      break;
+    case ']':
+      stepFile(1);
+      break;
+    case '[':
+      stepFile(-1);
+      break;
+    case 'J':
+    case 'K': {
+      const keys = series.value?.changes.map((c) => c.key) ?? [];
+      const at = changeKey.value === null ? -1 : keys.indexOf(changeKey.value);
+      const next = keys[Math.min(Math.max(at + (event.key === 'J' ? 1 : -1), 0), keys.length - 1)];
+      if (next) {
+        review.openChange(next);
       }
       break;
     }
-    case 'u':
-      review.setSplit(!split.value);
+    case 'c':
+      diffView.value?.commentHere();
       break;
-    case '[':
+    case 'u':
       toggleSide();
       break;
     case ',':
       prefs.value = true;
       break;
+    case '?':
+      helping.value = true;
+      break;
     case 'Escape':
       prefs.value = false;
+      helping.value = false;
       break;
     case '/':
       event.preventDefault();
@@ -174,6 +187,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         <button type="button" class="chip" title="The whole series" @click="copy('series')">
           Copy the series
         </button>
+        <button type="button" class="chip" title="Keyboard shortcuts ( ? )" @click="helping = true">
+          ?
+        </button>
         <button type="button" class="chip" title="Preferences ( , )" @click="prefs = true">
           ⚙
         </button>
@@ -219,6 +235,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         />
         <DiffView
           v-if="diff"
+          ref="diffView"
           class="grow"
           :diff="diff"
           :split="split"
@@ -253,5 +270,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       "
       @close="prefs = false"
     />
+
+    <ShortcutHelp v-if="helping" @close="helping = false" />
   </div>
 </template>
