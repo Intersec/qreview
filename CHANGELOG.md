@@ -12,6 +12,57 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.2.0]
+
+### Added
+
+- **Know where you are** — a bar above the diff carries the subject of the
+  change, its commit, and which file of the change is open, with Prev and
+  Next beside it.
+- **Open the context between two hunks** — a bar says how many lines it hides
+  and opens them, whole or ten at a time. A diff carries what changed and
+  three lines around it, and the rest is one click away.
+- **Files grouped by directory** — the directory is said once and the files
+  under it carry their name alone, so a change of forty files stays readable
+  in a narrow pane.
+- **Ignore whitespace** — a switch above the diff leaves out the lines that
+  differ only by spacing.
+- **Mark a change read** — a box beside each change of the series, kept
+  between sessions. It says nothing about the comments: a change can be read
+  and still carry remarks.
+
+### Changed
+
+- **The diff reads like Gerrit** — dense monospace rows, the pale line and
+  the stronger word inside it, and a line-number gutter left plain. Both
+  themes follow the Gerrit palette.
+- **The window belongs to the code** — the comments pane is gone and the two
+  left panes are one. A comment about the file or the change now sits above
+  the diff, where it is written. The code went from about half the window to
+  five sixths of it, and `[` hides the sidebar as well.
+
+### Fixed
+
+- **Copy the series** said the series held nothing. It trusted a comment
+  count taken when the session opened, so a comment written a minute later
+  was invisible to it.
+- **The date of a commit** is the same on every machine. One git writes
+  `+00:00` for UTC and another writes `Z`, so the tool reads a count of
+  seconds and formats it itself.
+- **Load 5 older** did nothing at the base of a series, and nothing at a
+  merge. The base is where the first batch stopped, not a wall, and a merge
+  now joins the list, where it is reviewable, while the walk goes on down the
+  first parent.
+- **The side by side view** — the two gutters took a quarter of the pane
+  each, so the code started in the middle of the window, and no line was
+  green or red. A comment now sits under the side it was written on rather
+  than across both.
+
+### Removed
+
+- **Resolving a thread** — it is a conversation with a reviewer, and a review
+  of your own series before the push has none. Correct the code and delete
+  the remark.
 ## [0.1.0]
 
 ### Added
