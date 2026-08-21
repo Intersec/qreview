@@ -7,7 +7,7 @@ import { chromium, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import config from '../playwright.config.ts';
-import { openChange, openFile } from './act.ts';
+import { openChange, openFile, useSplit } from './act.ts';
 import { start } from './server.ts';
 
 const OUT = join(import.meta.dirname, '.shots');
@@ -54,8 +54,13 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(OUT, `${scheme}-expanded.png`) });
 
-  await page.getByRole('button', { name: 'Side by side' }).click();
+  await useSplit(page);
   await page.screenshot({ path: join(OUT, `${scheme}-split.png`) });
+
+  // The panel, which is where the settings live now.
+  await page.getByRole('button', { name: '⚙' }).click();
+  await page.screenshot({ path: join(OUT, `${scheme}-preferences.png`) });
+  await page.getByRole('button', { name: 'Cancel' }).click();
 
   // A comment, open on its line.
   await openChange(page, /net: retry the read/);
