@@ -341,7 +341,7 @@ function toggle(row: Row | null) {
           Comment on the file
         </button>
         <button type="button" class="chip" @click="about = about === 'change' ? null : 'change'">
-          On the change
+          Comment on the change
         </button>
         <button
           type="button"
@@ -387,109 +387,184 @@ function toggle(row: Row | null) {
 
     <p v-else-if="diff.hunks.length === 0" class="note">Nothing changed inside this file.</p>
 
-    <table v-else-if="split" class="code" :class="wrap ? '' : 'nowrap'">
-      <colgroup>
-        <col class="gut" />
-        <col />
-        <col class="gut" />
-        <col />
-      </colgroup>
-      <tbody v-for="(block, b) in blocks" :key="b">
-        <template v-if="block.kind === 'gap'">
-          <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
-            <tr>
-              <DiffRow :row="row" side="old" />
-              <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+    <div v-else class="diff-scroll">
+      <table v-if="split" class="code" :class="wrap ? '' : 'nowrap'">
+        <colgroup>
+          <col class="gut" />
+          <col />
+          <col class="gut" />
+          <col />
+        </colgroup>
+        <tbody v-for="(block, b) in blocks" :key="b">
+          <template v-if="block.kind === 'gap'">
+            <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
+              <tr>
+                <DiffRow :row="row" side="old" />
+                <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+              </tr>
+              <tr v-if="talkative(row)" class="talk">
+                <td colspan="2"></td>
+                <td colspan="2">
+                  <CommentCard
+                    v-for="comment in at(row)"
+                    :key="comment.id"
+                    :comment="comment"
+                    @edit="(id, body) => emit('edit', id, body)"
+                    @remove="(id) => emit('remove', id)"
+                  />
+                  <CommentBox
+                    v-if="writing === key(row)"
+                    label="A remark about this line"
+                    @save="(body) => write(row, body)"
+                    @cancel="writing = null"
+                  />
+                </td>
+              </tr>
+            </template>
+            <ContextBar
+              v-if="!isOpen(block.gap)"
+              :from="rest(block.gap).from"
+              :to="rest(block.gap).to"
+              :columns="4"
+              :busy="loading"
+              @open="(from, to) => open(block.gap, from, to)"
+            />
+            <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
+              <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                <DiffRow :row="row" side="old" />
+                <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+              </tr>
+              <tr v-if="talkative(row)" class="talk">
+                <td colspan="2"></td>
+                <td colspan="2">
+                  <CommentCard
+                    v-for="comment in at(row)"
+                    :key="comment.id"
+                    :comment="comment"
+                    @edit="(id, body) => emit('edit', id, body)"
+                    @remove="(id) => emit('remove', id)"
+                  />
+                  <CommentBox
+                    v-if="writing === key(row)"
+                    label="A remark about this line"
+                    @save="(body) => write(row, body)"
+                    @cancel="writing = null"
+                  />
+                </td>
+              </tr>
+            </template>
+          </template>
+
+          <template v-for="(pair, p) in pairs(block.hunk?.rows ?? [])" v-else :key="p">
+            <tr :class="onCursor(pair.right) || onCursor(ownLeft(pair)) ? 'row-cursor' : ''">
+              <DiffRow :row="pair.left" side="old" @comment="toggle(pair.left)" />
+              <DiffRow :row="pair.right" side="new" commentable @comment="toggle(pair.right)" />
             </tr>
-            <tr v-if="talkative(row)" class="talk">
-              <td colspan="2"></td>
+            <!-- A comment sits under the side it was written on, not across
+               both, so the two columns keep meaning what they mean. -->
+            <tr v-if="talkative(ownLeft(pair)) || talkative(pair.right)" class="talk">
               <td colspan="2">
                 <CommentCard
-                  v-for="comment in at(row)"
+                  v-for="comment in at(ownLeft(pair))"
                   :key="comment.id"
                   :comment="comment"
                   @edit="(id, body) => emit('edit', id, body)"
                   @remove="(id) => emit('remove', id)"
                 />
                 <CommentBox
-                  v-if="writing === key(row)"
+                  v-if="ownLeft(pair) && writing === key(ownLeft(pair)!)"
                   label="A remark about this line"
-                  @save="(body) => write(row, body)"
+                  @save="(body) => write(ownLeft(pair)!, body)"
+                  @cancel="writing = null"
+                />
+              </td>
+              <td colspan="2">
+                <CommentCard
+                  v-for="comment in at(pair.right)"
+                  :key="comment.id"
+                  :comment="comment"
+                  @edit="(id, body) => emit('edit', id, body)"
+                  @remove="(id) => emit('remove', id)"
+                />
+                <CommentBox
+                  v-if="pair.right && writing === key(pair.right)"
+                  label="A remark about this line"
+                  @save="(body) => write(pair.right!, body)"
                   @cancel="writing = null"
                 />
               </td>
             </tr>
           </template>
-          <ContextBar
-            v-if="!isOpen(block.gap)"
-            :from="rest(block.gap).from"
-            :to="rest(block.gap).to"
-            :columns="4"
-            :busy="loading"
-            @open="(from, to) => open(block.gap, from, to)"
-          />
-          <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
-            <tr :class="onCursor(row) ? 'row-cursor' : ''">
-              <DiffRow :row="row" side="old" />
-              <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
-            </tr>
+        </tbody>
+      </table>
+
+      <table v-else class="code" :class="wrap ? '' : 'nowrap'">
+        <colgroup>
+          <col class="gut" />
+          <col class="gut" />
+          <col />
+        </colgroup>
+        <tbody v-for="(block, b) in blocks" :key="b">
+          <template v-if="block.kind === 'gap'">
+            <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
+              <tr>
+                <td class="gutter">{{ row.oldLine ?? '' }}</td>
+                <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+              </tr>
+              <tr v-if="talkative(row)" class="talk">
+                <td colspan="3">
+                  <CommentCard
+                    v-for="comment in at(row)"
+                    :key="comment.id"
+                    :comment="comment"
+                    @edit="(id, body) => emit('edit', id, body)"
+                    @remove="(id) => emit('remove', id)"
+                  />
+                  <CommentBox
+                    v-if="writing === key(row)"
+                    label="A remark about this line"
+                    @save="(body) => write(row, body)"
+                    @cancel="writing = null"
+                  />
+                </td>
+              </tr>
+            </template>
+            <ContextBar
+              v-if="!isOpen(block.gap)"
+              :from="rest(block.gap).from"
+              :to="rest(block.gap).to"
+              :columns="3"
+              :busy="loading"
+              @open="(from, to) => open(block.gap, from, to)"
+            />
+            <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
+              <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
+                <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+              </tr>
+              <tr v-if="talkative(row)" class="talk">
+                <td colspan="3">
+                  <CommentCard
+                    v-for="comment in at(row)"
+                    :key="comment.id"
+                    :comment="comment"
+                    @edit="(id, body) => emit('edit', id, body)"
+                    @remove="(id) => emit('remove', id)"
+                  />
+                  <CommentBox
+                    v-if="writing === key(row)"
+                    label="A remark about this line"
+                    @save="(body) => write(row, body)"
+                    @cancel="writing = null"
+                  />
+                </td>
+              </tr>
+            </template>
           </template>
-        </template>
 
-        <template v-for="(pair, p) in pairs(block.hunk?.rows ?? [])" v-else :key="p">
-          <tr :class="onCursor(pair.right) || onCursor(ownLeft(pair)) ? 'row-cursor' : ''">
-            <DiffRow :row="pair.left" side="old" @comment="toggle(pair.left)" />
-            <DiffRow :row="pair.right" side="new" commentable @comment="toggle(pair.right)" />
-          </tr>
-          <!-- A comment sits under the side it was written on, not across
-               both, so the two columns keep meaning what they mean. -->
-          <tr v-if="talkative(ownLeft(pair)) || talkative(pair.right)" class="talk">
-            <td colspan="2">
-              <CommentCard
-                v-for="comment in at(ownLeft(pair))"
-                :key="comment.id"
-                :comment="comment"
-                @edit="(id, body) => emit('edit', id, body)"
-                @remove="(id) => emit('remove', id)"
-              />
-              <CommentBox
-                v-if="ownLeft(pair) && writing === key(ownLeft(pair)!)"
-                label="A remark about this line"
-                @save="(body) => write(ownLeft(pair)!, body)"
-                @cancel="writing = null"
-              />
-            </td>
-            <td colspan="2">
-              <CommentCard
-                v-for="comment in at(pair.right)"
-                :key="comment.id"
-                :comment="comment"
-                @edit="(id, body) => emit('edit', id, body)"
-                @remove="(id) => emit('remove', id)"
-              />
-              <CommentBox
-                v-if="pair.right && writing === key(pair.right)"
-                label="A remark about this line"
-                @save="(body) => write(pair.right!, body)"
-                @cancel="writing = null"
-              />
-            </td>
-          </tr>
-        </template>
-      </tbody>
-    </table>
-
-    <table v-else class="code" :class="wrap ? '' : 'nowrap'">
-      <colgroup>
-        <col class="gut" />
-        <col class="gut" />
-        <col />
-      </colgroup>
-      <tbody v-for="(block, b) in blocks" :key="b">
-        <template v-if="block.kind === 'gap'">
-          <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
-            <tr>
-              <td class="gutter">{{ row.oldLine ?? '' }}</td>
+          <template v-for="(row, r) in block.hunk?.rows ?? []" v-else :key="r">
+            <tr :class="onCursor(row) ? 'row-cursor' : ''">
+              <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
               <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
             </tr>
             <tr v-if="talkative(row)" class="talk">
@@ -510,47 +585,9 @@ function toggle(row: Row | null) {
               </td>
             </tr>
           </template>
-          <ContextBar
-            v-if="!isOpen(block.gap)"
-            :from="rest(block.gap).from"
-            :to="rest(block.gap).to"
-            :columns="3"
-            :busy="loading"
-            @open="(from, to) => open(block.gap, from, to)"
-          />
-          <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
-            <tr :class="onCursor(row) ? 'row-cursor' : ''">
-              <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
-              <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
-            </tr>
-          </template>
-        </template>
-
-        <template v-for="(row, r) in block.hunk?.rows ?? []" v-else :key="r">
-          <tr :class="onCursor(row) ? 'row-cursor' : ''">
-            <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
-            <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
-          </tr>
-          <tr v-if="talkative(row)" class="talk">
-            <td colspan="3">
-              <CommentCard
-                v-for="comment in at(row)"
-                :key="comment.id"
-                :comment="comment"
-                @edit="(id, body) => emit('edit', id, body)"
-                @remove="(id) => emit('remove', id)"
-              />
-              <CommentBox
-                v-if="writing === key(row)"
-                label="A remark about this line"
-                @save="(body) => write(row, body)"
-                @cancel="writing = null"
-              />
-            </td>
-          </tr>
-        </template>
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
 
     <p v-if="capped" role="status" class="note warn">
       This file is very large. {{ total - MAX_ROWS }} rows are not shown, because building them

@@ -90,3 +90,23 @@ test('a file with no gap has no bar', async ({ page }) => {
 
   await expect(page.getByRole('button', { name: /common lines/ })).toHaveCount(0);
 });
+
+for (const [button, line] of [
+  ['+10 ↑', 'line 14'],
+  ['+10 ↓', 'line 39'],
+] as const) {
+  test(`a line opened by ${button} takes a comment`, async ({ page }) => {
+    await page.getByRole('button', { name: button }).click();
+    await expect(page.getByText(line, { exact: true }).first()).toBeVisible();
+
+    const row = page.locator('tr', { hasText: line }).first();
+    await row.locator('td.gutter-comment').first().click();
+
+    // The row drawn after the bar had no place to put the box, so the click
+    // set the state and nothing appeared.
+    await expect(page.getByRole('textbox')).toHaveCount(1);
+    await page.getByRole('textbox').fill(`A remark on ${line}.`);
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText(`A remark on ${line}.`)).toBeVisible();
+  });
+}
