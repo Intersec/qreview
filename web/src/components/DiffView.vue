@@ -20,10 +20,13 @@ const props = defineProps<{
   lost: Comment[];
   /// True when the diff leaves out what differs only by whitespace.
   ignoreWs: boolean;
+  /// True when a long line is folded rather than scrolled to.
+  wrap: boolean;
 }>();
 const emit = defineEmits<{
   'update:split': [value: boolean];
   'update:ignoreWs': [value: boolean];
+  'update:wrap': [value: boolean];
   add: [comment: NewComment];
   edit: [id: string, body: string];
   remove: [id: string];
@@ -243,6 +246,15 @@ function toggle(row: Row | null) {
         <button
           type="button"
           class="chip"
+          :aria-pressed="wrap"
+          title="Fold a long line instead of scrolling to its end"
+          @click="emit('update:wrap', !wrap)"
+        >
+          Wrap
+        </button>
+        <button
+          type="button"
+          class="chip"
           :aria-pressed="ignoreWs"
           title="Leave out the lines that differ only by whitespace"
           @click="emit('update:ignoreWs', !ignoreWs)"
@@ -293,7 +305,7 @@ function toggle(row: Row | null) {
 
     <p v-else-if="diff.hunks.length === 0" class="note">Nothing changed inside this file.</p>
 
-    <table v-else-if="split" class="code">
+    <table v-else-if="split" class="code" :class="wrap ? '' : 'nowrap'">
       <colgroup>
         <col class="gut" />
         <col />
@@ -340,7 +352,6 @@ function toggle(row: Row | null) {
             :to="rest(block.gap).to"
             :columns="4"
             :busy="loading"
-            hunk-above
             @open="(from, to) => open(block.gap, from, to)"
           />
         </template>
@@ -388,7 +399,7 @@ function toggle(row: Row | null) {
       </tbody>
     </table>
 
-    <table v-else class="code">
+    <table v-else class="code" :class="wrap ? '' : 'nowrap'">
       <colgroup>
         <col class="gut" />
         <col class="gut" />
@@ -433,7 +444,6 @@ function toggle(row: Row | null) {
             :to="rest(block.gap).to"
             :columns="3"
             :busy="loading"
-            hunk-above
             @open="(from, to) => open(block.gap, from, to)"
           />
         </template>

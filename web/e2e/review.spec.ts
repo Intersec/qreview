@@ -75,11 +75,14 @@ test('the page reports no error to the console', async ({ page }) => {
 
 test('the bar says which file of the change is open', async ({ page }) => {
   await page.getByRole('button', { name: /long: touch two places/ }).click();
-  await expect(page.locator('.change-bar')).toContainText('File 1 of 2');
+  await expect(page.locator('.change-bar')).toContainText('File 1 of 3');
   await expect(page.locator('.change-bar')).toContainText('long: touch two places');
 
   await page.getByRole('button', { name: 'Next' }).click();
-  await expect(page.locator('.change-bar')).toContainText('File 2 of 2');
+  await expect(page.locator('.change-bar')).toContainText('File 2 of 3');
+
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.locator('.change-bar')).toContainText('File 3 of 3');
   await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
 });
 

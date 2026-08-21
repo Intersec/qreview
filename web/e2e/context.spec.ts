@@ -40,11 +40,19 @@ test('an opened line carries both line numbers', async ({ page }) => {
   await expect(row).toHaveCount(1);
 });
 
-test('the short step opens the end nearest the hunk', async ({ page }) => {
-  await page.getByRole('button', { name: '+10' }).click();
+test('the short step down opens the end nearest the hunk below', async ({ page }) => {
+  await page.getByRole('button', { name: '+10 ↓' }).click();
 
   await expect(page.getByText('line 23', { exact: true })).toBeVisible();
   await expect(page.getByText('line 13', { exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: '+7 common lines' })).toBeVisible();
+});
+
+test('the short step up opens the end nearest the hunk above', async ({ page }) => {
+  await page.getByRole('button', { name: '↑ +10' }).click();
+
+  await expect(page.getByText('line 7', { exact: true })).toBeVisible();
+  await expect(page.getByText('line 20', { exact: true })).toBeHidden();
   await expect(page.getByRole('button', { name: '+7 common lines' })).toBeVisible();
 });
 

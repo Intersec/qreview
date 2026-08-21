@@ -21,12 +21,23 @@ test.beforeEach(async ({ page }) => {
 
 test('the gutters are narrow and the code has the room', async ({ page }) => {
   const table = await page.locator('table.code').boundingBox();
-  const gutter = await page.locator('td.gutter').first().boundingBox();
-  const code = await page.locator('td.code-cell').first().boundingBox();
+  const row = page.locator('tr', { has: page.locator('td.code-cell') }).first();
+  const gutters = await row.locator('td.gutter').all();
+  const cells = await row.locator('td.code-cell').all();
 
   expect(table).not.toBeNull();
-  expect(gutter!.width).toBeLessThan(table!.width * 0.08);
-  expect(code!.width).toBeGreaterThan(table!.width * 0.3);
+  let spent = 0;
+  for (const gutter of gutters) {
+    const box = await gutter.boundingBox();
+    expect(box!.width).toBeLessThan(table!.width * 0.08);
+    spent += box!.width;
+  }
+  let code = 0;
+  for (const cell of cells) {
+    code += (await cell.boundingBox())!.width;
+  }
+
+  expect(code).toBeGreaterThan(table!.width - spent - 4);
 });
 
 test('an added line is green and a removed line is red', async ({ page }) => {

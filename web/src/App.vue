@@ -23,6 +23,7 @@ const {
   mergeList,
   split,
   ignoreWs,
+  wrap,
   patchSets,
   patchSet,
   against,
@@ -190,12 +191,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           :diff="diff"
           :split="split"
           :ignore-ws="ignoreWs"
+          :wrap="wrap"
           :comments="comments"
           :lost="lost"
           :placement="review.placement"
           :load-lines="review.loadLines"
           @update:split="review.setSplit"
           @update:ignore-ws="review.setIgnoreWs"
+          @update:wrap="review.setWrap"
           @add="review.addComment"
           @edit="(id, body) => review.editComment(id, { body })"
           @remove="review.deleteComment"

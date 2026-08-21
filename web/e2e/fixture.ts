@@ -59,6 +59,7 @@ export function build(): Fixture {
 
   write(repo, 'src/net.blk', 'int connect_once(int fd)\n{\n    return read(fd);\n}\n');
   write(repo, 'src/long.c', long);
+  write(repo, 'src/spacing.c', 'int spaced(void)\n{\n    return 1;\n}\n');
   write(repo, 'docs/old-name.md', '# A document\n\nIt has words in it.\n');
   commit(repo, 'base: start the tree');
 
@@ -93,6 +94,9 @@ export function build(): Fixture {
     long.replace('line 3\n', 'LINE THREE\n').replace('line 27\n', 'LINE TWENTY SEVEN\n'),
   );
   write(repo, 'src/added.py', 'def hello():\n    return "hi"\n');
+  // The only change here is the indentation, so it is what a whitespace
+  // switch has to hide.
+  write(repo, 'src/spacing.c', 'int spaced(void)\n{\n        return 1;\n}\n');
   commit(
     repo,
     'long: touch two places far apart',

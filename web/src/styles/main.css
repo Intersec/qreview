@@ -240,6 +240,7 @@ table.code col.gut {
 }
 
 tr.context-bar td {
+  position: relative;
   padding: 2px 0;
   text-align: center;
   background: var(--context-bar);
@@ -263,6 +264,30 @@ tr.context-bar td {
 }
 .context-button:disabled {
   opacity: 0.5;
+}
+.context-side {
+  position: absolute;
+  left: 10px;
+}
+.context-side.right {
+  left: auto;
+  right: 10px;
+}
+
+/* A long line is not wrapped by default: a wrapped row is twice as tall,
+   and the two sides of a split view stop facing each other. The pane
+   scrolls instead, and the rows stay aligned. */
+table.code.nowrap {
+  table-layout: auto;
+  width: max-content;
+  min-width: 100%;
+}
+table.code.nowrap .code-cell {
+  white-space: pre;
+}
+table.code.nowrap .gutter {
+  width: 3.25rem;
+  min-width: 3.25rem;
 }
 
 tr.hunk td {

@@ -44,6 +44,7 @@ export const useReview = defineStore('review', () => {
   /// time, and the choice sticks after that.
   const split = ref(localStorage.getItem('qreview.split') === 'yes');
   const ignoreWs = ref(localStorage.getItem('qreview.ws') === 'ignore');
+  const wrap = ref(localStorage.getItem('qreview.wrap') === 'yes');
   const mergeList = ref<MergeListItem[]>([]);
 
   /// True while the reader is on the merge under the boundary.
@@ -303,6 +304,11 @@ export const useReview = defineStore('review', () => {
     }
   }
 
+  function setWrap(value: boolean) {
+    wrap.value = value;
+    localStorage.setItem('qreview.wrap', value ? 'yes' : 'no');
+  }
+
   function setSplit(value: boolean) {
     split.value = value;
     localStorage.setItem('qreview.split', value ? 'yes' : 'no');
@@ -329,6 +335,8 @@ export const useReview = defineStore('review', () => {
     setSplit,
     ignoreWs,
     setIgnoreWs,
+    wrap,
+    setWrap,
     version,
     series,
     changeKey,
