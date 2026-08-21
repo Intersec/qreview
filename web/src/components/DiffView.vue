@@ -175,6 +175,14 @@ function talkative(row: Row | null): boolean {
   return row !== null && (at(row).length > 0 || writing.value === key(row));
 }
 
+/// The left column of a pair only speaks for a removed line.
+///
+/// A context line is the same row on both sides, so without this both cells
+/// would draw the comment, and the box would appear twice.
+function ownLeft(pair: { left: Row | null }): Row | null {
+  return pair.left?.kind === 'remove' ? pair.left : null;
+}
+
 function write(row: Row, body: string) {
   const line = lineOf(row);
   if (line === null) {
@@ -342,19 +350,19 @@ function toggle(row: Row | null) {
           </tr>
           <!-- A comment sits under the side it was written on, not across
                both, so the two columns keep meaning what they mean. -->
-          <tr v-if="talkative(pair.left) || talkative(pair.right)" class="talk">
+          <tr v-if="talkative(ownLeft(pair)) || talkative(pair.right)" class="talk">
             <td colspan="2">
               <CommentCard
-                v-for="comment in at(pair.left)"
+                v-for="comment in at(ownLeft(pair))"
                 :key="comment.id"
                 :comment="comment"
                 @edit="(id, body) => emit('edit', id, body)"
                 @remove="(id) => emit('remove', id)"
               />
               <CommentBox
-                v-if="pair.left && writing === key(pair.left)"
+                v-if="ownLeft(pair) && writing === key(ownLeft(pair)!)"
                 label="A remark about this line"
-                @save="(body) => write(pair.left!, body)"
+                @save="(body) => write(ownLeft(pair)!, body)"
                 @cancel="writing = null"
               />
             </td>
