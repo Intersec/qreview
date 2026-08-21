@@ -454,14 +454,13 @@ async fn export(
     Query(query): Query<ExportQuery>,
 ) -> Result<String, ApiError> {
     let session = state.session.read().await;
-    let opts = crate::export::Options {};
 
     match (query.scope.as_deref(), query.key) {
-        (Some("change"), Some(key)) => Ok(crate::export::change(&session, &key, opts).await?),
+        (Some("change"), Some(key)) => Ok(crate::export::change(&session, &key).await?),
         (Some("change"), None) => Err(ApiError::bad_request(
             "a change export needs the key of the change".to_owned(),
         )),
-        _ => Ok(crate::export::series(&session, opts).await?),
+        _ => Ok(crate::export::series(&session).await?),
     }
 }
 

@@ -13,11 +13,93 @@ use crate::store::model::{Comment, Scope, Side};
 /// Lines of code shown around a comment.
 const CONTEXT: usize = 2;
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Options {}
-
 /// The review of one change.
-pub async fn change(session: &Session, key: &str, opts: Options) -> Result<String> {
+pub async fn change(session: &Session, key: &str) -> Result<String> {
+    let mut out = String::new();
+    let head = header(session, key).await?;
+
+    let _ = writeln!(
+        out,
+        "## Review: {}, commit {}",
+        place(session).await,
+        head.short
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "I reviewed this commit and left the comments below. Please address them."
+    );
+    let _ = writeln!(out);
+    out.push_str(&head.about);
+
+    if head.comments.is_empty() {
+        let _ = writeln!(out);
+        let _ = writeln!(out, "Nothing to report.");
+        return Ok(out);
+    }
+
+    out.push_str(&body(session, &head.commit, &head.comments).await);
+
+    Ok(out)
+}
+
+/// The review of every change of the series.
+pub async fn series(session: &Session) -> Result<String> {
+    let mut reviewed = Vec::new();
+
+    for summary in &session.series.changes {
+        // The store is asked, never a count the session cached: a comment
+        // written a moment ago must be in the export.
+        let file = session.comments(&summary.key, &summary.subject)?;
+        if !file.comments.is_empty() {
+            reviewed.push((summary.key.clone(), file));
+        }
+    }
+
+    if reviewed.is_empty() {
+        return Ok("No comment in this series.\n".to_owned());
+    }
+
+    if reviewed.len() == 1 {
+        return change(session, &reviewed[0].0).await;
+    }
+
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "## Review: {}, {} commits",
+        place(session).await,
+        reviewed.len()
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "I reviewed this series and left the comments below. Please address them."
+    );
+
+    for (key, file) in &reviewed {
+        let head = header(session, key).await?;
+        let _ = writeln!(out);
+        let _ = writeln!(out, "### {} — {}", head.short, head.subject);
+        out.push_str(&body(session, &head.commit, &file.comments).await);
+    }
+    Ok(out)
+}
+
+/// `project@branch`, the way a person names where they are.
+async fn place(session: &Session) -> String {
+    format!("{}@{}", session.project(), session.branch().await)
+}
+
+struct Head {
+    commit: String,
+    short: String,
+    subject: String,
+    about: String,
+    comments: Vec<crate::store::model::Comment>,
+}
+
+async fn header(session: &Session, key: &str) -> Result<Head> {
     let Some(commit) = session.commit_of(key) else {
         anyhow::bail!("no change {key} in the series");
     };
@@ -30,67 +112,55 @@ pub async fn change(session: &Session, key: &str, opts: Options) -> Result<Strin
         .unwrap_or_default();
 
     let file = session.comments(key, &subject)?;
-    let threads = threads_of(&file.comments, opts);
-
-    let mut out = String::new();
-    let _ = writeln!(out, "# Review: {subject}");
-
     let sets = session.patch_sets(key).await.unwrap_or_default();
     let patch_set = sets.last().map(|s| s.number).unwrap_or(1);
+    let count = file.comments.len();
+
+    let mut about = String::new();
+    let _ = writeln!(about, "Change: {subject}");
     let _ = writeln!(
-        out,
-        "Commit {} (patch set {patch_set}) · {} comment{}",
-        short(&commit),
-        file.comments.len(),
-        if file.comments.len() == 1 { "" } else { "s" }
+        about,
+        "Patch set {patch_set} · {count} comment{}",
+        if count == 1 { "" } else { "s" }
     );
 
-    if threads.is_empty() {
-        let _ = writeln!(out, "\nNothing to report.");
-        return Ok(out);
-    }
-
-    for first in threads {
-        let _ = writeln!(out);
-        let _ = writeln!(out, "## {}", place_of(first));
-
-        if let Some(excerpt) = excerpt(session, &commit, first).await {
-            let _ = writeln!(out, "```{}", language_of(session, first));
-            let _ = write!(out, "{excerpt}");
-            let _ = writeln!(out, "```");
-        }
-
-        let _ = writeln!(out, "{}", one_line(&first.body));
-    }
-    Ok(out)
+    Ok(Head {
+        short: short(&commit).to_owned(),
+        commit,
+        subject,
+        about,
+        comments: file.comments,
+    })
 }
 
-/// The review of every change of the series.
-pub async fn series(session: &Session, opts: Options) -> Result<String> {
+/// The comments of one change, numbered, each under the code it speaks of.
+async fn body(
+    session: &Session,
+    commit: &str,
+    comments: &[crate::store::model::Comment],
+) -> String {
     let mut out = String::new();
 
-    for summary in &session.series.changes {
-        // The store is asked, never a count the session cached: a comment
-        // written a moment ago must be in the export.
-        let file = session.comments(&summary.key, &summary.subject)?;
-        if file.comments.is_empty() {
-            continue;
-        }
-        if !out.is_empty() {
-            let _ = writeln!(out, "\n---\n");
-        }
-        out.push_str(&change(session, &summary.key, opts).await?);
-    }
+    for (index, comment) in comments.iter().enumerate() {
+        let _ = writeln!(out);
+        let _ = match &comment.anchor {
+            Some(_) => writeln!(out, "{}. `{}`", index + 1, place_of(comment)),
+            None => writeln!(out, "{}. The change as a whole", index + 1),
+        };
 
-    if out.is_empty() {
-        out.push_str("No comment in this series.\n");
-    }
-    Ok(out)
-}
+        if let Some(excerpt) = excerpt(session, commit, comment).await {
+            let _ = writeln!(out);
+            let _ = writeln!(out, "   ```{}", language_of(session, comment));
+            for line in excerpt.lines() {
+                let _ = writeln!(out, "   {line}");
+            }
+            let _ = writeln!(out, "   ```");
+        }
 
-/// The comments worth exporting.
-fn threads_of(comments: &[Comment], _opts: Options) -> Vec<&Comment> {
-    comments.iter().collect()
+        let _ = writeln!(out);
+        let _ = writeln!(out, "   {}", one_line(&comment.body));
+    }
+    out
 }
 
 fn place_of(comment: &Comment) -> String {
@@ -239,16 +309,14 @@ mod tests {
             .await
             .unwrap();
 
-        let text = change(&session, "Iretry", Options::default())
-            .await
-            .unwrap();
+        let text = change(&session, "Iretry").await.unwrap();
         // The commit hash changes with the fixture, so it is taken out of
         // the snapshot rather than making the test brittle.
         let stable = text
             .lines()
             .map(|line| {
-                if line.starts_with("Commit ") {
-                    "Commit <hash> (patch set 1) · 2 comments".to_owned()
+                if line.starts_with("## Review:") {
+                    "## Review: <repo>@main, commit <hash>".to_owned()
                 } else {
                     line.to_owned()
                 }
@@ -272,10 +340,69 @@ mod tests {
             .await
             .unwrap();
 
-        let text = change(&session, "Iretry", Options::default())
+        let text = change(&session, "Iretry").await.unwrap();
+        assert!(text.contains("one line and another one"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_series_of_several_changes_names_each_one() {
+        let repo = build_repo(&[
+            commit("base").file("a.txt", "0\n"),
+            commit("first: a thing")
+                .file("a.txt", "1\n")
+                .change_id("Ione"),
+            commit("second: another")
+                .file("b.txt", "2\n")
+                .change_id("Itwo"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        for key in ["Ione", "Itwo"] {
+            session
+                .add_comment(
+                    key,
+                    NewComment {
+                        scope: Scope::Change,
+                        file: None,
+                        side: None,
+                        start_line: None,
+                        end_line: None,
+                        body: format!("A remark on {key}."),
+                    },
+                )
+                .await
+                .unwrap();
+        }
+
+        let text = series(&session).await.unwrap();
+
+        assert!(text.contains("2 commits"), "{text}");
+        assert!(text.contains("I reviewed this series"), "{text}");
+        assert!(text.contains("— second: another"), "{text}");
+        assert!(text.contains("— first: a thing"), "{text}");
+        assert!(text.contains("A remark on Ione."), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_series_with_one_reviewed_change_reads_as_that_change() {
+        let repo = reviewed().await;
+        let session = session_of(&repo).await;
+
+        session
+            .add_comment(
+                "Iretry",
+                line_comment("src/net.blk", 3, "This loop never ends."),
+            )
             .await
             .unwrap();
-        assert!(text.contains("one line and another one"), "{text}");
+
+        let text = series(&session).await.unwrap();
+        assert!(text.contains("commit "), "{text}");
+        assert!(
+            !text.contains("commits"),
+            "one change is not a series: {text}"
+        );
     }
 
     #[tokio::test]
@@ -283,7 +410,7 @@ mod tests {
         let repo = reviewed().await;
         let session = session_of(&repo).await;
 
-        let text = series(&session, Options::default()).await.unwrap();
+        let text = series(&session).await.unwrap();
         assert_eq!(text, "No comment in this series.\n");
     }
 }

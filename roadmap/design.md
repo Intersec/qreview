@@ -516,31 +516,45 @@ One file at a time on the diff route. A change with 200 files must not build
 Two ways out: a button in the interface that copies to the clipboard, and
 `qreview export` on the command line.
 
-The format is Markdown, made to be pasted into a session:
+The format is Markdown, made to be pasted into a session. It opens by saying
+where the review comes from and what is being asked, because the thing that
+reads it has no other context:
 
 ````markdown
-# Review: net: fix the retry loop
-Commit af448g15 (patch set 2) · 3 comments, 2 unresolved
+## Review: myproject@main, commit af448g1500
 
-## src/net.blk:42
-```c
-40 |     rc = connect(fd, addr);
-41 |     if (rc < 0) {
-42 |         for (;;) {
-43 |             rc = read(fd);
-```
-**Nicolas Pauss** — This loop retries forever when the socket is closed.
+I reviewed this commit and left the comments below. Please address them.
 
-## src/net.blk (file)
-**Nicolas Pauss** — The error paths in this file never log the errno.
+Change: net: fix the retry loop
+Patch set 2 · 2 comments
+
+1. `src/net.blk:42`
+
+   ```c
+   40 |     rc = connect(fd, addr);
+   41 |     if (rc < 0) {
+   42 |         for (;;) {
+   43 |             rc = read(fd);
+   44 |         }
+   ```
+
+   This loop retries forever when the socket is closed.
+
+2. The change as a whole
+
+   The error paths in this file never log the errno.
 ````
+
+A series of several changes carries one heading per change under the same
+opening. A series with one reviewed change reads as that change, because
+calling one commit a series helps nobody.
 
 Rules for the format:
 
 - The comment follows the code, never the opposite. The reader needs the
   context first.
 - No author. One person wrote every line of it.
-- Four lines of code around the anchor, with the real line numbers.
+- The comments are numbered, so the answer can name one.
 - The export names the commit and the patch set, so the session knows the
   state the remarks were written against.
 

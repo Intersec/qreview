@@ -500,6 +500,43 @@ impl Session {
         answer
     }
 
+    /// The name of the branch being reviewed, for a person to read.
+    pub async fn branch(&self) -> String {
+        if let Some(coords) = &self.gerrit
+            && let Some(branch) = &coords.branch
+        {
+            return branch.clone();
+        }
+
+        let out = self
+            .git
+            .text(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .await
+            .unwrap_or_default();
+        let name = out.trim();
+
+        match name {
+            "" | "HEAD" => "detached".to_owned(),
+            other => other.to_owned(),
+        }
+    }
+
+    /// What the repository is called, for a person to read.
+    pub fn project(&self) -> String {
+        if let Some(remote) = &self.repo.remote
+            && let Some(name) = remote.rsplit('/').next()
+            && !name.is_empty()
+        {
+            return name.to_owned();
+        }
+
+        self.git
+            .root()
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "this repository".to_owned())
+    }
+
     /// What Gerrit calls a change, when the server knows it.
     pub async fn gerrit_change(&self, key: &str) -> Option<gerrit::Change> {
         let rev = self.commit_of(key)?;

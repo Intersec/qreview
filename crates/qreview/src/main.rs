@@ -54,10 +54,9 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Some(cli::Command::Export { key }) => {
-            let options = qreview::export::Options {};
             let text = match key {
-                Some(key) => qreview::export::change(&session, &key, options).await?,
-                None => qreview::export::series(&session, options).await?,
+                Some(key) => qreview::export::change(&session, &key).await?,
+                None => qreview::export::series(&session).await?,
             };
             print!("{text}");
             return Ok(());

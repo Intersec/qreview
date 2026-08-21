@@ -2,18 +2,25 @@
 source: crates/qreview/src/export.rs
 expression: stable
 ---
-# Review: net: fix the retry loop
-Commit <hash> (patch set 1) · 2 comments
+## Review: <repo>@main, commit <hash>
 
-## src/net.blk:3
-```c
-1 | int connect_once(int fd)
-2 | {
-3 |     for (;;) {
-4 |         read(fd);
-5 |     }
-```
-This loop never ends when the socket closes.
+I reviewed this commit and left the comments below. Please address them.
 
-## The change
-The whole change needs a test.
+Change: net: fix the retry loop
+Patch set 1 · 2 comments
+
+1. `src/net.blk:3`
+
+   ```c
+   1 | int connect_once(int fd)
+   2 | {
+   3 |     for (;;) {
+   4 |         read(fd);
+   5 |     }
+   ```
+
+   This loop never ends when the socket closes.
+
+2. The change as a whole
+
+   The whole change needs a test.
