@@ -182,9 +182,22 @@ body {
 /* ----------------------------------------------------------- the diff */
 
 .diff-pane {
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  overflow: auto;
+  overflow-y: auto;
   background: var(--page);
+}
+
+/*
+ * Only the table scrolls sideways.
+ *
+ * When the pane itself scrolled, the file bar and the band above the diff
+ * were sized to their own content rather than to the pane, so a comment box
+ * sat on a strip of colour that stopped in the middle of the window.
+ */
+.diff-scroll {
+  overflow-x: auto;
 }
 
 .file-bar {

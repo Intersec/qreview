@@ -91,3 +91,17 @@ test('a doc comment stays on the line it was written on', async ({ page }) => {
   const row = page.locator('tr', { hasText: 'Return whether the field' }).first();
   await expect(row).toContainText('/** Return whether the field is a pointer or not.');
 });
+
+test('the band above the diff spans the pane, whatever the code does', async ({ page }) => {
+  await openFile(page, 'long.c');
+  await page.getByRole('button', { name: 'Comment on the file' }).click();
+
+  const pane = await page.locator('.diff-pane').boundingBox();
+  const band = await page.locator('.above-diff').boundingBox();
+  const bar = await page.locator('.file-bar').boundingBox();
+
+  // The pane used to scroll sideways itself, which sized these two to their
+  // own content and left a strip of colour that stopped mid-window.
+  expect(band!.width).toBeGreaterThan(pane!.width - 2);
+  expect(bar!.width).toBeGreaterThan(pane!.width - 2);
+});

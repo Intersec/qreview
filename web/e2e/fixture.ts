@@ -148,7 +148,7 @@ export function build(): Fixture {
   write(
     repo,
     'src/doc.h',
-    '/** Return whether the field is a pointer or not.\n *\n * \\\\param[in] fdesc the field description\n * \\\\return true when it is a pointer\n */\nint is_pointer(int fdesc);\n',
+    '/** Return whether the field is a pointer or not.\n *\n * \\param[in] fdesc the field description\n * \\return true when it is a pointer\n */\nint is_pointer(int fdesc);\n',
   );
   write(repo, 'docs/old-name.md', '# A document\n\nIt has words in it.\n');
   commit(repo, 'base: start the tree');
@@ -201,7 +201,7 @@ export function build(): Fixture {
   write(
     repo,
     'src/doc.h',
-    '/** Return whether the field is a pointer or not.\n *\n * \\\\param[in] fdesc the field description\n * \\\\return true when it is a pointer\n */\nbool is_pointer(int fdesc);\n',
+    '/** Return whether the field is a pointer or not.\n *\n * \\param[in] fdesc the field description\n * \\return true when it is a pointer\n */\nbool is_pointer(int fdesc);\n',
   );
   commit(
     repo,
