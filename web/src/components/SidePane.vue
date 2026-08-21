@@ -79,6 +79,14 @@ defineExpose({ focusFilter: () => box.value?.focus() });
               <code>{{ short(change) }}</code>
               <span v-if="change.isMerge" class="tag">merge</span>
               <span v-if="!change.changeId" class="tag">no Change-Id</span>
+              <span
+                v-else-if="change.key.startsWith('sha-')"
+                class="tag"
+                title="Another change in
+              this series carries the same Change-Id, so this one is keyed by its hash"
+              >
+                same Change-Id
+              </span>
               <span v-if="change.patchSetCount > 1">· {{ change.patchSetCount }} patch sets</span>
               <span v-if="change.commentCount" class="count">· {{ change.commentCount }} ✎</span>
             </span>

@@ -114,6 +114,7 @@ impl Session {
             gerrit,
             gerrit_answers: tokio::sync::Mutex::new(std::collections::HashMap::new()),
         };
+        session.make_keys_unique();
         session.count_comments();
         session.count_patch_sets().await;
 
@@ -161,6 +162,7 @@ impl Session {
         self.series.changes.extend(changes);
         self.series.boundary = batch.boundary;
         self.plan = plan;
+        self.make_keys_unique();
         self.count_comments();
         self.count_patch_sets().await;
 
@@ -421,6 +423,24 @@ impl Session {
             .commit
             .clone()
             .filter(|commit| key == commit || key == format!("sha-{commit}"))
+    }
+
+    /// Make sure no two changes answer to the same key.
+    ///
+    /// A series can carry the same `Change-Id` twice: a cherry-pick that
+    /// kept the trailer, a revert, a rebase that went wrong. Both changes
+    /// then answered to one key, so both opened the same files and shared
+    /// one review. The later one falls back to its hash, which is what a
+    /// commit with no trailer at all uses.
+    fn make_keys_unique(&mut self) {
+        let mut seen = std::collections::HashSet::new();
+
+        for change in &mut self.series.changes {
+            if !seen.insert(change.key.clone()) {
+                change.key = format!("sha-{}", change.commit);
+                seen.insert(change.key.clone());
+            }
+        }
     }
 
     /// Put the comment counts on the series.

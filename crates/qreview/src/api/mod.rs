@@ -1307,6 +1307,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn two_changes_never_answer_to_one_key() {
+        // The same trailer twice, which a cherry-pick or a bad rebase makes.
+        let repo = build_repo(&[
+            commit("first: a thing")
+                .file("a.txt", "1\n")
+                .change_id("Isame"),
+            commit("second: the same trailer")
+                .file("b.txt", "2\n")
+                .change_id("Isame"),
+        ])
+        .await;
+        let server = server(&repo).await;
+        let (_, body) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+
+        let changes = body["series"]["changes"].as_array().unwrap();
+        let keys: Vec<_> = changes.iter().map(|c| c["key"].as_str().unwrap()).collect();
+        assert_eq!(keys.len(), 2);
+        assert_ne!(keys[0], keys[1], "one key would open two changes at once");
+        assert!(
+            keys.iter().any(|k| k.starts_with("sha-")),
+            "the later one falls back to its hash: {keys:?}"
+        );
+
+        // And each one answers with its own file.
+        for (key, file) in keys.iter().zip(["b.txt", "a.txt"]) {
+            let (status, files) = json(
+                server.clone(),
+                get_with_cookie(&format!("/api/changes/{key}/files"), TOKEN),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(files[0]["path"], file);
+        }
+    }
+
+    #[tokio::test]
     async fn comparing_two_versions_leaves_the_rebase_out() {
         // A change on one base, then the same change on a base that moved a
         // dozen other files. Reading version 1 against version 2 must show
