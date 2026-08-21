@@ -122,6 +122,20 @@ a real repository. It is part of `make check`.
   it silent: a Vue warning about a dropped attribute is how the side by side
   view lost its colours.
 
+### A Gerrit that is a shell script
+
+`e2e/gerrit.spec.ts` runs the real Gerrit code with no server and no socket.
+A fake `ssh`, first on the `PATH`, answers two things:
+
+- `gerrit query …` prints a recorded answer, so the query, the parser and
+  the numbering are the ones that ship.
+- `git-upload-pack …` runs against a bare repository next door, so
+  `git fetch origin refs/changes/…` really fetches, and a patch set that
+  lived only on the server arrives in the clone.
+
+Nothing in the tool changes for it. That is the point: an HTTP mode added
+only to make testing easier would test something else than what ships.
+
 `make shots` writes screenshots of both themes into `web/e2e/.shots`. They are
 not a test. They are how a person, or an agent with no eyes on the screen,
 sees what the interface looks like.

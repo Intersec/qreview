@@ -6,8 +6,7 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: M8 is done.** v0.2.0 is ready to cut: a side by side view that
-works, a diff that reads like Gerrit, and the window given to the code.
+**Status: v0.2.0 is cut, M9 is done.** What is left is in *After that*.
 
 ---
 
@@ -193,7 +192,7 @@ surprised by anything.*
 - [x] A preferences panel, which writes the file the command line reads
 - [x] A theme the reader chooses
 - [x] The keys Gerrit uses, and `?` to list them
-- [ ] A mock Gerrit for the browser tests: a fake `ssh` on the PATH and a
+- [x] A mock Gerrit for the browser tests: a fake `ssh` on the PATH and a
       bare repository as the remote
 
 ## After that

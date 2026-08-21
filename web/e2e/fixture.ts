@@ -4,7 +4,7 @@
 // a fixed clock, and a temporary directory that goes away with the test run.
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -16,6 +16,8 @@ export interface Fixture {
   config: string;
   /// An older version of the last change, for `--prev`.
   previous?: string;
+  /// A directory holding a fake `ssh`, for the Gerrit tests.
+  bin?: string;
   remove(): void;
 }
 
@@ -47,6 +49,78 @@ function commit(repo: string, subject: string, trailer?: string) {
 
 /// A series with the shapes a reviewer meets: a modified file, a new file, a
 /// rename, two hunks far apart, and a merge under the boundary.
+/// A Gerrit that is a shell script.
+///
+/// git talks to a server over ssh, and so does the Gerrit query. One fake
+/// `ssh` first on the PATH answers both: the query from a recorded file, and
+/// the fetch by running git-upload-pack against a bare repository next door.
+/// Nothing in the tool changes, and no socket is opened.
+function fakeGerrit(base: string, repo: string): { bin: string; served: string } {
+  const bare = join(base, 'origin.git');
+  const server = join(base, 'server');
+  const bin = join(base, 'bin');
+  mkdirSync(bin);
+  mkdirSync(server);
+
+  execFileSync('git', ['init', '--quiet', '--bare', bare]);
+
+  // A version of the change that lives on the server and nowhere else, so a
+  // test can watch it being fetched.
+  git(server, ['init', '--quiet', '--initial-branch=main', '.']);
+  git(server, ['config', 'user.name', 'Test Author']);
+  git(server, ['config', 'user.email', 'author@example.com']);
+  write(server, 'src/net.blk', 'int connect_once(int fd)\n{\n    return recv(fd);\n}\n');
+  git(server, ['add', '-A']);
+  git(server, [
+    'commit',
+    '--date',
+    '2026-01-01T00:00:00+00:00',
+    '-m',
+    'net: retry the read\n\nChange-Id: Iretryreadaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
+  ]);
+  const served = git(server, ['rev-parse', 'HEAD']);
+  git(server, ['push', '--quiet', bare, 'HEAD:refs/changes/21/12321/1']);
+
+  const local = git(repo, ['rev-parse', 'HEAD~2']);
+  const answer = {
+    project: 'myproject',
+    branch: 'main',
+    id: 'Iretryreadaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    number: 12321,
+    subject: 'net: retry the read',
+    url: 'https://review.example.com/c/myproject/+/12321',
+    status: 'NEW',
+    patchSets: [
+      { number: 1, revision: served, ref: 'refs/changes/21/12321/1', createdOn: 1750000000 },
+      { number: 2, revision: local, ref: 'refs/changes/21/12321/2', createdOn: 1750001000 },
+    ],
+  };
+  writeFileSync(
+    join(bin, 'query.json'),
+    `${JSON.stringify(answer)}\n{"type":"stats","rowCount":1}\n`,
+  );
+
+  const ssh = join(bin, 'ssh');
+  writeFileSync(
+    ssh,
+    [
+      '#!/bin/sh',
+      '# A Gerrit that is a shell script. See e2e/fixture.ts.',
+      'case "$*" in',
+      `  *"gerrit query"*) cat ${JSON.stringify(join(bin, 'query.json'))} ;;`,
+      `  *git-upload-pack*) exec git-upload-pack ${JSON.stringify(bare)} ;;`,
+      '  *) echo "fake ssh: $*" >&2; exit 1 ;;',
+      'esac',
+      '',
+    ].join('\n'),
+  );
+  chmodSync(ssh, 0o755);
+
+  git(repo, ['remote', 'add', 'origin', 'ssh://review.example.com:29418/myproject']);
+
+  return { bin, served };
+}
+
 export function build(): Fixture {
   const base = mkdtempSync(join(tmpdir(), 'qreview-e2e-'));
   const repo = join(base, 'repo');
@@ -126,11 +200,14 @@ export function build(): Fixture {
   git(repo, ['mv', 'docs/old-name.md', 'docs/new-name.md']);
   commit(repo, 'docs: rename the document', 'Change-Id: Irenamedocaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
+  const gerrit = fakeGerrit(base, repo);
+
   return {
     repo,
     state,
     config,
     previous,
+    bin: gerrit.bin,
     remove: () => rmSync(base, { recursive: true, force: true }),
   };
 }

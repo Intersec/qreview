@@ -16,9 +16,12 @@ const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qrevi
 ///
 /// The token is read from that line rather than forced in: the test walks the
 /// same path a person does.
-export async function start(options: { prev?: boolean } = {}): Promise<Running> {
+export async function start(options: { prev?: boolean; gerrit?: boolean } = {}): Promise<Running> {
   const fixture = build();
-  const args = ['--no-open', '--no-gerrit', '--port', '0'];
+  const args = ['--no-open', '--port', '0'];
+  if (!options.gerrit) {
+    args.push('--no-gerrit');
+  }
   if (options.prev && fixture.previous) {
     args.push('--prev', fixture.previous);
   }
@@ -30,6 +33,8 @@ export async function start(options: { prev?: boolean } = {}): Promise<Running> 
       XDG_STATE_HOME: fixture.state,
       XDG_CONFIG_HOME: fixture.config,
       NO_COLOR: '1',
+      // The fake ssh answers the query and serves the fetch.
+      PATH: options.gerrit ? `${fixture.bin}:${process.env.PATH}` : process.env.PATH,
     },
   });
 

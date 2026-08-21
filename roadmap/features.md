@@ -112,6 +112,7 @@ left is in [`plan.md`](./plan.md).
 - ✅ A lazy fetch of `refs/changes/NN/CCCC/P`
 - ✅ A failure or a timeout leaves the local review working
 - ✅ `--no-gerrit`
+- ✅ The whole path tested against a fake ssh, with a real fetch
 - ✅ The Gerrit change number and its URL shown in the interface
 
 ## Export
