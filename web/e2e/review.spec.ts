@@ -132,3 +132,32 @@ test('the files are grouped under the directory they live in', async ({ page }) 
   await expect(page.locator('.dir')).toHaveText(['src/']);
   await expect(page.locator('.file-row').first()).toContainText('added.py');
 });
+
+test('a comment can be written on a line the diff did not carry', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+  await page
+    .getByRole('button', { name: /common lines/ })
+    .first()
+    .click();
+  // The view is a preference, so this may be unified or side by side and
+  // the line may be on the page once or twice.
+  await expect(page.getByText('line 20', { exact: true }).first()).toBeVisible();
+
+  const row = page.locator('tr', { hasText: 'line 20' }).first();
+  await row.locator('td.gutter-comment').first().click();
+  await page.getByRole('textbox').first().fill('Context lines take comments too.');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await expect(page.getByText('Context lines take comments too.')).toBeVisible();
+});
+
+test('a comment box does not follow you to the next file', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+  await page.locator('td.gutter-comment').first().click();
+  await expect(page.getByRole('textbox')).toHaveCount(1);
+
+  await openFile(page, 'added.py');
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+});

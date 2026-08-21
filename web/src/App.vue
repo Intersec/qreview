@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
@@ -128,6 +128,21 @@ function onKey(event: KeyboardEvent) {
       return;
   }
 }
+
+/// The reader can follow the system or say outright. `system` leaves the
+/// attribute off, so the media query decides.
+watch(
+  () => config.value?.ui.theme,
+  (theme) => {
+    const root = document.documentElement;
+    if (!theme || theme === 'system') {
+      delete root.dataset.theme;
+    } else {
+      root.dataset.theme = theme;
+    }
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   review.load();

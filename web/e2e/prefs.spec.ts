@@ -49,29 +49,23 @@ test('a preference is kept for the next run', async ({ page }) => {
   await expect(page.getByRole('button', { name: /common lines/ })).toHaveCount(0);
 });
 
-test('a comment can be written on a line the diff did not carry', async ({ page }) => {
-  await openChange(page, /long: touch two places/);
-  await openFile(page, 'long.c');
-  await page
-    .getByRole('button', { name: /common lines/ })
-    .first()
-    .click();
-  await expect(page.getByText('line 12', { exact: true })).toBeVisible();
+test('the theme can be chosen rather than followed', async ({ page }) => {
+  // The browser is light here, so a dark page has to be asked for.
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme');
+  const light = await page
+    .locator('body')
+    .evaluate((node) => getComputedStyle(node).backgroundColor);
 
-  const row = page.locator('tr', { has: page.getByText('line 12', { exact: true }) }).first();
-  await row.locator('td.gutter-comment').click();
-  await page.getByRole('textbox').first().fill('Context lines take comments too.');
+  await page.getByRole('button', { name: '⚙' }).click();
+  await page.getByRole('dialog').getByLabel('Theme').selectOption('dark');
   await page.getByRole('button', { name: 'Save' }).click();
 
-  await expect(page.getByText('Context lines take comments too.')).toBeVisible();
-});
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const dark = await page
+    .locator('body')
+    .evaluate((node) => getComputedStyle(node).backgroundColor);
+  expect(dark).not.toBe(light);
 
-test('a comment box does not follow you to the next file', async ({ page }) => {
-  await openChange(page, /long: touch two places/);
-  await openFile(page, 'long.c');
-  await page.locator('td.gutter-comment').first().click();
-  await expect(page.getByRole('textbox')).toHaveCount(1);
-
-  await openFile(page, 'added.py');
-  await expect(page.getByRole('textbox')).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });

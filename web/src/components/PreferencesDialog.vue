@@ -14,12 +14,13 @@ const draft = reactive({
   fontSize: props.config.diff.fontSize,
   syntax: props.config.diff.syntax,
   view: props.config.ui.diff,
+  theme: props.config.ui.theme,
 });
 
 watch(
   () => props.config,
   (fresh) => {
-    Object.assign(draft, fresh.diff, { view: fresh.ui.diff });
+    Object.assign(draft, fresh.diff, { view: fresh.ui.diff, theme: fresh.ui.theme });
   },
 );
 
@@ -35,7 +36,7 @@ function save() {
       fontSize: Number(draft.fontSize),
       syntax: draft.syntax,
     },
-    ui: { diff: draft.view },
+    ui: { diff: draft.view, theme: draft.theme },
   });
 }
 </script>
@@ -64,6 +65,15 @@ function save() {
         <select v-model="draft.view" class="picker">
           <option value="unified">unified</option>
           <option value="side-by-side">side by side</option>
+        </select>
+      </label>
+
+      <label class="row">
+        <span>Theme</span>
+        <select v-model="draft.theme" class="picker">
+          <option value="system">follow the system</option>
+          <option value="light">light</option>
+          <option value="dark">dark</option>
         </select>
       </label>
 

@@ -43,8 +43,16 @@
   --tab-width: 4;
 }
 
+/*
+ * The dark tokens, said twice on purpose.
+ *
+ * The first block follows the system, unless the reader asked for light.
+ * The second is the reader asking for dark outright. A single block
+ * cannot do both: a media query cannot be overridden by a choice made
+ * later in the file.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --page: #131416;
     --pane: #1a1c1e;
     --ink: #e8eaed;
@@ -73,6 +81,36 @@
     --tok-support: #56b6c2;
     --tok-variable: #e06c75;
   }
+}
+
+:root[data-theme='dark'] {
+  --page: #131416;
+  --pane: #1a1c1e;
+  --ink: #e8eaed;
+  --ink-quiet: #9aa0a6;
+  --ink-faint: #6f7479;
+  --edge: #2f3134;
+  --edge-soft: #26282b;
+  --pick: #1f2733;
+  --pick-edge: #8ab4f8;
+
+  --add-line: #0f401f;
+  --add-word: #35603f;
+  --remove-line: #320f10;
+  --remove-word: #6b2d2f;
+  --context-bar: #2a2410;
+  --context-ink: #d6bf6a;
+  --draft: #2c2712;
+  --draft-edge: #4d4326;
+  --action: #8ab4f8;
+
+  --tok-keyword: #c678dd;
+  --tok-string: #98c379;
+  --tok-comment: #7f848e;
+  --tok-constant: #d19a66;
+  --tok-entity: #61afef;
+  --tok-support: #56b6c2;
+  --tok-variable: #e06c75;
 }
 
 html,
