@@ -14,34 +14,39 @@ const stepping = computed(() => count.value > STEP);
 <template>
   <tr class="context-bar">
     <td :colspan="columns">
-      <span class="context-side">
+      <span class="context-group">
         <button
-          v-if="stepping"
           type="button"
           class="context-button"
-          title="Open the ten lines under the code above"
           :disabled="busy"
-          @click="emit('open', from, from + STEP - 1)"
+          @click="emit('open', from, to)"
         >
-          ↑ +{{ STEP }}
+          +{{ count }} common line{{ count === 1 ? '' : 's' }}
         </button>
-      </span>
 
-      <button type="button" class="context-button" :disabled="busy" @click="emit('open', from, to)">
-        +{{ count }} common line{{ count === 1 ? '' : 's' }}
-      </button>
-
-      <span class="context-side right">
-        <button
-          v-if="stepping"
-          type="button"
-          class="context-button"
-          title="Open the ten lines above the code below"
-          :disabled="busy"
-          @click="emit('open', to - STEP + 1, to)"
-        >
-          +{{ STEP }} ↓
-        </button>
+        <!-- Stacked the way Gerrit stacks them: the upper one opens the
+             lines under the code above, the lower one the lines over the
+             code below. -->
+        <span v-if="stepping" class="context-steps">
+          <button
+            type="button"
+            class="context-button"
+            title="Open the ten lines under the code above"
+            :disabled="busy"
+            @click="emit('open', from, from + STEP - 1)"
+          >
+            +{{ STEP }} ↑
+          </button>
+          <button
+            type="button"
+            class="context-button"
+            title="Open the ten lines over the code below"
+            :disabled="busy"
+            @click="emit('open', to - STEP + 1, to)"
+          >
+            +{{ STEP }} ↓
+          </button>
+        </span>
       </span>
     </td>
   </tr>

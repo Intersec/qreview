@@ -49,11 +49,33 @@ test('the short step down opens the end nearest the hunk below', async ({ page }
 });
 
 test('the short step up opens the end nearest the hunk above', async ({ page }) => {
-  await page.getByRole('button', { name: '↑ +10' }).click();
+  await page.getByRole('button', { name: '+10 ↑' }).click();
 
   await expect(page.getByText('line 14', { exact: true })).toBeVisible();
   await expect(page.getByText('line 39', { exact: true })).toBeHidden();
   await expect(page.getByRole('button', { name: '+16 common lines' })).toBeVisible();
+});
+
+test('the lines opened at the top land above the bar, not below it', async ({ page }) => {
+  await page.getByRole('button', { name: '+10 ↑' }).click();
+  await expect(page.getByText('line 14', { exact: true })).toBeVisible();
+
+  // What the reader sees is what matters: line 14 follows the hunk it
+  // continues, and the bar for what is still closed sits under it.
+  const opened = await page.getByText('line 14', { exact: true }).first().boundingBox();
+  const bar = await page.locator('tr.context-bar').first().boundingBox();
+
+  expect(opened!.y).toBeLessThan(bar!.y);
+});
+
+test('the lines opened at the bottom land below the bar', async ({ page }) => {
+  await page.getByRole('button', { name: '+10 ↓' }).click();
+  await expect(page.getByText('line 39', { exact: true })).toBeVisible();
+
+  const opened = await page.getByText('line 39', { exact: true }).first().boundingBox();
+  const bar = await page.locator('tr.context-bar').first().boundingBox();
+
+  expect(opened!.y).toBeGreaterThan(bar!.y);
 });
 
 test('the context opens in the side by side view too', async ({ page }) => {

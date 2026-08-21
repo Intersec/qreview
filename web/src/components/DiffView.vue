@@ -93,6 +93,27 @@ function rowsOf(gap: Gap): Row[] {
   return opened.get(gap.key) ?? [];
 }
 
+/// The lines opened above what is still closed, and the ones below.
+///
+/// A short step at the top of a gap opens the lines under the code above, so
+/// they belong before the bar. A step at the bottom opens the lines over the
+/// code below, and they belong after it.
+function rowsBefore(gap: Gap): Row[] {
+  if (isOpen(gap)) {
+    return rowsOf(gap);
+  }
+  const still = rest(gap);
+  return rowsOf(gap).filter((row) => (row.newLine ?? 0) < still.from);
+}
+
+function rowsAfter(gap: Gap): Row[] {
+  if (isOpen(gap)) {
+    return [];
+  }
+  const still = rest(gap);
+  return rowsOf(gap).filter((row) => (row.newLine ?? 0) > still.to);
+}
+
 /// Open a run of the gap, and keep what is still closed.
 async function open(gap: Gap, from: number, to: number) {
   if (loading.value) {
@@ -375,15 +396,7 @@ function toggle(row: Row | null) {
       </colgroup>
       <tbody v-for="(block, b) in blocks" :key="b">
         <template v-if="block.kind === 'gap'">
-          <ContextBar
-            v-if="!isOpen(block.gap) && block.gap.key !== 'after'"
-            :from="rest(block.gap).from"
-            :to="rest(block.gap).to"
-            :columns="4"
-            :busy="loading"
-            @open="(from, to) => open(block.gap, from, to)"
-          />
-          <template v-for="row in rowsOf(block.gap)" :key="`g${row.newLine}`">
+          <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
             <tr>
               <DiffRow :row="row" side="old" />
               <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
@@ -408,13 +421,19 @@ function toggle(row: Row | null) {
             </tr>
           </template>
           <ContextBar
-            v-if="!isOpen(block.gap) && block.gap.key === 'after'"
+            v-if="!isOpen(block.gap)"
             :from="rest(block.gap).from"
             :to="rest(block.gap).to"
             :columns="4"
             :busy="loading"
             @open="(from, to) => open(block.gap, from, to)"
           />
+          <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
+            <tr :class="onCursor(row) ? 'row-cursor' : ''">
+              <DiffRow :row="row" side="old" />
+              <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+            </tr>
+          </template>
         </template>
 
         <template v-for="(pair, p) in pairs(block.hunk?.rows ?? [])" v-else :key="p">
@@ -468,15 +487,7 @@ function toggle(row: Row | null) {
       </colgroup>
       <tbody v-for="(block, b) in blocks" :key="b">
         <template v-if="block.kind === 'gap'">
-          <ContextBar
-            v-if="!isOpen(block.gap) && block.gap.key !== 'after'"
-            :from="rest(block.gap).from"
-            :to="rest(block.gap).to"
-            :columns="3"
-            :busy="loading"
-            @open="(from, to) => open(block.gap, from, to)"
-          />
-          <template v-for="row in rowsOf(block.gap)" :key="`g${row.newLine}`">
+          <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
             <tr>
               <td class="gutter">{{ row.oldLine ?? '' }}</td>
               <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
@@ -500,13 +511,19 @@ function toggle(row: Row | null) {
             </tr>
           </template>
           <ContextBar
-            v-if="!isOpen(block.gap) && block.gap.key === 'after'"
+            v-if="!isOpen(block.gap)"
             :from="rest(block.gap).from"
             :to="rest(block.gap).to"
             :columns="3"
             :busy="loading"
             @open="(from, to) => open(block.gap, from, to)"
           />
+          <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
+            <tr :class="onCursor(row) ? 'row-cursor' : ''">
+              <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
+              <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+            </tr>
+          </template>
         </template>
 
         <template v-for="(row, r) in block.hunk?.rows ?? []" v-else :key="r">
