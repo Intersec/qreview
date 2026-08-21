@@ -12,6 +12,63 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.3.0]
+
+### Added
+
+- **Two selectors for the versions of a change** — what to read against, an
+  arrow, and what to read, each option carrying the number, the commit and
+  the date.
+- **A preferences panel** — context, diff view, theme, wrapping, whitespace,
+  syntax colours, tab width and font size, behind the gear or the comma key.
+  It writes `~/.config/qreview/config.json`, so the next run starts the way
+  you left it and the command line reads the same file.
+- **The keys Gerrit uses** — `j` and `k` walk the lines, `n` and `p` the
+  hunks, `]` and `[` the files, `J` and `K` the changes, `c` writes on the
+  line the keyboard is on, `u` shows or hides the series, and `?` lists them
+  all. The diff carries a cursor for them to move.
+- **A theme you choose** — light, dark, or whatever the system says.
+
+### Changed
+
+- **A comment stands alone** — no author, no draft, no reply. All three are
+  for a conversation with a reviewer, and a review of your own series before
+  the push has none: you write a remark, you correct the code, you delete the
+  remark.
+- **The context bar** carries the count and two short steps stacked beside
+  it: one opens the lines under the code above, the other the lines over the
+  code below.
+- **Ten lines of context**, not the three git gives. Three is too few to
+  judge a change, and the panel sets it.
+- **The export says what it is** — the project, the branch, the commit and
+  the patch set, then a plain request to address the comments, then the
+  comments numbered so an answer can name one.
+
+### Fixed
+
+- **The file bar and the band above the diff** span the pane again. Only the
+  code scrolls sideways.
+- **A comment on a context line** is drawn once in the side by side view, not
+  once per column, and a box left open no longer follows you to the next
+  file.
+- **Opening the context** puts the lines where they belong: the short step at
+  the top of a gap lands above the bar, the one at the bottom below it, and
+  both take a comment.
+- **A doc comment stays on its line.** `comment.block.documentation` reached
+  the page as a class the interface framework also owns, which set
+  `display: block` and broke every doc comment in two. Every syntax class is
+  prefixed now.
+- **A series that carries the same `Change-Id` twice** no longer opens both
+  changes at once or shares one review between them.
+- **Comparing two versions** lists the files the change touches, not the
+  hundred a rebase moved between them.
+- **The file list** no longer waits for Gerrit, and an answer that arrives
+  after you have moved on is dropped instead of shown as an error.
+
+### Removed
+
+- **The draft mark, the author name and replies** left with resolving, for
+  the same reason: nobody else reads this review.
 ## [0.2.0]
 
 ### Added

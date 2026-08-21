@@ -1,1 +1,0 @@
-- **A theme you choose** — light, dark, or whatever the system says.
