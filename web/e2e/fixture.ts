@@ -11,6 +11,8 @@ import { tmpdir } from 'node:os';
 export interface Fixture {
   repo: string;
   state: string;
+  /// An older version of the last change, for `--prev`.
+  previous?: string;
   remove(): void;
 }
 
@@ -84,9 +86,20 @@ export function build(): Fixture {
   write(
     repo,
     'src/net.blk',
-    'int connect_once(int fd)\n{\n    for (;;) {\n        recvmsg(fd);\n    }\n}\n',
+    'int connect_once(int fd)\n{\n    for (;;) {\n        recv(fd);\n    }\n}\n',
   );
   commit(repo, 'net: retry the read', 'Change-Id: Iretryreadaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+
+  // A second version of that change, so the patch set selectors have two
+  // things to choose between. The first version stays reachable by its hash.
+  const previous = git(repo, ['rev-parse', 'HEAD']);
+  write(
+    repo,
+    'src/net.blk',
+    'int connect_once(int fd)\n{\n    for (;;) {\n        recvmsg(fd);\n    }\n}\n',
+  );
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '--amend', '--no-edit']);
 
   write(
     repo,
@@ -109,6 +122,7 @@ export function build(): Fixture {
   return {
     repo,
     state,
+    previous,
     remove: () => rmSync(base, { recursive: true, force: true }),
   };
 }

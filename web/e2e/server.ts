@@ -16,10 +16,14 @@ const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qrevi
 ///
 /// The token is read from that line rather than forced in: the test walks the
 /// same path a person does.
-export async function start(): Promise<Running> {
+export async function start(options: { prev?: boolean } = {}): Promise<Running> {
   const fixture = build();
+  const args = ['--no-open', '--no-gerrit', '--port', '0'];
+  if (options.prev && fixture.previous) {
+    args.push('--prev', fixture.previous);
+  }
 
-  const child: ChildProcess = spawn(BINARY, ['--no-open', '--no-gerrit', '--port', '0'], {
+  const child: ChildProcess = spawn(BINARY, args, {
     cwd: fixture.repo,
     env: { ...process.env, XDG_STATE_HOME: fixture.state, NO_COLOR: '1' },
   });

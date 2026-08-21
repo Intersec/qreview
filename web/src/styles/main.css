@@ -753,3 +753,31 @@ tr.talk td {
 .file-row .file-path {
   direction: ltr;
 }
+
+/* ------------------------------------------------------ the patch sets */
+
+.patch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--pane);
+  font-size: 12px;
+}
+.picker {
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  padding: 1px 4px;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--code-font);
+  font-size: 11px;
+}
+.patch-bar .arrow {
+  color: var(--ink-quiet);
+}
+.rebased {
+  color: var(--context-ink);
+}
