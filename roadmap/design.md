@@ -497,6 +497,8 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |
 | `POST /api/changes/:key/patchsets/fetch` | Fetch one Gerrit patch set |
 | `GET /api/export?scope=change&key=...` | The export text |
+| `GET /api/config` | The three layers, folded |
+| `PUT /api/config` | Write what the panel changed, and read them back |
 
 Two static routes sit outside `/api`: `/` serves the interface, and
 `/theme/<name>.css` serves the stylesheet that names the syntax classes.
@@ -560,9 +562,25 @@ Three layers, the later one wins:
     "batchSize": 5,
     "integrationBranch": null
   },
-  "ui": { "diff": "unified" }
+  "ui": { "diff": "unified", "theme": "system" },
+  "diff": {
+    "context": 10,
+    "wrap": false,
+    "ignoreWhitespace": false,
+    "tabWidth": 4,
+    "fontSize": 12,
+    "syntax": true
+  }
 }
 ```
+
+Ten lines of context, not the three git gives: three is too few to judge a
+change.
+
+`PUT /api/config` writes the `diff` and `ui` sections into the file of the
+user, and nothing else. A language map that somebody put there by hand stays
+where it is. The answer is the three layers folded again, so it says what the
+tool will really use and not what was asked for.
 
 A key nobody knows is refused, and the error names it. A configuration that
 is silently ignored is worse than one that refuses to start, because nobody

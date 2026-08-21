@@ -57,7 +57,9 @@ export function build(): Fixture {
   git(repo, ['config', 'commit.gpgsign', 'false']);
   git(repo, ['config', 'core.autocrlf', 'false']);
 
-  const long = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
+  // Long enough that ten lines of context around the two changes still
+  // leave a gap between the hunks for the context bar to open.
+  const long = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
 
   write(repo, 'src/net.blk', 'int connect_once(int fd)\n{\n    return read(fd);\n}\n');
   write(repo, 'src/long.c', long);
@@ -104,7 +106,7 @@ export function build(): Fixture {
   write(
     repo,
     'src/long.c',
-    long.replace('line 3\n', 'LINE THREE\n').replace('line 27\n', 'LINE TWENTY SEVEN\n'),
+    long.replace('line 3\n', 'LINE THREE\n').replace('line 50\n', 'LINE FIFTY\n'),
   );
   write(repo, 'src/added.py', 'def hello():\n    return "hi"\n');
   // The only change here is the indentation, so it is what a whitespace

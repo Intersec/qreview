@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
     print!("{}", text_report(&session).await?);
 
     let token = auth::new_token();
-    let state = AppState::new(session, token.clone()).with_ui(config.ui.clone());
+    let state = AppState::new(session, token.clone()).with_config(config.clone(), root.clone());
 
     serve(cli.port, api::app(state), &token, cli.no_open).await
 }
@@ -109,7 +109,11 @@ async fn text_report(session: &Session) -> Result<String> {
         files.push(ChangeFiles {
             key: change.key.clone(),
             files: session
-                .files(&change.commit, &qreview::session::Against::Parent, false)
+                .files(
+                    &change.commit,
+                    &qreview::session::Against::Parent,
+                    &qreview::diff::How::default(),
+                )
                 .await?,
         });
     }

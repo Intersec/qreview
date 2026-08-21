@@ -20,11 +20,30 @@ pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 /// configuration, so the tool agrees with what the terminal shows.
 const DETECT: [&str; 4] = ["-r", "-M", "-C", "--find-copies-harder"];
 
+/// How the reader wants the diff read.
+#[derive(Clone, Copy, Debug)]
+pub struct How {
+    /// Lines of unchanged code kept around a change.
+    pub context: usize,
+    /// Leave out what differs only by spacing.
+    pub ignore_ws: bool,
+}
+
+impl Default for How {
+    fn default() -> Self {
+        // Three lines is what git gives, and it is too few to judge a change.
+        Self {
+            context: 10,
+            ignore_ws: false,
+        }
+    }
+}
+
 /// The files a change touches, with the counts and no content.
-pub async fn files(git: &Git, base: &str, target: &str, ignore_ws: bool) -> Result<Vec<FileEntry>> {
+pub async fn files(git: &Git, base: &str, target: &str, how: &How) -> Result<Vec<FileEntry>> {
     let mut call: Vec<&str> = vec!["diff-tree"];
     call.extend_from_slice(&DETECT);
-    if ignore_ws {
+    if how.ignore_ws {
         call.push("-w");
     }
     call.extend_from_slice(&["--numstat", "-z", base, target]);
@@ -32,7 +51,7 @@ pub async fn files(git: &Git, base: &str, target: &str, ignore_ws: bool) -> Resu
 
     let mut call: Vec<&str> = vec!["diff-tree"];
     call.extend_from_slice(&DETECT);
-    if ignore_ws {
+    if how.ignore_ws {
         call.push("-w");
     }
     call.extend_from_slice(&["--name-status", "-z", base, target]);
@@ -60,11 +79,12 @@ pub async fn file(
     target: &str,
     path: &str,
     old_path: Option<&str>,
-    ignore_ws: bool,
+    how: &How,
 ) -> Result<Option<FileDiff>> {
-    let mut call: Vec<&str> = vec!["diff-tree", "-p", "--no-color", "--full-index"];
+    let unified = format!("-U{}", how.context);
+    let mut call: Vec<&str> = vec!["diff-tree", "-p", "--no-color", "--full-index", &unified];
     call.extend_from_slice(&DETECT);
-    if ignore_ws {
+    if how.ignore_ws {
         call.push("-w");
     }
     call.extend_from_slice(&[base, target, "--", path]);
@@ -165,7 +185,7 @@ mod tests {
 
     async fn head_files(repo: &Repo) -> (Git, Vec<FileEntry>) {
         let git = Git::discover(repo.path()).await.unwrap();
-        let entries = files(&git, "HEAD^", "HEAD", false).await.unwrap();
+        let entries = files(&git, "HEAD^", "HEAD", &How::default()).await.unwrap();
 
         (git, entries)
     }
@@ -177,7 +197,7 @@ mod tests {
             .find(|e| e.path == path)
             .and_then(|e| e.old_path.clone());
 
-        file(&git, "HEAD^", "HEAD", path, old.as_deref(), false)
+        file(&git, "HEAD^", "HEAD", path, old.as_deref(), &How::default())
             .await
             .unwrap()
             .expect("the change must touch the file")
@@ -324,31 +344,38 @@ mod tests {
 
     #[tokio::test]
     async fn two_hunks_keep_their_own_line_numbers() {
-        let before = (1..=30).map(|i| format!("line {i}\n")).collect::<String>();
+        // Far enough apart that ten lines of context on each side of the
+        // two changes still leave a gap between the hunks.
+        let before = (1..=60).map(|i| format!("line {i}\n")).collect::<String>();
         let after = before
             .replace("line 3\n", "LINE 3\n")
-            .replace("line 27\n", "LINE 27\n");
+            .replace("line 50\n", "LINE 50\n");
         let repo = two_commits(&[("a.txt", &before)], &[("a.txt", &after)]).await;
         let diff = head_diff(&repo, "a.txt").await;
 
         assert_eq!(diff.hunks.len(), 2, "far apart changes make two hunks");
         assert!(diff.hunks[0].old_start <= 3);
-        assert!(diff.hunks[1].old_start > 20);
+        assert!(
+            diff.hunks[1].old_start > diff.hunks[0].old_start + diff.hunks[0].old_lines,
+            "the second hunk starts after the first one ends"
+        );
 
         let second = diff.hunks[1]
             .rows
             .iter()
             .find(|r| r.kind == RowKind::Add)
             .unwrap();
-        assert_eq!(second.text, "LINE 27");
-        assert_eq!(second.new_line, Some(27));
+        assert_eq!(second.text, "LINE 50");
+        assert_eq!(second.new_line, Some(50));
     }
 
     #[tokio::test]
     async fn a_root_commit_diffs_against_the_empty_tree() {
         let repo = build_repo(&[commit("first").file("a.txt", "one\ntwo\n")]).await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let entries = files(&git, EMPTY_TREE, "HEAD", false).await.unwrap();
+        let entries = files(&git, EMPTY_TREE, "HEAD", &How::default())
+            .await
+            .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].status, FileStatus::Added);
@@ -373,7 +400,7 @@ mod tests {
         let repo = two_commits(&[("a.txt", "a\n")], &[("a.txt", "b\n")]).await;
         let git = Git::discover(repo.path()).await.unwrap();
 
-        let missing = file(&git, "HEAD^", "HEAD", "other.txt", None, false)
+        let missing = file(&git, "HEAD^", "HEAD", "other.txt", None, &How::default())
             .await
             .unwrap();
         assert!(missing.is_none());

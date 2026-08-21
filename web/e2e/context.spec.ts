@@ -18,49 +18,49 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the bar says how many lines it hides', async ({ page }) => {
-  // The fixture touches line 3 and line 27 of a file of 30 lines, so the
-  // gap between the two hunks is lines 7 to 23.
-  await expect(page.getByRole('button', { name: '+17 common lines' })).toBeVisible();
-  await expect(page.getByText('line 12', { exact: true })).toBeHidden();
+  // The fixture touches line 3 and line 50 of a file of 60 lines, and ten
+  // lines of context on each side leave 14 to 39 in the gap.
+  await expect(page.getByRole('button', { name: '+26 common lines' })).toBeVisible();
+  await expect(page.getByText('line 20', { exact: true })).toBeHidden();
 });
 
 test('opening the whole gap shows the lines and takes the bar away', async ({ page }) => {
-  const bar = page.getByRole('button', { name: '+17 common lines' });
+  const bar = page.getByRole('button', { name: '+26 common lines' });
   await bar.click();
 
-  await expect(page.getByText('line 12', { exact: true })).toBeVisible();
+  await expect(page.getByText('line 20', { exact: true })).toBeVisible();
   await expect(bar).toBeHidden();
 });
 
 test('an opened line carries both line numbers', async ({ page }) => {
-  await page.getByRole('button', { name: '+17 common lines' }).click();
+  await page.getByRole('button', { name: '+26 common lines' }).click();
 
-  // Nothing was added above line 12, so the two sides agree on the number.
-  const row = page.locator('tr', { hasText: /^\s*12\s*12\s*line 12$/ });
+  // Nothing was added above line 20, so the two sides agree on the number.
+  const row = page.locator('tr', { hasText: /^\s*20\s*20\s*line 20$/ });
   await expect(row).toHaveCount(1);
 });
 
 test('the short step down opens the end nearest the hunk below', async ({ page }) => {
   await page.getByRole('button', { name: '+10 ↓' }).click();
 
-  await expect(page.getByText('line 23', { exact: true })).toBeVisible();
-  await expect(page.getByText('line 13', { exact: true })).toBeHidden();
-  await expect(page.getByRole('button', { name: '+7 common lines' })).toBeVisible();
+  await expect(page.getByText('line 39', { exact: true })).toBeVisible();
+  await expect(page.getByText('line 20', { exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: '+16 common lines' })).toBeVisible();
 });
 
 test('the short step up opens the end nearest the hunk above', async ({ page }) => {
   await page.getByRole('button', { name: '↑ +10' }).click();
 
-  await expect(page.getByText('line 7', { exact: true })).toBeVisible();
-  await expect(page.getByText('line 20', { exact: true })).toBeHidden();
-  await expect(page.getByRole('button', { name: '+7 common lines' })).toBeVisible();
+  await expect(page.getByText('line 14', { exact: true })).toBeVisible();
+  await expect(page.getByText('line 39', { exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: '+16 common lines' })).toBeVisible();
 });
 
 test('the context opens in the side by side view too', async ({ page }) => {
   await page.getByRole('button', { name: 'Side by side' }).click();
-  await page.getByRole('button', { name: '+17 common lines' }).click();
+  await page.getByRole('button', { name: '+26 common lines' }).click();
 
-  await expect(page.getByText('line 12', { exact: true })).toHaveCount(2);
+  await expect(page.getByText('line 20', { exact: true })).toHaveCount(2);
 });
 
 test('a file with no gap has no bar', async ({ page }) => {

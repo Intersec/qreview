@@ -19,6 +19,7 @@ pub struct Config {
     pub gerrit: Gerrit,
     pub series: Series,
     pub ui: Ui,
+    pub diff: Diff,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -43,6 +44,24 @@ pub struct Series {
 pub struct Ui {
     /// `unified` or `side-by-side`.
     pub diff: String,
+    /// `system`, `light` or `dark`.
+    pub theme: String,
+}
+
+/// What the reader asked of a diff. The panel writes these.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Diff {
+    /// Lines of unchanged code kept around a change.
+    pub context: usize,
+    /// Fold a long line instead of scrolling to its end.
+    pub wrap: bool,
+    /// Leave out what differs only by spacing.
+    pub ignore_whitespace: bool,
+    pub tab_width: usize,
+    pub font_size: usize,
+    /// Colour the code. Off is faster on a very large file.
+    pub syntax: bool,
 }
 
 impl Default for Config {
@@ -61,6 +80,17 @@ impl Default for Config {
             },
             ui: Ui {
                 diff: "unified".to_owned(),
+                theme: "system".to_owned(),
+            },
+            diff: Diff {
+                // Three lines is what git gives, and it is too few to judge
+                // a change. Gerrit offers ten, and that is the useful one.
+                context: 10,
+                wrap: false,
+                ignore_whitespace: false,
+                tab_width: 4,
+                font_size: 12,
+                syntax: true,
             },
         }
     }
@@ -79,6 +109,8 @@ pub struct Layer {
     pub series: Option<SeriesLayer>,
     #[serde(default)]
     pub ui: Option<UiLayer>,
+    #[serde(default)]
+    pub diff: Option<DiffLayer>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -101,6 +133,24 @@ pub struct SeriesLayer {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UiLayer {
     pub diff: Option<String>,
+    pub theme: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiffLayer {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrap: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ignore_whitespace: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_width: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub syntax: Option<bool>,
 }
 
 impl Config {
@@ -126,6 +176,17 @@ impl Config {
         }
         if let Some(ui) = layer.ui {
             self.ui.diff = ui.diff.unwrap_or_else(|| self.ui.diff.clone());
+            self.ui.theme = ui.theme.unwrap_or_else(|| self.ui.theme.clone());
+        }
+        if let Some(diff) = layer.diff {
+            self.diff.context = diff.context.unwrap_or(self.diff.context).clamp(0, 2000);
+            self.diff.wrap = diff.wrap.unwrap_or(self.diff.wrap);
+            self.diff.ignore_whitespace = diff
+                .ignore_whitespace
+                .unwrap_or(self.diff.ignore_whitespace);
+            self.diff.tab_width = diff.tab_width.unwrap_or(self.diff.tab_width).clamp(1, 16);
+            self.diff.font_size = diff.font_size.unwrap_or(self.diff.font_size).clamp(8, 24);
+            self.diff.syntax = diff.syntax.unwrap_or(self.diff.syntax);
         }
     }
 }
@@ -158,6 +219,47 @@ fn read(path: &Path) -> Result<Option<Layer>> {
         .with_context(|| format!("{} is not a readable configuration", path.display()))?;
 
     Ok(Some(layer))
+}
+
+/// Write what the panel changed into the file of the user, and read the
+/// three layers back.
+///
+/// Only the fields the panel owns are written. A language map or a Gerrit
+/// setting the user put there by hand stays where it is.
+pub fn update(repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
+    let path = user_path().context("no configuration directory for this user")?;
+    let mut stored: serde_json::Value = match std::fs::read_to_string(&path) {
+        Ok(text) => serde_json::from_str(&text)
+            .with_context(|| format!("{} is not a readable configuration", path.display()))?,
+        Err(_) => serde_json::json!({}),
+    };
+
+    for section in ["diff", "ui"] {
+        let Some(fields) = patch.get(section).and_then(|s| s.as_object()) else {
+            continue;
+        };
+        let target = stored
+            .as_object_mut()
+            .context("the configuration is not an object")?
+            .entry(section)
+            .or_insert_with(|| serde_json::json!({}));
+
+        if let Some(target) = target.as_object_mut() {
+            for (name, value) in fields {
+                target.insert(name.clone(), value.clone());
+            }
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("cannot make {}", parent.display()))?;
+    }
+    let text = serde_json::to_string_pretty(&stored)?;
+    std::fs::write(&path, format!("{text}\n"))
+        .with_context(|| format!("cannot write {}", path.display()))?;
+
+    load(repo_root)
 }
 
 fn user_path() -> Option<PathBuf> {

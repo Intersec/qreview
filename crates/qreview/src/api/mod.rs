@@ -28,8 +28,11 @@ use crate::store::model::{ChangeFile, Comment};
 pub struct AppState {
     pub session: Arc<RwLock<Session>>,
     pub token: Arc<String>,
-    /// What the configuration asks the interface to start with.
-    pub ui: Arc<crate::config::Ui>,
+    /// The three layers, folded. The panel writes it and every route reads
+    /// it, so a setting takes effect on the next request.
+    pub config: Arc<std::sync::RwLock<crate::config::Config>>,
+    /// Where the repository layer lives, so a write can read it back.
+    pub root: Arc<std::path::PathBuf>,
 }
 
 impl AppState {
@@ -37,13 +40,23 @@ impl AppState {
         Self {
             session: Arc::new(RwLock::new(session)),
             token: Arc::new(token),
-            ui: Arc::new(crate::config::Config::default().ui),
+            config: Arc::new(std::sync::RwLock::new(crate::config::Config::default())),
+            root: Arc::new(std::path::PathBuf::from(".")),
         }
     }
 
-    pub fn with_ui(mut self, ui: crate::config::Ui) -> Self {
-        self.ui = Arc::new(ui);
+    /// The configuration this run started with, and where it came from.
+    pub fn with_config(mut self, config: crate::config::Config, root: std::path::PathBuf) -> Self {
+        self.config = Arc::new(std::sync::RwLock::new(config));
+        self.root = Arc::new(root);
         self
+    }
+
+    fn config(&self) -> crate::config::Config {
+        self.config
+            .read()
+            .expect("the configuration lock is poisoned")
+            .clone()
     }
 }
 
@@ -61,6 +74,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/mergelist", get(mergelist))
         .route("/api/export", get(export))
+        .route("/api/config", get(config).put(save_config))
         .route("/api/changes/{key}/lines", get(lines))
         .route("/api/changes/{key}/patchsets", get(patchsets))
         .route(
@@ -98,7 +112,7 @@ async fn interface(uri: axum::http::Uri) -> Response {
 struct SessionBody {
     version: &'static str,
     series: Series,
-    ui: crate::config::Ui,
+    config: crate::config::Config,
 }
 
 async fn session(State(state): State<AppState>) -> Json<SessionBody> {
@@ -107,7 +121,7 @@ async fn session(State(state): State<AppState>) -> Json<SessionBody> {
     Json(SessionBody {
         version: env!("CARGO_PKG_VERSION"),
         series: session.series.clone(),
-        ui: (*state.ui).clone(),
+        config: state.config(),
     })
 }
 
@@ -160,9 +174,19 @@ struct ViewQuery {
     ws: Option<String>,
 }
 
-/// `ws=ignore` asks git to leave whitespace out of the comparison.
-fn ignore_ws(value: Option<&str>) -> bool {
-    value == Some("ignore")
+/// How to read the diff, from the query and from the configuration.
+fn how(state: &AppState, ws: Option<&str>) -> crate::diff::How {
+    let config = state.config();
+
+    crate::diff::How {
+        context: config.diff.context,
+        // The query wins for one request; the panel decides the rest.
+        ignore_ws: match ws {
+            Some("ignore") => true,
+            Some("keep") => false,
+            _ => config.diff.ignore_whitespace,
+        },
+    }
 }
 
 /// A base is a word, or `ps:<n>` to read one patch set against another.
@@ -246,7 +270,7 @@ async fn files(
 
     Ok(Json(
         session
-            .files(&commit, &against, ignore_ws(view.ws.as_deref()))
+            .files(&commit, &against, &how(&state, view.ws.as_deref()))
             .await?,
     ))
 }
@@ -386,7 +410,7 @@ async fn diff(
             &commit,
             &query.file,
             &against,
-            ignore_ws(query.ws.as_deref()),
+            &how(&state, query.ws.as_deref()),
         )
         .await?
         .map(Json)
@@ -438,6 +462,27 @@ async fn export(
         )),
         _ => Ok(crate::export::series(&session, opts).await?),
     }
+}
+
+async fn config(State(state): State<AppState>) -> Json<crate::config::Config> {
+    Json(state.config())
+}
+
+/// Write what the panel changed, and answer with the three layers folded.
+///
+/// The repository layer is read again afterwards, so the answer says what
+/// the tool will really use, not what was asked for.
+async fn save_config(
+    State(state): State<AppState>,
+    Json(patch): Json<serde_json::Value>,
+) -> Result<Json<crate::config::Config>, ApiError> {
+    let fresh = crate::config::update(&state.root, &patch)?;
+    *state
+        .config
+        .write()
+        .expect("the configuration lock is poisoned") = fresh.clone();
+
+    Ok(Json(fresh))
 }
 
 async fn comments(

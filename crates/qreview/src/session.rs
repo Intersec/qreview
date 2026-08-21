@@ -208,16 +208,16 @@ impl Session {
         &self,
         rev: &str,
         against: &Against,
-        ignore_ws: bool,
+        how: &diff::How,
     ) -> Result<Vec<FileEntry>> {
         let base = self.base_of(rev, against).await?;
-        let mut entries = diff::files(&self.git, &base, rev, ignore_ws).await?;
+        let mut entries = diff::files(&self.git, &base, rev, how).await?;
 
         // Two versions of one change, read against each other. Between them
         // sits everything the rebase brought, and none of it is the work.
         // Only the files the change itself touches are worth a row.
         if let Against::Tree(other) = against
-            && let Some(touched) = self.touched_by(&[rev, other], ignore_ws).await
+            && let Some(touched) = self.touched_by(&[rev, other], how).await
         {
             entries.retain(|entry| {
                 touched.contains(&entry.path)
@@ -238,7 +238,7 @@ impl Session {
     async fn touched_by(
         &self,
         revs: &[&str],
-        ignore_ws: bool,
+        how: &diff::How,
     ) -> Option<std::collections::HashSet<String>> {
         let mut touched = std::collections::HashSet::new();
 
@@ -250,7 +250,7 @@ impl Session {
                 .cloned()
                 .unwrap_or_else(|| diff::EMPTY_TREE.to_owned());
 
-            for entry in diff::files(&self.git, &parent, rev, ignore_ws).await.ok()? {
+            for entry in diff::files(&self.git, &parent, rev, how).await.ok()? {
                 if let Some(old) = entry.old_path {
                     touched.insert(old);
                 }
@@ -266,16 +266,16 @@ impl Session {
         rev: &str,
         path: &str,
         against: &Against,
-        ignore_ws: bool,
+        how: &diff::How,
     ) -> Result<Option<FileDiff>> {
         let base = self.base_of(rev, against).await?;
-        let old = diff::files(&self.git, &base, rev, ignore_ws)
+        let old = diff::files(&self.git, &base, rev, how)
             .await?
             .into_iter()
             .find(|e| e.path == path)
             .and_then(|e| e.old_path);
 
-        let mut found = diff::file(&self.git, &base, rev, path, old.as_deref(), ignore_ws).await?;
+        let mut found = diff::file(&self.git, &base, rev, path, old.as_deref(), how).await?;
 
         if let Some(file) = found.as_mut() {
             let language = self.langs.of(path).map(str::to_owned);
