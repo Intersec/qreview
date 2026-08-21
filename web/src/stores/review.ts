@@ -28,10 +28,10 @@ export const useReview = defineStore('review', () => {
   const diff = ref<FileDiff | null>(null);
   const error = ref<string | null>(null);
   const busy = ref(false);
-  /// Counts the reads that are under way. An answer that arrives after the
-  /// reader has moved on belongs to nothing and is dropped, rather than
-  /// shown as an error about a file the change does not have.
-  let generation = 0;
+  /// An answer that arrives after the reader has moved on belongs to
+  /// nothing. Every read checks that what it was asked for is still what is
+  /// being read, rather than counting the reads: opening a change opens a
+  /// file too, and a counter cannot tell those two apart.
   const mergeBase = ref<MergeBase | undefined>(undefined);
   const review = ref<Review | null>(null);
   const patchSets = ref<PatchSet[]>([]);
@@ -89,7 +89,6 @@ export const useReview = defineStore('review', () => {
   }
 
   async function openChange(key: string, base?: MergeBase) {
-    const mine = ++generation;
     await guard(async () => {
       changeKey.value = key;
       mergeBase.value = base;
@@ -104,7 +103,7 @@ export const useReview = defineStore('review', () => {
       void api
         .patchSets(key)
         .then((versions) => {
-          if (mine === generation) {
+          if (changeKey.value === key) {
             patchSets.value = versions.sets;
             gerrit.value = versions.gerrit;
           }
@@ -115,7 +114,7 @@ export const useReview = defineStore('review', () => {
         api.comments(key),
         api.files(key, undefined, base, ignoreWs.value),
       ]);
-      if (mine !== generation) {
+      if (changeKey.value !== key) {
         return;
       }
       review.value = comments;
@@ -135,7 +134,6 @@ export const useReview = defineStore('review', () => {
     if (!key) {
       return;
     }
-    const mine = ++generation;
     await guard(async () => {
       filePath.value = path;
       const read = await api.diff(
@@ -145,7 +143,7 @@ export const useReview = defineStore('review', () => {
         against.value ?? mergeBase.value,
         ignoreWs.value,
       );
-      if (mine === generation) {
+      if (changeKey.value === key && filePath.value === path) {
         diff.value = read;
       }
     });
