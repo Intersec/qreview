@@ -1307,6 +1307,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn comparing_two_versions_leaves_the_rebase_out() {
+        // A change on one base, then the same change on a base that moved a
+        // dozen other files. Reading version 1 against version 2 must show
+        // the work, not the rebase.
+        let repo = build_repo(&[
+            commit("base one").file("keep.txt", "0\n"),
+            commit("work: the change")
+                .file("mine.txt", "first try\n")
+                .change_id("Iwork"),
+        ])
+        .await;
+        let first = repo.sha("HEAD").await;
+
+        repo.git(&["switch", "--quiet", "--detach", "HEAD~1"]).await;
+        for name in ["a", "b", "c"] {
+            std::fs::write(repo.path().join(format!("{name}.txt")), "new base\n").unwrap();
+        }
+        repo.git(&["add", "-A"]).await;
+        repo.git(&["commit", "-m", "base two: a dozen other files"])
+            .await;
+        repo.git(&["cherry-pick", &first]).await;
+        std::fs::write(repo.path().join("mine.txt"), "second try\n").unwrap();
+        repo.git(&["add", "-A"]).await;
+        repo.git(&["commit", "--amend", "--no-edit"]).await;
+
+        let mut opts = Options::new();
+        opts.prevs = vec![first];
+        let server = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
+
+        let (status, files) = json(
+            server,
+            get_with_cookie("/api/changes/Iwork/files?ps=2&base=ps:1", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let paths: Vec<_> = files
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            paths,
+            ["mine.txt"],
+            "the rebase brought a.txt, b.txt and c.txt"
+        );
+    }
+
+    #[tokio::test]
     async fn a_patch_set_that_does_not_exist_is_a_named_error() {
         let repo = fixture().await;
         let (status, body) = json(

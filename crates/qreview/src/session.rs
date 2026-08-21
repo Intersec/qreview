@@ -211,10 +211,51 @@ impl Session {
         let base = self.base_of(rev, against).await?;
         let mut entries = diff::files(&self.git, &base, rev, ignore_ws).await?;
 
+        // Two versions of one change, read against each other. Between them
+        // sits everything the rebase brought, and none of it is the work.
+        // Only the files the change itself touches are worth a row.
+        if let Against::Tree(other) = against
+            && let Some(touched) = self.touched_by(&[rev, other], ignore_ws).await
+        {
+            entries.retain(|entry| {
+                touched.contains(&entry.path)
+                    || entry
+                        .old_path
+                        .as_ref()
+                        .is_some_and(|old| touched.contains(old))
+            });
+        }
+
         for entry in &mut entries {
             entry.language = self.langs.of(&entry.path).unwrap_or_default().to_owned();
         }
         Ok(entries)
+    }
+
+    /// The files that these commits touch, each against its own parent.
+    async fn touched_by(
+        &self,
+        revs: &[&str],
+        ignore_ws: bool,
+    ) -> Option<std::collections::HashSet<String>> {
+        let mut touched = std::collections::HashSet::new();
+
+        for rev in revs {
+            let info = commit::info(&self.git, rev).await.ok()?;
+            let parent = info
+                .parents
+                .first()
+                .cloned()
+                .unwrap_or_else(|| diff::EMPTY_TREE.to_owned());
+
+            for entry in diff::files(&self.git, &parent, rev, ignore_ws).await.ok()? {
+                if let Some(old) = entry.old_path {
+                    touched.insert(old);
+                }
+                touched.insert(entry.path);
+            }
+        }
+        Some(touched)
     }
 
     /// The diff of one file of a change.
