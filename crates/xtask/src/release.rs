@@ -28,10 +28,25 @@ pub fn run(root: &Path, version: &str) -> Result<()> {
         root,
         &["commit", "-m", &format!("chore(release): v{version}")],
     )?;
-    git(root, &["tag", &format!("v{version}")])?;
+    tag(root, version, &collected.text)?;
 
     println!("v{version} is cut and tagged. Nothing is pushed: that is yours to do.");
     Ok(())
+}
+
+/// Tag the release commit, with the notes of that version in the tag.
+///
+/// The tag is annotated. `git push --follow-tags` pushes an annotated tag
+/// and skips a lightweight one, so a lightweight tag stays on the machine
+/// that cut it and no release pipeline ever starts.
+fn tag(root: &Path, version: &str, entries: &str) -> Result<()> {
+    let name = format!("v{version}");
+    let subject = format!("qreview {name}");
+
+    git(
+        root,
+        &["tag", "-a", "-m", &subject, "-m", entries.trim(), &name],
+    )
 }
 
 fn check_version(version: &str) -> Result<()> {
@@ -124,4 +139,61 @@ fn git(root: &Path, args: &[&str]) -> Result<()> {
         bail!("git {} failed", args.join(" "));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A repository with one commit, which is what a tag needs.
+    fn repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        for args in [
+            vec!["init", "--quiet", "--initial-branch=main", "."],
+            vec!["config", "user.name", "Test"],
+            vec!["config", "user.email", "test@example.com"],
+            vec!["config", "commit.gpgsign", "false"],
+            vec!["config", "tag.gpgsign", "false"],
+            vec!["commit", "--quiet", "--allow-empty", "-m", "first"],
+        ] {
+            git(root, &args).unwrap();
+        }
+        dir
+    }
+
+    fn text(root: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .current_dir(root)
+            .args(args)
+            .output()
+            .unwrap();
+
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    }
+
+    #[test]
+    fn the_tag_is_annotated_so_follow_tags_pushes_it() {
+        let dir = repo();
+        let root = dir.path();
+
+        tag(root, "1.2.3", "### Fixed\n\n- A thing that was broken.\n").unwrap();
+
+        // A lightweight tag names the commit. `git push --follow-tags` skips
+        // one, so the release pipeline never starts.
+        assert_eq!(text(root, &["cat-file", "-t", "v1.2.3"]), "tag");
+    }
+
+    #[test]
+    fn the_tag_carries_the_notes_of_the_version() {
+        let dir = repo();
+        let root = dir.path();
+
+        tag(root, "1.2.3", "### Fixed\n\n- A thing that was broken.\n").unwrap();
+        let message = text(root, &["tag", "-l", "--format=%(contents)", "v1.2.3"]);
+
+        assert!(message.starts_with("qreview v1.2.3"), "{message}");
+        assert!(message.contains("- A thing that was broken."), "{message}");
+    }
 }

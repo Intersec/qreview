@@ -81,6 +81,10 @@ cargo xtask release   # collects the changelog fragments, writes CHANGELOG.md,
 git push --follow-tags
 ```
 
+`cargo xtask release` writes an annotated tag, which is the kind
+`--follow-tags` pushes. A lightweight tag would stay on your machine and no
+release pipeline would start.
+
 The tag starts a pipeline that runs the gate again, builds the static Linux
 x86-64 binary, and attaches it to the release with the notes of that version.
 A tag whose gate is red publishes nothing.
