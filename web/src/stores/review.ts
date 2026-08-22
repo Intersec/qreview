@@ -20,6 +20,17 @@ import type {
   Series,
 } from '@/api/types';
 
+/// The settings the server reads when it builds a diff. A change to one of
+/// these means the file list and the diff must be read again; a change to
+/// anything else is the browser's business alone.
+const SERVER_SIDE = ['context', 'ignoreWhitespace', 'syntax'];
+
+function touchesTheDiff(patch: object): boolean {
+  const diff = (patch as { diff?: Record<string, unknown> }).diff;
+
+  return diff !== undefined && SERVER_SIDE.some((name) => name in diff);
+}
+
 export const useReview = defineStore('review', () => {
   const version = ref('');
   const series = ref<Series | null>(null);
@@ -300,10 +311,11 @@ export const useReview = defineStore('review', () => {
     await guard(async () => {
       config.value = await api.saveConfig(patch);
 
-      // A setting can change the file list as well as the diff: ignoring
-      // whitespace takes a file whose only change is spacing out of it.
+      // Only a setting the server reads is worth reading the diff again for.
+      // Re-reading it for a colour or a view would replace what is on the
+      // screen, and a comment box open on it would go with it.
       const key = changeKey.value;
-      if (!key) {
+      if (!key || !touchesTheDiff(patch)) {
         return;
       }
       const base = against.value ?? mergeBase.value;
