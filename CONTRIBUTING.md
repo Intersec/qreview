@@ -93,10 +93,20 @@ The pipeline talks to its own GitLab server and to nothing else. It pulls no
 image from another registry, and `scripts/gitlab-release.sh` calls the API of
 the project it runs in.
 
-A server behind a private certificate authority needs one CI/CD variable:
-`ADDITIONAL_CA_CERT_BUNDLE`, holding that CA. The name is GitLab's own. The
-release job installs it before it calls the API. Without it `curl` stops with
-`SSL certificate problem: unable to get local issuer certificate`.
+A server behind a private certificate authority needs that CA in the job.
+The release job takes it from either of two places, and installs it before it
+calls the API:
+
+- `CI_SERVER_TLS_CA_FILE`, which the runner sets on its own when it is
+  configured with `tls-ca-file`. Nothing to do in the project.
+- `ADDITIONAL_CA_CERT_BUNDLE`, a CI/CD variable of the project or of its
+  group, holding the CA. The name is GitLab's own. A File variable and a
+  plain one both work.
+
+Without either, `curl` stops with `SSL certificate problem: unable to get
+local issuer certificate`. A variable marked **Protect variable** reaches a
+tag only when the tag is protected, so protect the tag pattern too, or leave
+the variable unprotected.
 
 `make dist` builds the same binary on your machine. Use it to release
 locally: to hand a colleague a build before a tag, or when no pipeline is

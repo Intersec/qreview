@@ -13,9 +13,9 @@
 # registries. Do not commit a registry token: expose it as a protected CI/CD
 # variable.
 #
-# A server behind a private CA needs one CI/CD variable, `ADDITIONAL_CA_CERT_BUNDLE`,
-# holding that CA. It is the name GitLab itself uses. Both a File variable
-# and a plain one work.
+# A server behind a private certificate authority: the release job trusts the
+# CA that the runner passes in `CI_SERVER_TLS_CA_FILE`, and the one the
+# project sets in `ADDITIONAL_CA_CERT_BUNDLE`. Either is enough.
 
 stages:
   - verify
@@ -67,17 +67,17 @@ release:
     # No C toolchain: Rust links musl with its own bundled linker. node
     # builds the interface, and writes the JSON of the release.
     - apt-get install -y --no-install-recommends nodejs
-    # A GitLab server behind a private CA. Without the variable, nothing
-    # happens here and the public roots of the image are used.
+    # A GitLab server behind a private CA. Two places carry it: the runner,
+    # which sets CI_SERVER_TLS_CA_FILE when it is configured with one, and
+    # the project, through ADDITIONAL_CA_CERT_BUNDLE. Either is enough, and
+    # a server with a public certificate needs neither.
     - |
-      if [ -n "${ADDITIONAL_CA_CERT_BUNDLE:-}" ]; then
+      ca=${ADDITIONAL_CA_CERT_BUNDLE:-${CI_SERVER_TLS_CA_FILE:-}}
+      if [ -n "$ca" ]; then
         target=/usr/local/share/ca-certificates/gitlab-server.crt
-        if [ -f "$ADDITIONAL_CA_CERT_BUNDLE" ]; then
-          cp "$ADDITIONAL_CA_CERT_BUNDLE" "$target"
-        else
-          printf '%s\n' "$ADDITIONAL_CA_CERT_BUNDLE" > "$target"
-        fi
+        if [ -f "$ca" ]; then cp "$ca" "$target"; else printf '%s\n' "$ca" > "$target"; fi
         update-ca-certificates
+        echo "the certificate authority of the server is trusted"
       fi
     - make setup
   script:
