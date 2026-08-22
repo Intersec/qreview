@@ -12,6 +12,22 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.4.0]
+
+### Added
+
+- **The commit message is a file of the change.** It is first in the list,
+  under the name Gerrit gives it, and a comment sits on a line of it like a
+  comment on any other file. Against another patch set the two messages are
+  diffed, which is where an amend of the subject shows.
+- **A static Linux x86-64 binary on every tag.** The pipeline builds it,
+  attaches it to the release with the notes of that version, and publishes
+  nothing when the gate is red.
+
+### Fixed
+
+- Opening a file right after changing the version, or a setting, no longer
+  falls back to the first file of the change.
 ## [0.3.1]
 
 ### Fixed
