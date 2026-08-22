@@ -4,6 +4,8 @@
 # Interface
 /web/node_modules/
 /web/dist/
+# The release archive that `make dist` packs.
+/dist/
 
 # Browser tests
 /web/e2e/.results/

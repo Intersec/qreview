@@ -6,6 +6,8 @@ CARGO ?= cargo
 NPM ?= npm
 PREFIX ?= $(HOME)/.local
 MUSL_TARGET := x86_64-unknown-linux-musl
+# What the release file is called. The pipeline passes the tag it builds.
+TAG ?= $(shell git describe --tags --always 2>/dev/null || echo local)
 DEV_PORT := 7420
 
 .PHONY: all setup web build check test e2e shots fmt lint install dist musl-target dev clean
@@ -54,10 +56,14 @@ lint:
 install: build
 	$(CARGO) install --path crates/qreview --root $(PREFIX) --force
 
-## One static binary, for a colleague. It adds the target if it is missing.
+## One static binary, compressed for a release. It adds the target if it is
+## missing. TAG names the file: `make dist TAG=v1.2.3`.
 dist: web musl-target
 	$(CARGO) build --release --target $(MUSL_TARGET)
-	@ls -lh target/$(MUSL_TARGET)/release/qreview
+	@rm -rf dist && mkdir dist
+	@cp target/$(MUSL_TARGET)/release/qreview dist/
+	@xz -9 -c dist/qreview > dist/qreview-$(TAG)-linux-x86_64.xz
+	@ls -lh dist/
 
 # A target belongs to rustup, not to asdf: `.tool-versions` pins a Rust
 # version and knows nothing about targets. asdf installs Rust through rustup
@@ -84,5 +90,6 @@ dev:
 	wait
 
 clean:
+	rm -rf dist
 	$(CARGO) clean
 	rm -rf web/dist web/node_modules

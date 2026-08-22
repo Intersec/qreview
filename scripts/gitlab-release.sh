@@ -52,7 +52,7 @@ writeFileSync(process.argv[1], JSON.stringify({
     name: `qreview ${TAG}`,
     tag_name: TAG,
     description: readFileSync(NOTES, "utf8"),
-    assets: { links: [{ name: `${NAME}, static`, url: URL, link_type: "package" }] },
+    assets: { links: [{ name: NAME, url: URL, link_type: "package" }] },
 }));
 ' "$body"
 

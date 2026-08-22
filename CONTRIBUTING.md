@@ -108,9 +108,9 @@ local issuer certificate`. A variable marked **Protect variable** reaches a
 tag only when the tag is protected, so protect the tag pattern too, or leave
 the variable unprotected.
 
-`make dist` builds the same binary on your machine. Use it to release
-locally: to hand a colleague a build before a tag, or when no pipeline is
-available.
+`make dist` packs the same file on your machine, under `dist/`, beside the
+binary itself. Use it to release locally: to hand a colleague a build before
+a tag, or when no pipeline is available. `make dist TAG=v1.2.3` names it.
 
 The version lives in `Cargo.toml`, alone. The `package.json` of the interface
 is private and carries no version.

@@ -54,7 +54,8 @@ check:
     - if: $CI_COMMIT_TAG
 
 # The one artifact of a release: a static binary that runs on any Linux
-# x86-64, with no Node, no cargo and no shared library to find.
+# x86-64, with no Node, no cargo and no shared library to find. It travels
+# compressed, which takes it from 6.4M to 2.5M.
 release:
   extends: .rust
   stage: release
@@ -65,8 +66,8 @@ release:
   before_script:
     - curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
     # No C toolchain: Rust links musl with its own bundled linker. node
-    # builds the interface, and writes the JSON of the release.
-    - apt-get install -y --no-install-recommends nodejs
+    # builds the interface, and writes the JSON of the release. xz packs it.
+    - apt-get install -y --no-install-recommends nodejs xz-utils
     # A GitLab server behind a private CA. Two places carry it: the runner,
     # which sets CI_SERVER_TLS_CA_FILE when it is configured with one, and
     # the project, through ADDITIONAL_CA_CERT_BUNDLE. Either is enough, and
@@ -81,11 +82,13 @@ release:
       fi
     - make setup
   script:
-    - make dist
-    - mkdir -p dist
-    - cp target/x86_64-unknown-linux-musl/release/qreview dist/qreview-linux-x86_64
+    - make dist TAG="$CI_COMMIT_TAG"
     - scripts/release-notes.sh "$CI_COMMIT_TAG" > dist/notes.md
-    - scripts/gitlab-release.sh "$CI_COMMIT_TAG" dist/qreview-linux-x86_64 dist/notes.md
+    - |
+      scripts/gitlab-release.sh "$CI_COMMIT_TAG" \
+        "dist/qreview-${CI_COMMIT_TAG}-linux-x86_64.xz" \
+        dist/notes.md
   artifacts:
     paths:
-      - dist/
+      - dist/*.xz
+      - dist/notes.md
