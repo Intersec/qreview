@@ -46,15 +46,30 @@ const loading = ref(false);
 
 /// A new file starts with nothing opened.
 watch(
-  () => [props.diff.path, props.diff.hunks],
-  () => {
+  () => props.diff,
+  (fresh, before) => {
+    // The context a reader opened belongs to the rows that were there.
     opened.clear();
     left.clear();
-    // A box left open would come back on whatever line of the new file
-    // happens to carry the same number.
-    writing.value = null;
-    about.value = null;
-    cursor.value = null;
+
+    if (fresh.path !== before?.path) {
+      // A box left open would come back on whatever line of the new file
+      // happens to carry the same number.
+      writing.value = null;
+      about.value = null;
+      cursor.value = null;
+
+      return;
+    }
+
+    // The same file, read again. A box stays open while the line it sits on
+    // is still there, so a setting the reader changes does not take it away.
+    if (writing.value !== null && !walkable.value.some((row) => key(row) === writing.value)) {
+      writing.value = null;
+    }
+    if (cursor.value !== null && !walkable.value.some((row) => key(row) === cursor.value)) {
+      cursor.value = null;
+    }
   },
 );
 
