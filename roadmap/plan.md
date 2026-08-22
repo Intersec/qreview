@@ -197,9 +197,9 @@ surprised by anything.*
 
 ## M10 — The commit message, and a release the pipeline builds
 
-- [ ] The commit message as a file of the change, `/COMMIT_MSG`, first in the
+- [x] The commit message as a file of the change, `/COMMIT_MSG`, first in the
       list and commentable
-- [ ] A release job on the pipeline: the static Linux x86-64 binary, attached
+- [x] A release job on the pipeline: the static Linux x86-64 binary, attached
       to the tag
 
 ## After that

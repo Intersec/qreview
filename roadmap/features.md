@@ -8,6 +8,14 @@ still binds
 Released in v0.1.0 unless the line says otherwise. The work order for what is
 left is in [`plan.md`](./plan.md).
 
+## Install and release
+
+- ✅ One static Linux x86-64 binary, built by `make dist`
+- ✅ A pipeline that builds it on every tag and attaches it to the release
+  (v0.4.0)
+- 💡 Linux x86-64 is the only target. Nothing in the design stops the others,
+  and nothing has tried them
+
 ## Command line
 
 - ✅ `qreview` — review the series of the current branch

@@ -1,18 +1,24 @@
-# One stage. It runs `make check`, which is the same gate a developer runs
-# before a commit. Enable "Pipelines must succeed" in the merge request
-# settings so a red pipeline blocks the merge.
+# Two things happen here.
 #
-# The job needs a runner with network access to the crates.io and npm
+# On a merge request and on the default branch, `check` runs the same gate a
+# developer runs before a commit. Enable "Pipelines must succeed" in the merge
+# request settings so a red pipeline blocks the merge.
+#
+# On a tag, the gate runs again, then `package` builds the static Linux
+# x86-64 binary and `release` attaches it to the tag. A tag whose gate is red
+# publishes nothing.
+#
+# The jobs need a runner with network access to the crates.io and npm
 # registries. Do not commit a registry token: expose it as a protected CI/CD
 # variable.
 
 stages:
   - verify
+  - package
+  - release
 
-check:
-  stage: verify
+.rust:
   image: rust:1.92
-  interruptible: true
   variables:
     CARGO_HOME: $CI_PROJECT_DIR/.cargo-home
   cache:
@@ -24,6 +30,11 @@ check:
       - .cargo-home/
       - web/node_modules/
       - target/
+
+check:
+  extends: .rust
+  stage: verify
+  interruptible: true
   before_script:
     - curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
     # chromium is what the browser tests drive. Without it `make check` says
@@ -36,3 +47,59 @@ check:
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+# The one artifact of a release: a static binary that runs on any Linux
+# x86-64, with no Node, no cargo and no shared library to find.
+package:
+  extends: .rust
+  stage: package
+  needs:
+    - check
+  rules:
+    - if: $CI_COMMIT_TAG
+  before_script:
+    - curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+    # No C toolchain: Rust links musl with its own bundled linker.
+    - apt-get install -y --no-install-recommends nodejs
+    - make setup
+  script:
+    - make dist
+    - mkdir -p dist
+    - cp target/x86_64-unknown-linux-musl/release/qreview dist/qreview-linux-x86_64
+    - scripts/release-notes.sh "$CI_COMMIT_TAG" > dist/notes.md
+    # The generic package registry wants a version without the leading v.
+    - VERSION=${CI_COMMIT_TAG#v}
+    - URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/qreview/${VERSION}"
+    - |
+      curl --fail --silent --show-error \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        --upload-file dist/qreview-linux-x86_64 \
+        "${URL}/qreview-linux-x86_64"
+    # The release job cannot run a shell, so the URL is handed to it here.
+    - echo "BINARY_URL=${URL}/qreview-linux-x86_64" > dist/release.env
+  artifacts:
+    paths:
+      - dist/
+    reports:
+      dotenv: dist/release.env
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - job: package
+      artifacts: true
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - echo "Releasing $CI_COMMIT_TAG"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: qreview $CI_COMMIT_TAG
+    description: dist/notes.md
+    assets:
+      links:
+        - name: qreview $CI_COMMIT_TAG, Linux x86-64, static
+          url: $BINARY_URL
+          link_type: package

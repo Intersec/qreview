@@ -70,8 +70,11 @@ amend keeps them.
 
 Copy the binary and run it. It needs `git` on the PATH and nothing else.
 
+Every tag carries `qreview-linux-x86_64`, a static binary built by the
+pipeline. Take its link from the release page.
+
 ```sh
-curl -o ~/.local/bin/qreview <the release artifact>
+curl -Lo ~/.local/bin/qreview <the link to qreview-linux-x86_64>
 chmod +x ~/.local/bin/qreview
 ```
 

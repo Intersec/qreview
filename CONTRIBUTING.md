@@ -78,8 +78,16 @@ shape.
 make check
 cargo xtask release   # collects the changelog fragments, writes CHANGELOG.md,
                       # bumps the version in Cargo.toml, tags
-make dist             # the static binary to attach to the tag
+git push --follow-tags
 ```
+
+The tag starts a pipeline that runs the gate again, builds the static Linux
+x86-64 binary, and attaches it to the release with the notes of that version.
+A tag whose gate is red publishes nothing.
+
+`make dist` builds the same binary on your machine. Use it to release
+locally: to hand a colleague a build before a tag, or when no pipeline is
+available.
 
 The version lives in `Cargo.toml`, alone. The `package.json` of the interface
 is private and carries no version.
