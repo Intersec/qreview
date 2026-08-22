@@ -86,8 +86,17 @@ git push --follow-tags
 release pipeline would start.
 
 The tag starts a pipeline that runs the gate again, builds the static Linux
-x86-64 binary, and attaches it to the release with the notes of that version.
-A tag whose gate is red publishes nothing.
+x86-64 binary, uploads it to the package registry of the project, and creates
+the release that links to it. A tag whose gate is red publishes nothing.
+
+The pipeline talks to its own GitLab server and to nothing else. It pulls no
+image from another registry, and `scripts/gitlab-release.sh` calls the API of
+the project it runs in.
+
+A server behind a private certificate authority needs one CI/CD variable:
+`ADDITIONAL_CA_CERT_BUNDLE`, holding that CA. The name is GitLab's own. The
+release job installs it before it calls the API. Without it `curl` stops with
+`SSL certificate problem: unable to get local issuer certificate`.
 
 `make dist` builds the same binary on your machine. Use it to release
 locally: to hand a colleague a build before a tag, or when no pipeline is
