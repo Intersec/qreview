@@ -12,6 +12,15 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.3.1]
+
+### Fixed
+
+- A comment box stays open when the diff loads again. Changing the context
+  while writing used to take the box and the text away.
+- A setting that only the browser reads no longer makes the diff load again.
+  Choosing side by side, wrapping, a tab width, a font size or a theme now
+  changes what is on the screen without a round trip.
 ## [0.3.0]
 
 ### Added
