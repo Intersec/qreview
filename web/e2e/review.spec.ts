@@ -25,9 +25,10 @@ test('a change shows its files and the first diff', async ({ page }) => {
   await page.getByRole('button', { name: /docs: rename the document/ }).click();
 
   await expect(page.locator('.file-row', { hasText: 'new-name.md' })).toBeVisible();
-  // A change opens on its message. The file after it is the work.
+  // A change opens on its message. The files after it are the work.
   await expect(page.locator('.file-bar h2')).toContainText('Commit message');
-  await page.keyboard.press(']');
+
+  await openFile(page, 'new-name.md');
   // The header of the diff names both sides of the rename.
   await expect(page.locator('.file-bar h2')).toContainText('docs/old-name.md →');
   await expect(page.locator('.file-bar h2')).toContainText('docs/new-name.md');

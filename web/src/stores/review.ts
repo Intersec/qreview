@@ -194,14 +194,16 @@ export const useReview = defineStore('review', () => {
       review.value = await api.comments(key, number);
       files.value = await api.files(key, number, base);
 
+      const stays = files.value.find((f) => f.path === was && !f.binary);
+      const first = stays ?? files.value.find((f) => !f.binary);
+      const read = first ? await api.diff(key, first.path, number, base) : null;
+
       // The reader can open a file while this is in flight. That choice is
       // newer than this one, so it wins.
       if (filePath.value !== was) {
         return;
       }
-      const stays = files.value.find((f) => f.path === was && !f.binary);
-      const first = stays ?? files.value.find((f) => !f.binary);
-      diff.value = first ? await api.diff(key, first.path, number, base) : null;
+      diff.value = read;
       filePath.value = first?.path ?? null;
     });
   }
@@ -329,17 +331,19 @@ export const useReview = defineStore('review', () => {
       const was = filePath.value;
       files.value = await api.files(key, patchSet.value, base, ignoreWs.value);
 
+      const stays = files.value.find((f) => f.path === was && !f.binary);
+      const first = stays ?? files.value.find((f) => !f.binary);
+      const read = first
+        ? await api.diff(key, first.path, patchSet.value, base, ignoreWs.value)
+        : null;
+
       // The reader can open another file while this is in flight, and that
       // choice is newer than this one.
       if (filePath.value !== was) {
         return;
       }
-      const stays = files.value.find((f) => f.path === was && !f.binary);
-      const first = stays ?? files.value.find((f) => !f.binary);
       filePath.value = first?.path ?? null;
-      diff.value = first
-        ? await api.diff(key, first.path, patchSet.value, base, ignoreWs.value)
-        : null;
+      diff.value = read;
     });
   }
 
