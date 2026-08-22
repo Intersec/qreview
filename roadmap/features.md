@@ -55,6 +55,8 @@ left is in [`plan.md`](./plan.md).
 ## Diff view
 
 - ✅ The file list of a change, with the added and removed counts
+- ✅ The commit message as the first file of the change, commentable like any
+  other (v0.4.0)
 - ✅ A side-by-side diff
 - ✅ The view chosen in the configuration, and remembered after that
 - ✅ Intra-line marks on a changed line

@@ -38,6 +38,12 @@ describe('group', () => {
     expect(g.files[0].name).toBe('commit.rs');
   });
 
+  it('names the commit message and puts it under no directory', () => {
+    const [g] = group([file('/COMMIT_MSG'), file('src/a.rs')]);
+    expect(g.dir).toBe('');
+    expect(g.files[0].name).toBe('Commit message');
+  });
+
   it('never reorders the files git gave', () => {
     const found = group([file('a/one'), file('b/two'), file('a/three')]);
     expect(found.map((g) => g.dir)).toEqual(['a', 'b', 'a']);

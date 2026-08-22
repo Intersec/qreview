@@ -29,8 +29,9 @@ test('the two selectors name the versions', async ({ page }) => {
 test('reading one version against the other shows only the work', async ({ page }) => {
   await page.locator('#base-of').selectOption('ps:1');
 
-  await expect(page.locator('.file-row')).toHaveCount(1);
-  await expect(page.locator('.file-row')).toContainText('net.blk');
+  // The message and the one file the amend touched.
+  await expect(page.locator('.file-row')).toHaveCount(2);
+  await expect(page.locator('.file-row').nth(1)).toContainText('net.blk');
 
   await openFile(page, 'net.blk');
   // One version differs from the other by that one word, and by nothing

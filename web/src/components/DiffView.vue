@@ -5,6 +5,7 @@ import CommentCard from './CommentCard.vue';
 import ContextBar from './ContextBar.vue';
 import DiffRow from './DiffRow.vue';
 import { gaps, type Gap } from '@/diff/gaps';
+import { label } from '@/diff/paths';
 import { pairs } from '@/diff/pairs';
 import type { Comment, FileDiff, Hunk, NewComment, Row, Side } from '@/api/types';
 
@@ -341,7 +342,7 @@ function toggle(row: Row | null) {
       <div class="file-name">
         <h2>
           <span v-if="diff.oldPath" class="from">{{ diff.oldPath }} →</span>
-          {{ diff.path }}
+          {{ label(diff.path) }}
         </h2>
         <p class="file-facts">
           {{ diff.status }}

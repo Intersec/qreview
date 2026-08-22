@@ -195,6 +195,13 @@ surprised by anything.*
 - [x] A mock Gerrit for the browser tests: a fake `ssh` on the PATH and a
       bare repository as the remote
 
+## M10 — The commit message, and a release the pipeline builds
+
+- [ ] The commit message as a file of the change, `/COMMIT_MSG`, first in the
+      list and commentable
+- [ ] A release job on the pipeline: the static Linux x86-64 binary, attached
+      to the tag
+
 ## After that
 
 1. A comment on a range of lines. A comment on one line covers most of it.

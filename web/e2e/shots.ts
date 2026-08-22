@@ -43,6 +43,12 @@ for (const scheme of ['light', 'dark'] as const) {
   });
 
   await page.goto(server.url);
+
+  // The commit message, which is the file a change opens on.
+  await openChange(page, /net: retry the read/);
+  await openFile(page, 'Commit message');
+  await page.screenshot({ path: join(OUT, `${scheme}-message.png`) });
+
   await openLongFile(page);
   await page.screenshot({ path: join(OUT, `${scheme}-unified.png`) });
 

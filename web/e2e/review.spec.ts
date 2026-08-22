@@ -25,6 +25,9 @@ test('a change shows its files and the first diff', async ({ page }) => {
   await page.getByRole('button', { name: /docs: rename the document/ }).click();
 
   await expect(page.locator('.file-row', { hasText: 'new-name.md' })).toBeVisible();
+  // A change opens on its message. The file after it is the work.
+  await expect(page.locator('.file-bar h2')).toContainText('Commit message');
+  await page.keyboard.press(']');
   // The header of the diff names both sides of the rename.
   await expect(page.locator('.file-bar h2')).toContainText('docs/old-name.md →');
   await expect(page.locator('.file-bar h2')).toContainText('docs/new-name.md');
@@ -48,6 +51,13 @@ test('a comment on a line comes back after a reload', async ({ page }) => {
 
 test('the keyboard walks the files the way Gerrit does', async ({ page }) => {
   await openChange(page, /long: touch two places/);
+  // Every change opens on its message, so the name of the file says nothing
+  // about which change is open. The count of files does, and the bar shows
+  // it only once a file of this change is open.
+  await expect(page.locator('.change-bar')).toContainText('File 1 of 5');
+  await expect(page.locator('.file-bar h2')).toContainText('Commit message');
+
+  await page.keyboard.press(']');
   await expect(page.locator('.file-bar h2')).toContainText('src/added.py');
 
   await page.keyboard.press(']');
@@ -116,21 +126,24 @@ test('the page reports no error to the console', async ({ page }) => {
 
 test('the bar says which file of the change is open', async ({ page }) => {
   await openChange(page, /long: touch two places/);
-  await expect(page.locator('.change-bar')).toContainText('File 1 of 4');
+  // Five files: the message, then the four the change touches.
+  await expect(page.locator('.change-bar')).toContainText('File 1 of 5');
   await expect(page.locator('.change-bar')).toContainText('long: touch two places');
 
   await page.getByRole('button', { name: 'Next' }).click();
-  await expect(page.locator('.change-bar')).toContainText('File 2 of 4');
+  await expect(page.locator('.change-bar')).toContainText('File 2 of 5');
 
   await page.getByRole('button', { name: 'Next' }).click();
   await page.getByRole('button', { name: 'Next' }).click();
-  await expect(page.locator('.change-bar')).toContainText('File 4 of 4');
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.locator('.change-bar')).toContainText('File 5 of 5');
   await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
 });
 
 test('a comment sits under the side it was written on', async ({ page }) => {
   await page.getByRole('button', { name: /net: retry the read/ }).click();
   await useSplit(page);
+  await openFile(page, 'net.blk');
 
   await page.locator('td.gutter-comment').nth(2).click();
   await page.getByRole('textbox').first().fill('On the new side.');
@@ -172,7 +185,9 @@ test('the files are grouped under the directory they live in', async ({ page }) 
   await page.getByRole('button', { name: /long: touch two places/ }).click();
 
   await expect(page.locator('.dir')).toHaveText(['src/']);
-  await expect(page.locator('.file-row').first()).toContainText('added.py');
+  // The message lives under no directory, so it stands above the group.
+  await expect(page.locator('.file-row').first()).toContainText('Commit message');
+  await expect(page.locator('.file-row').nth(1)).toContainText('added.py');
 });
 
 test('a comment can be written on a line the diff did not carry', async ({ page }) => {
