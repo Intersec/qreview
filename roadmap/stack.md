@@ -262,3 +262,20 @@ while looking configured.
   them.
 - **Big files.** The limit at which the interface becomes slow is unknown.
   Task M3 measures it on a real commit of 100 files or more.
+
+## 2026-08-22 — The commit message is a file, without the Gerrit header
+
+Gerrit shows the commit message as a file named `/COMMIT_MSG`, with a header
+of five lines above the message: the parent, the author, the author date, the
+committer and the committer date. This tool keeps the name and drops the
+header.
+
+Two reasons. The change bar already names the author and the commit, so the
+header repeats what the reader sees. And the committer date changes at every
+amend, so a diff of one patch set against the next would always carry a
+change in the message, whatever the author wrote.
+
+The diff of two messages comes from the `similar` crate, not from `git`. Two
+messages are not blobs. Diffing them with `git` needs them written somewhere,
+and the tool writes nothing. `similar` is already a dependency, for the
+intra-line spans.

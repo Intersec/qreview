@@ -271,7 +271,7 @@ async fn files(
 
     Ok(Json(
         session
-            .files(&commit, &against, &how(&state, view.ws.as_deref()))
+            .review_files(&commit, &against, &how(&state, view.ws.as_deref()))
             .await?,
     ))
 }
@@ -665,6 +665,20 @@ mod tests {
             .unwrap()
     }
 
+    /// The paths of a file list, without the commit message.
+    ///
+    /// Every change carries one, and a test about the files of a tree does
+    /// not care about it.
+    fn tree_paths(files: &serde_json::Value) -> Vec<&str> {
+        files
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["path"].as_str().unwrap())
+            .filter(|path| *path != crate::commitmsg::PATH)
+            .collect()
+    }
+
     async fn json(app: Router, request: Request<Body>) -> (StatusCode, serde_json::Value) {
         let response = app.oneshot(request).await.unwrap();
         let status = response.status();
@@ -756,10 +770,11 @@ mod tests {
         .await;
 
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body[0]["path"], "src/a.blk");
-        assert_eq!(body[0]["language"], "c");
-        assert_eq!(body[0]["added"], 1);
-        assert_eq!(body[0]["removed"], 1);
+        assert_eq!(body[0]["path"], "/COMMIT_MSG", "the message comes first");
+        assert_eq!(body[1]["path"], "src/a.blk");
+        assert_eq!(body[1]["language"], "c");
+        assert_eq!(body[1]["added"], 1);
+        assert_eq!(body[1]["removed"], 1);
     }
 
     #[tokio::test]
@@ -898,13 +913,11 @@ mod tests {
         .await;
 
         assert_eq!(status, StatusCode::OK);
-        let paths: Vec<_> = files
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|f| f["path"].as_str().unwrap())
-            .collect();
-        assert_eq!(paths, ["f"], "the auto-merge shows the resolution alone");
+        assert_eq!(
+            tree_paths(&files),
+            ["f"],
+            "the auto-merge shows the resolution alone"
+        );
     }
 
     #[tokio::test]
@@ -922,12 +935,7 @@ mod tests {
             get_with_cookie(&format!("/api/changes/{m}/files?base=parent1"), TOKEN),
         )
         .await;
-        let mut paths: Vec<_> = first
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|f| f["path"].as_str().unwrap())
-            .collect();
+        let mut paths = tree_paths(&first);
         paths.sort_unstable();
         assert_eq!(paths, ["f", "only-side.txt"], "the whole branch");
 
@@ -1383,7 +1391,7 @@ mod tests {
             )
             .await;
             assert_eq!(status, StatusCode::OK);
-            assert_eq!(files[0]["path"], file);
+            assert_eq!(tree_paths(&files), [file]);
         }
     }
 
@@ -1427,17 +1435,150 @@ mod tests {
         .await;
 
         assert_eq!(status, StatusCode::OK);
-        let paths: Vec<_> = files
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|f| f["path"].as_str().unwrap())
-            .collect();
         assert_eq!(
-            paths,
+            tree_paths(&files),
             ["mine.txt"],
             "the rebase brought a.txt, b.txt and c.txt"
         );
+    }
+
+    #[tokio::test]
+    async fn the_commit_message_is_a_file_of_the_change() {
+        let repo = fixture().await;
+        let (status, body) = json(
+            server(&repo).await,
+            get_with_cookie("/api/changes/I8f3ac21/diff?file=/COMMIT_MSG", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["path"], "/COMMIT_MSG");
+        assert_eq!(body["status"], "added", "the parent carries another one");
+        assert_eq!(body["hunks"][0]["rows"][0]["text"], "second: go on");
+        assert_eq!(body["hunks"][0]["rows"][0]["kind"], "add");
+    }
+
+    #[tokio::test]
+    async fn the_message_of_one_version_reads_against_the_other() {
+        let repo = build_repo(&[
+            commit("base").file("keep.txt", "0\n"),
+            commit("work: the old subject")
+                .file("mine.txt", "one\n")
+                .change_id("Iwork"),
+        ])
+        .await;
+        let first = repo.sha("HEAD").await;
+        repo.git(&[
+            "commit",
+            "--amend",
+            "--quiet",
+            "-m",
+            "work: the new subject\n\nChange-Id: Iwork\n",
+        ])
+        .await;
+
+        let mut opts = Options::new();
+        opts.prevs = vec![first];
+        let server = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
+
+        let (status, body) = json(
+            server,
+            get_with_cookie(
+                "/api/changes/Iwork/diff?ps=2&base=ps:1&file=/COMMIT_MSG",
+                TOKEN,
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "modified");
+        let rows = body["hunks"][0]["rows"].as_array().unwrap();
+        let kinds: Vec<_> = rows.iter().map(|r| r["kind"].as_str().unwrap()).collect();
+        assert!(kinds.contains(&"remove") && kinds.contains(&"add"));
+    }
+
+    #[tokio::test]
+    async fn a_comment_on_the_message_follows_it_to_the_next_version() {
+        let repo = build_repo(&[
+            commit("base").file("keep.txt", "0\n"),
+            commit("work: a subject")
+                .body("The reason it is done.")
+                .file("mine.txt", "one\n")
+                .change_id("Iwork"),
+        ])
+        .await;
+        let first = repo.sha("HEAD").await;
+
+        let mut opts = Options::new();
+        opts.prevs = vec![first.clone()];
+        let root = repo.path().join(".qreview-test");
+        let comment = serde_json::json!({
+            "scope": "line",
+            "file": "/COMMIT_MSG",
+            "startLine": 3,
+            "side": "new",
+            "body": "Say why, not what.",
+        });
+
+        // The comment is written against the first version.
+        let session = Session::with(
+            repo.path(),
+            &Options {
+                gerrit: false,
+                ..opts.clone()
+            },
+            Languages::new(),
+            std::sync::Arc::new(crate::highlight::Highlighter::new()),
+            Some(crate::store::Store::at(root.as_path())),
+        )
+        .await
+        .unwrap();
+        let server = app(AppState::new(session, TOKEN.to_owned()));
+        let request = Request::builder()
+            .method("POST")
+            .uri("/api/changes/Iwork/comments")
+            .header(header::COOKIE, format!("{}={TOKEN}", auth::COOKIE))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(comment.to_string()))
+            .unwrap();
+        let (status, _) = json(server, request).await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        // The subject is amended. The line the comment sits on did not move.
+        repo.git(&[
+            "commit",
+            "--amend",
+            "--quiet",
+            "-m",
+            "work: a better subject\n\nThe reason it is done.\n\nChange-Id: Iwork\n",
+        ])
+        .await;
+
+        let session = Session::with(
+            repo.path(),
+            &Options {
+                gerrit: false,
+                ..opts
+            },
+            Languages::new(),
+            std::sync::Arc::new(crate::highlight::Highlighter::new()),
+            Some(crate::store::Store::at(root.as_path())),
+        )
+        .await
+        .unwrap();
+        let (status, body) = json(
+            app(AppState::new(session, TOKEN.to_owned())),
+            get_with_cookie("/api/changes/Iwork/comments", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let placed = &body["placed"][0];
+        assert_eq!(placed["line"], 3, "the comment is still on its line");
+        assert_eq!(placed["lost"], false);
     }
 
     #[tokio::test]

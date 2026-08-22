@@ -195,11 +195,14 @@ async fn excerpt(session: &Session, commit: &str, comment: &Comment) -> Option<S
             .ok()?,
     };
 
-    let text = session
-        .git
-        .text(&["show", &format!("{rev}:{}", anchor.file)])
-        .await
-        .ok()?;
+    let text = match crate::commitmsg::is(&anchor.file) {
+        true => crate::commitmsg::text(&session.git, &rev).await?,
+        false => session
+            .git
+            .text(&["show", &format!("{rev}:{}", anchor.file)])
+            .await
+            .ok()?,
+    };
     let lines: Vec<&str> = text.lines().collect();
 
     let from = line.saturating_sub(CONTEXT).max(1);
@@ -325,6 +328,32 @@ mod tests {
             .join("\n");
 
         insta::assert_snapshot!(stable);
+    }
+
+    #[tokio::test]
+    async fn a_comment_on_the_commit_message_carries_the_message() {
+        let repo = build_repo(&[
+            commit("first").file("a.md", "one\n"),
+            commit("docs: rename the document")
+                .file("b.md", "two\n")
+                .change_id("Iexportmsg"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        session
+            .add_comment(
+                "Iexportmsg",
+                line_comment("/COMMIT_MSG", 1, "The subject says what, not why."),
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Iexportmsg").await.unwrap();
+
+        assert!(text.contains("`/COMMIT_MSG:1`"), "{text}");
+        assert!(text.contains("1 | docs: rename the document"), "{text}");
+        assert!(text.contains("The subject says what, not why."), "{text}");
     }
 
     #[tokio::test]

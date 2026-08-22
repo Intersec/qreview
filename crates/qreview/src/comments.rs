@@ -190,6 +190,17 @@ async fn anchor_of(git: &Git, rev: &str, base: &str, new: &NewComment) -> Result
         Side::Old => base,
     };
 
+    // The commit message has no blob. The line hash and the context are
+    // what carry the comment to the next patch set.
+    if crate::commitmsg::is(&file) {
+        if let Some(text) = crate::commitmsg::text(git, tree).await {
+            let lines: Vec<&str> = text.lines().collect();
+            anchor.line_hash = lines.get(start - 1).map(|line| hash_line(line));
+            anchor.context = context_of(&lines, start);
+        }
+        return Ok(anchor);
+    }
+
     // A file that cannot be read still gets a comment. The anchor is weaker,
     // and losing the remark would be worse.
     if let Ok(blob) = git.text(&["rev-parse", &format!("{tree}:{file}")]).await {

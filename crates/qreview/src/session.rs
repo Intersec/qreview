@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 
 use crate::comments::{self, EditComment, NewComment, Target};
+use crate::commitmsg;
 use crate::diff;
 use crate::gerrit::{self, Coordinates};
 use crate::git::commit;
@@ -204,6 +205,37 @@ impl Session {
     }
 
     /// The files a change touches.
+    /// The files a review shows, the commit message first.
+    ///
+    /// `qreview list` prints the work a change does, and the message is not
+    /// part of that. The interface reviews it like a file, so only the
+    /// interface asks for this list.
+    pub async fn review_files(
+        &self,
+        rev: &str,
+        against: &Against,
+        how: &diff::How,
+    ) -> Result<Vec<FileEntry>> {
+        let mut entries = self.files(rev, against, how).await?;
+
+        if let Some(new) = commitmsg::text(&self.git, rev).await {
+            let old = self.message_base(against).await;
+            entries.insert(0, commitmsg::entry(&old, &new));
+        }
+        Ok(entries)
+    }
+
+    /// The message the reviewed one is read against.
+    ///
+    /// Only another patch set carries one. The parent of a change carries
+    /// another message, and a diff of the two says nothing about the work.
+    async fn message_base(&self, against: &Against) -> String {
+        match against {
+            Against::Tree(other) => commitmsg::text(&self.git, other).await.unwrap_or_default(),
+            _ => String::new(),
+        }
+    }
+
     pub async fn files(
         &self,
         rev: &str,
@@ -268,6 +300,10 @@ impl Session {
         against: &Against,
         how: &diff::How,
     ) -> Result<Option<FileDiff>> {
+        if commitmsg::is(path) {
+            return Ok(self.message_diff(rev, against, how).await);
+        }
+
         let base = self.base_of(rev, against).await?;
         let old = diff::files(&self.git, &base, rev, how)
             .await?
@@ -297,6 +333,25 @@ impl Session {
         Ok(found)
     }
 
+    /// The diff of the commit message.
+    async fn message_diff(
+        &self,
+        rev: &str,
+        against: &Against,
+        how: &diff::How,
+    ) -> Option<FileDiff> {
+        let new = commitmsg::text(&self.git, rev).await?;
+        let old = self.message_base(against).await;
+        let mut file = commitmsg::diff(&old, &new, how.context);
+
+        for hunk in &mut file.hunks {
+            for row in &mut hunk.rows {
+                crate::offsets::to_utf16(row);
+            }
+        }
+        Some(file)
+    }
+
     /// A run of lines of a file, as context rows.
     ///
     /// The diff carries only what changed and the few lines around it. This
@@ -309,7 +364,13 @@ impl Session {
         to: usize,
     ) -> Result<Vec<crate::model::Row>> {
         let language = self.langs.of(path).map(str::to_owned);
-        let Some((text, spans)) = self.read_and_paint(rev, path, language.as_deref()).await else {
+        let painted = match commitmsg::is(path) {
+            true => commitmsg::text(&self.git, rev)
+                .await
+                .map(|text| (text, crate::highlight::Lines::default())),
+            false => self.read_and_paint(rev, path, language.as_deref()).await,
+        };
+        let Some((text, spans)) = painted else {
             return Ok(Vec::new());
         };
 

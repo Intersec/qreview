@@ -190,7 +190,41 @@ the intra-line word spans with the `similar` crate, highlights both sides with
 receives rows that it only has to paint. A large file therefore costs the
 browser the text and nothing else.
 
-### 3.5 Reviewing a merge
+### 3.5 The commit message
+
+The commit message is one more file of the change, first in the list, under
+the path `/COMMIT_MSG`. A path of a git tree never opens with a slash, so
+this one collides with nothing. Gerrit uses the same name.
+
+The text is the message of the commit and nothing else, from the subject to
+the last trailer. Gerrit puts a header of five lines above it, with the
+parent, the author and the two dates. This tool leaves it out. A local
+review of your own series already shows the author and the commit in the
+change bar, and the committer date changes at every amend, which would put a
+false change in the message at every patch set.
+
+What the message is read against depends on the base:
+
+- **Against the parent**, the whole message is new. The parent carries
+  another message, and a diff of the two says nothing about the work.
+- **Against another patch set**, the two messages are diffed. This is where
+  an amend of the subject or of the body shows.
+- **Two messages that are the same** still make one hunk of plain lines. The
+  reader opened the message to read it.
+
+The message is not a blob, so two things read it from the commit instead:
+the anchoring of section 5.3, and the excerpt of the export. A comment on a
+line of the message is anchored by the hash of the line and its context, the
+same way a comment on a file is.
+
+`qreview list` does not print it. That listing says what work a change does,
+and the message is not part of that.
+
+The diff of two messages is computed with the `similar` crate, not with
+`git`. The two texts are not in the object database, and writing them there
+to diff them would break the rule that the tool writes nothing.
+
+### 3.6 Reviewing a merge
 
 A merge is reviewable, the way Gerrit reviews one. The default base is not a
 parent. It is the **auto-merge**: the tree that git produces on its own from
@@ -487,7 +521,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `POST /api/series/extend` | Load the next batch. Body: `{ "count": 5, "parent": 1 }` |
 | `GET /api/changes/:key` | The change, its patch sets, its comment count |
 | `PATCH /api/changes/:key` | Mark the change read, or unread |
-| `GET /api/changes/:key/files?ps=2&base=parent` | The file list with the statistics |
+| `GET /api/changes/:key/files?ps=2&base=parent` | The file list with the statistics, the commit message first |
 | `GET /api/changes/:key/diff?ps=2&base=parent&file=...` | The hunks of one file |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |

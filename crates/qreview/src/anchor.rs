@@ -79,26 +79,26 @@ pub async fn place(git: &Git, comment: &Comment, rev: &str) -> Placed {
         };
     }
 
-    let Some(blob) = blob_of(git, rev, &anchor.file).await else {
-        return Placed {
-            id,
-            line: None,
-            moved: false,
-            lost: true,
-        };
+    // The commit message is not a blob. It is read from the commit, and the
+    // line hash is the only way back to it.
+    let read = match crate::commitmsg::is(&anchor.file) {
+        true => crate::commitmsg::text(git, rev).await,
+        false => match blob_of(git, rev, &anchor.file).await {
+            // One: the file did not change at all.
+            Some(blob) if anchor.blob.as_deref() == Some(blob.as_str()) => {
+                return Placed {
+                    id,
+                    line: Some(line),
+                    moved: false,
+                    lost: false,
+                };
+            }
+            Some(blob) => git.text(&["cat-file", "blob", &blob]).await.ok(),
+            None => None,
+        },
     };
 
-    // One: the file did not change at all.
-    if anchor.blob.as_deref() == Some(blob.as_str()) {
-        return Placed {
-            id,
-            line: Some(line),
-            moved: false,
-            lost: false,
-        };
-    }
-
-    let Ok(text) = git.text(&["cat-file", "blob", &blob]).await else {
+    let Some(text) = read else {
         return Placed {
             id,
             line: None,
