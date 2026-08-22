@@ -186,13 +186,20 @@ export const useReview = defineStore('review', () => {
     if (!key) {
       return;
     }
+    const was = filePath.value;
+
     await guard(async () => {
       patchSet.value = number;
       against.value = base;
       review.value = await api.comments(key, number);
       files.value = await api.files(key, number, base);
 
-      const stays = files.value.find((f) => f.path === filePath.value && !f.binary);
+      // The reader can open a file while this is in flight. That choice is
+      // newer than this one, so it wins.
+      if (filePath.value !== was) {
+        return;
+      }
+      const stays = files.value.find((f) => f.path === was && !f.binary);
       const first = stays ?? files.value.find((f) => !f.binary);
       diff.value = first ? await api.diff(key, first.path, number, base) : null;
       filePath.value = first?.path ?? null;
@@ -319,9 +326,15 @@ export const useReview = defineStore('review', () => {
         return;
       }
       const base = against.value ?? mergeBase.value;
+      const was = filePath.value;
       files.value = await api.files(key, patchSet.value, base, ignoreWs.value);
 
-      const stays = files.value.find((f) => f.path === filePath.value && !f.binary);
+      // The reader can open another file while this is in flight, and that
+      // choice is newer than this one.
+      if (filePath.value !== was) {
+        return;
+      }
+      const stays = files.value.find((f) => f.path === was && !f.binary);
       const first = stays ?? files.value.find((f) => !f.binary);
       filePath.value = first?.path ?? null;
       diff.value = first
