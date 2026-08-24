@@ -7,10 +7,13 @@ import DiffRow from './DiffRow.vue';
 import { gaps, type Gap } from '@/diff/gaps';
 import { label } from '@/diff/paths';
 import { pairs } from '@/diff/pairs';
+import { places, slot } from '@/diff/drafts';
 import type { Mark } from '@/diff/segments';
 import type { Comment, FileDiff, Hunk, NewComment, Row, Side } from '@/api/types';
 
 const props = defineProps<{
+  /// The change being read. An unfinished remark is kept under it.
+  changeKey: string;
   diff: FileDiff;
   split: boolean;
   comments: Comment[];
@@ -37,8 +40,25 @@ const emit = defineEmits<{
 /// spends reading. The rest is one command away in the terminal.
 const MAX_ROWS = 2000;
 
-/// Which line a comment box is open on, as `side:line`.
-const writing = ref<string | null>(null);
+/// The lines a comment box is open on, as `side:line`.
+///
+/// More than one, because a box that holds an unfinished remark opens again
+/// when the reader comes back to the file.
+const writing = ref(new Set<string>());
+
+function opening(row: Row | null): boolean {
+  return row !== null && writing.value.has(key(row));
+}
+
+function openBox(at: string) {
+  writing.value = new Set(writing.value).add(at);
+}
+
+function closeBox(at: string) {
+  const rest = new Set(writing.value);
+  rest.delete(at);
+  writing.value = rest;
+}
 
 /// What a comment would cover: one line, several, or a part of a line.
 ///
@@ -76,19 +96,19 @@ watch(
 
     if (fresh.path !== before?.path) {
       // A box left open would come back on whatever line of the new file
-      // happens to carry the same number.
-      writing.value = null;
+      // happens to carry the same number. What the reader typed and did not
+      // save comes back instead, on the lines it was typed on.
       about.value = null;
       cursor.value = null;
+      writing.value = new Set(places(props.changeKey, fresh.path));
 
       return;
     }
 
     // The same file, read again. A box stays open while the line it sits on
     // is still there, so a setting the reader changes does not take it away.
-    if (writing.value !== null && !walkable.value.some((row) => key(row) === writing.value)) {
-      writing.value = null;
-    }
+    const here = new Set(walkable.value.map(key));
+    writing.value = new Set([...writing.value].filter((at) => here.has(at)));
     if (cursor.value !== null && !walkable.value.some((row) => key(row) === cursor.value)) {
       cursor.value = null;
     }
@@ -287,7 +307,7 @@ function markOf(row: Row | null, column: Side): Mark | undefined {
 /// A row that carries a comment, or an open box, gets its own row underneath
 /// so the code above it stays aligned with the other side.
 function talkative(row: Row | null): boolean {
-  return row !== null && (at(row).length > 0 || writing.value === key(row));
+  return row !== null && (at(row).length > 0 || opening(row));
 }
 
 /// The line the keyboard is on, as `side:line`.
@@ -411,7 +431,7 @@ function commentHere() {
     moveLine(1);
   }
   if (cursor.value !== null) {
-    writing.value = cursor.value;
+    openBox(cursor.value);
   }
 }
 
@@ -421,7 +441,7 @@ function writeOnPicked() {
     return;
   }
   offer.value = null;
-  writing.value = `${picked.value.side}:${picked.value.end}`;
+  openBox(`${picked.value.side}:${picked.value.end}`);
   window.getSelection()?.removeAllRanges();
 }
 
@@ -491,7 +511,7 @@ function onSelect(event: MouseEvent) {
   // A box is open on what was picked. Saving it is a click inside the table,
   // and that click must not take the range away before the box uses it.
   const from = event.target as HTMLElement | null;
-  if (writing.value !== null || from?.closest('tr.talk, .offer')) {
+  if (writing.value.size > 0 || from?.closest('tr.talk, .offer')) {
     return;
   }
 
@@ -538,7 +558,7 @@ function write(row: Row, body: string) {
     endChar: range?.endChar,
     body,
   });
-  writing.value = null;
+  closeBox(key(row));
   clearPicked();
 }
 
@@ -562,6 +582,11 @@ function writeAbout(scope: 'change' | 'file', body: string) {
   about.value = null;
 }
 
+/// Where an unfinished remark on this row is kept.
+function draftAt(row: Row): string {
+  return slot(props.changeKey, props.diff.path, key(row));
+}
+
 /// What the box says it is about.
 function boxLabel(row: Row): string {
   const range = picked.value;
@@ -578,7 +603,11 @@ function boxLabel(row: Row): string {
 
 function toggle(row: Row | null) {
   if (row) {
-    writing.value = writing.value === key(row) ? null : key(row);
+    if (opening(row)) {
+      closeBox(key(row));
+    } else {
+      openBox(key(row));
+    }
   }
 }
 </script>
@@ -682,10 +711,11 @@ function toggle(row: Row | null) {
                     @remove="(id) => emit('remove', id)"
                   />
                   <CommentBox
-                    v-if="writing === key(row)"
+                    v-if="opening(row)"
+                    :draft="draftAt(row!)"
                     :label="boxLabel(row)"
                     @save="(body) => write(row, body)"
-                    @cancel="writing = null"
+                    @cancel="closeBox(key(row!))"
                   />
                 </td>
               </tr>
@@ -720,10 +750,11 @@ function toggle(row: Row | null) {
                     @remove="(id) => emit('remove', id)"
                   />
                   <CommentBox
-                    v-if="writing === key(row)"
+                    v-if="opening(row)"
+                    :draft="draftAt(row!)"
                     :label="boxLabel(row)"
                     @save="(body) => write(row, body)"
-                    @cancel="writing = null"
+                    @cancel="closeBox(key(row!))"
                   />
                 </td>
               </tr>
@@ -758,10 +789,11 @@ function toggle(row: Row | null) {
                   @remove="(id) => emit('remove', id)"
                 />
                 <CommentBox
-                  v-if="ownLeft(pair) && writing === key(ownLeft(pair)!)"
+                  v-if="opening(ownLeft(pair))"
+                  :draft="draftAt(ownLeft(pair)!)"
                   :label="boxLabel(ownLeft(pair)!)"
                   @save="(body) => write(ownLeft(pair)!, body)"
-                  @cancel="writing = null"
+                  @cancel="closeBox(key(ownLeft(pair)!))"
                 />
               </td>
               <td colspan="2">
@@ -773,10 +805,11 @@ function toggle(row: Row | null) {
                   @remove="(id) => emit('remove', id)"
                 />
                 <CommentBox
-                  v-if="pair.right && writing === key(pair.right)"
+                  v-if="opening(pair.right)"
+                  :draft="draftAt(pair.right!)"
                   :label="boxLabel(pair.right!)"
                   @save="(body) => write(pair.right!, body)"
-                  @cancel="writing = null"
+                  @cancel="closeBox(key(pair.right!))"
                 />
               </td>
             </tr>
@@ -813,10 +846,11 @@ function toggle(row: Row | null) {
                     @remove="(id) => emit('remove', id)"
                   />
                   <CommentBox
-                    v-if="writing === key(row)"
+                    v-if="opening(row)"
+                    :draft="draftAt(row!)"
                     :label="boxLabel(row)"
                     @save="(body) => write(row, body)"
-                    @cancel="writing = null"
+                    @cancel="closeBox(key(row!))"
                   />
                 </td>
               </tr>
@@ -850,10 +884,11 @@ function toggle(row: Row | null) {
                     @remove="(id) => emit('remove', id)"
                   />
                   <CommentBox
-                    v-if="writing === key(row)"
+                    v-if="opening(row)"
+                    :draft="draftAt(row!)"
                     :label="boxLabel(row)"
                     @save="(body) => write(row, body)"
-                    @cancel="writing = null"
+                    @cancel="closeBox(key(row!))"
                   />
                 </td>
               </tr>
@@ -881,10 +916,11 @@ function toggle(row: Row | null) {
                   @remove="(id) => emit('remove', id)"
                 />
                 <CommentBox
-                  v-if="writing === key(row)"
+                  v-if="opening(row)"
+                  :draft="draftAt(row!)"
                   :label="boxLabel(row)"
                   @save="(body) => write(row, body)"
-                  @cancel="writing = null"
+                  @cancel="closeBox(key(row!))"
                 />
               </td>
             </tr>

@@ -206,6 +206,9 @@ surprised by anything.*
 
 - [x] A comment on a range of lines, and on a part of a line: picked with
       the mouse, or with `v` and the movement keys
+- [x] A remark that is typed is kept as it is typed, and survives another
+      file, another change and a reload
+- [x] The export ordered: the change first, then file by file, oldest first
 
 ## After that
 

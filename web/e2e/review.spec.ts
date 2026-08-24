@@ -223,6 +223,32 @@ test('a comment can be written on a line the diff did not carry', async ({ page 
   await expect(page.getByText('Context lines take comments too.')).toBeVisible();
 });
 
+test('what is typed and not saved comes back with the file', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+  await page.locator('td.gutter-comment').first().click();
+  await page.getByRole('textbox').first().fill('Half of a remark');
+
+  // Away, without saving, and back.
+  await openFile(page, 'added.py');
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+  await openFile(page, 'long.c');
+
+  await expect(page.getByRole('textbox').first()).toHaveValue('Half of a remark');
+
+  // A reload is a fresh page, and the remark is still there.
+  await page.reload();
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+  await expect(page.getByRole('textbox').first()).toHaveValue('Half of a remark');
+
+  // Cancel drops it, so it does not come back for ever.
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await openFile(page, 'added.py');
+  await openFile(page, 'long.c');
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+});
+
 test('a comment box does not follow you to the next file', async ({ page }) => {
   await openChange(page, /long: touch two places/);
   await openFile(page, 'long.c');

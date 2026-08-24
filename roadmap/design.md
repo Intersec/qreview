@@ -424,6 +424,12 @@ resolving: all four are for a conversation with a reviewer, and a review of
 your own series before the push has none. You write a remark, you correct the
 code, you delete the remark.
 
+What a reader has typed and not saved is not a comment, and it never reaches
+the store or the export. The browser keeps it under `qreview.drafts` in its
+own storage, keyed by the change, the file and the line, and the box opens
+again on it when the reader comes back to that file. Saving or cancelling
+drops it.
+
 A draft is a comment like any other, with `"draft": true`. Nothing publishes
 it anywhere, so a draft is only a mark that the author has not finished.
 

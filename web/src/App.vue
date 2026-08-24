@@ -252,6 +252,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
             v-if="diff"
             ref="diffView"
             class="grow"
+            :change-key="changeKey ?? ''"
             :diff="diff"
             :split="split"
             :wrap="wrap"

@@ -98,6 +98,8 @@ left is in [`plan.md`](./plan.md).
 - ✅ A comment on a file, shown above its diff
 - ✅ A comment on the whole change, shown above the diff
 - ✅ Edit and delete a comment
+- ✅ An unfinished remark kept in the browser as it is typed, and offered
+  again when the reader comes back to the file (v0.4.3)
 - ✅ Markdown in the body of a comment
 - ✅ Storage under `~/.local/state/qreview`, one file per change
 - ✅ An atomic write, and a read that survives a corrupt file
