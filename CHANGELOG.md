@@ -12,6 +12,38 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.5.0]
+
+### Added
+
+- **The counts of what the session holds.** The two copy buttons say how
+  many remarks they would copy, every change of the series says how many it
+  carries, and every file of a change says the same. They come from one
+  answer, so no two of them disagree, and they are right the moment a remark
+  is written.
+- **A pane that lists the remarks**, at the foot of the series. The change
+  being read comes first, the rest follow in the order of the export, and
+  each row names the place and the first line of the remark. A click opens
+  the file and puts the keyboard on the line. It folds away, and it is not
+  there at all until something is written.
+- **The panes can be resized.** Drag the bar between the series and the
+  code, or the one between the series and the list of comments. Each pane
+  stops while its title is still on the screen, and the browser remembers
+  the sizes. The arrow keys move a bar too, once it has the keyboard.
+
+### Fixed
+
+- A comment on one of the first lines of a file is found again instead of
+  being listed as unanchored. The place was scored against the middle of the
+  lines around it, and a line near the top of a file has fewer lines above
+  it than that.
+- A comment box takes the keyboard when it opens, so you can type at once. A
+  box that comes back with an unfinished remark does not: you opened a file,
+  not that box.
+- The list of comments keeps its place on a short window. It was squeezed to
+  its title, and the series above it kept all the room.
+- Pushing a release no longer starts two pipelines on the same commit, one
+  for the branch and one for the tag.
 ## [0.4.3]
 
 ### Added
