@@ -12,9 +12,17 @@ export interface Segment {
   cls: string;
   /** True when the piece is part of what changed inside the line. */
   changed: boolean;
+  /** True when the piece is inside the range a comment covers. */
+  marked: boolean;
 }
 
-export function segments(row: Row): Segment[] {
+/** A range of the row, in UTF-16 units, that a comment covers. */
+export interface Mark {
+  start: number;
+  end: number;
+}
+
+export function segments(row: Row, mark?: Mark): Segment[] {
   const text = row.text;
   if (text === '') {
     return [];
@@ -22,13 +30,14 @@ export function segments(row: Row): Segment[] {
 
   const tokens = clamp(row.tokens ?? [], text.length);
   const words = clamp(row.words ?? [], text.length);
+  const marks = mark ? clamp([mark], text.length) : [];
 
-  if (tokens.length === 0 && words.length === 0) {
-    return [{ text, cls: '', changed: false }];
+  if (tokens.length === 0 && words.length === 0 && marks.length === 0) {
+    return [{ text, cls: '', changed: false, marked: false }];
   }
 
   const cuts = new Set<number>([0, text.length]);
-  for (const span of [...tokens, ...words]) {
+  for (const span of [...tokens, ...words, ...marks]) {
     cuts.add(span.start);
     cuts.add(span.end);
   }
@@ -46,18 +55,19 @@ export function segments(row: Row): Segment[] {
       text: text.slice(start, end),
       cls: covering(tokens, start)?.cls ?? '',
       changed: covering(words, start) !== undefined,
+      marked: covering(marks, start) !== undefined,
     });
   }
   return merge(out);
 }
 
-function clamp<T extends Span | WordSpan>(spans: T[], length: number): T[] {
+function clamp<T extends Span | WordSpan | Mark>(spans: T[], length: number): T[] {
   return spans
     .filter((s) => s.start < s.end && s.start < length)
     .map((s) => ({ ...s, end: Math.min(s.end, length) }));
 }
 
-function covering<T extends Span | WordSpan>(spans: T[], at: number): T | undefined {
+function covering<T extends Span | WordSpan | Mark>(spans: T[], at: number): T | undefined {
   return spans.find((s) => s.start <= at && at < s.end);
 }
 
@@ -67,7 +77,12 @@ function merge(segments: Segment[]): Segment[] {
 
   for (const segment of segments) {
     const last = out[out.length - 1];
-    if (last && last.cls === segment.cls && last.changed === segment.changed) {
+    if (
+      last &&
+      last.cls === segment.cls &&
+      last.changed === segment.changed &&
+      last.marked === segment.marked
+    ) {
       last.text += segment.text;
       continue;
     }

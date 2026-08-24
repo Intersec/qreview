@@ -73,6 +73,17 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.keyboard.press('/');
   await page.screenshot({ path: join(OUT, `${scheme}-filter.png`) });
 
+  // A range picked with the keyboard, and the comment it offers.
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+  for (const key of ['j', 'j', 'v', 'j', 'j', 'j']) {
+    await page.keyboard.press(key);
+  }
+  await page.keyboard.press('c');
+  await page.getByRole('textbox').first().fill('These four lines say one thing.');
+  await page.screenshot({ path: join(OUT, `${scheme}-range.png`) });
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
   // A comment, open on its line.
   await openChange(page, /net: retry the read/);
   await openFile(page, 'net.blk');

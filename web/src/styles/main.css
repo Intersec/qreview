@@ -809,6 +809,35 @@ a.change-id:hover {
   align-items: baseline;
 }
 
+/* ------------------------------------------- the range a comment covers */
+
+/*
+ * The mark of a range. It has to read over the pale green and red of a
+ * changed line, and under the word marks, so it is a wash rather than a
+ * block of colour.
+ */
+.in-range {
+  background: color-mix(in srgb, var(--pick-edge) 22%, transparent);
+  border-radius: 2px;
+}
+
+/* What a selection offers to become. It follows the mouse, so it is fixed
+   to the window and not to the table under it. */
+.offer {
+  position: fixed;
+  z-index: 6;
+  padding: 2px 8px;
+  border: 1px solid var(--pick-edge);
+  border-radius: 3px;
+  background: var(--page);
+  color: var(--action);
+  font-size: 11px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+}
+.offer:hover {
+  background: var(--pick);
+}
+
 /* ---------------------------------------------------- waiting for a read */
 
 /*

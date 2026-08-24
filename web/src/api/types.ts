@@ -152,6 +152,10 @@ export interface Anchor {
   side: Side;
   startLine: number | null;
   endLine: number | null;
+  /// The character range inside the two lines, in UTF-16 units. Null when
+  /// the comment covers whole lines.
+  startChar: number | null;
+  endChar: number | null;
   blob: string | null;
   lineHash: string | null;
   context: string[];
@@ -180,6 +184,8 @@ export interface NewComment {
   side?: Side;
   startLine?: number;
   endLine?: number;
+  startChar?: number;
+  endChar?: number;
   body: string;
 }
 
@@ -217,6 +223,8 @@ export interface PatchSet {
 export interface Placed {
   id: string;
   line: number | null;
+  /// The last line of the range. It follows the first one.
+  endLine: number | null;
   moved: boolean;
   lost: boolean;
 }

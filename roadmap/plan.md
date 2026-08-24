@@ -202,10 +202,14 @@ surprised by anything.*
 - [x] A release job on the pipeline: the static Linux x86-64 binary, attached
       to the tag
 
+## M11 — What the reader asked for after using it, again
+
+- [x] A comment on a range of lines, and on a part of a line: picked with
+      the mouse, or with `v` and the movement keys
+
 ## After that
 
-1. A comment on a range of lines. A comment on one line covers most of it.
-2. A rebase-aware diff between two patch sets.
+1. A rebase-aware diff between two patch sets.
 3. A JSON export, and a Claude Code skill that reads it.
 4. An HTTP transport for Gerrit, for a server with ssh closed.
 

@@ -7,6 +7,7 @@ import DiffRow from './DiffRow.vue';
 import { gaps, type Gap } from '@/diff/gaps';
 import { label } from '@/diff/paths';
 import { pairs } from '@/diff/pairs';
+import type { Mark } from '@/diff/segments';
 import type { Comment, FileDiff, Hunk, NewComment, Row, Side } from '@/api/types';
 
 const props = defineProps<{
@@ -14,7 +15,9 @@ const props = defineProps<{
   split: boolean;
   comments: Comment[];
   /// Where a comment lands in the patch set being read.
-  placement: (id: string) => { line: number | null; lost: boolean } | undefined;
+  placement: (
+    id: string,
+  ) => { line: number | null; endLine: number | null; lost: boolean } | undefined;
   /// Read a run of lines the diff does not carry.
   loadLines: (from: number, to: number) => Promise<Row[]>;
   /// The comments whose place in this patch set is gone.
@@ -36,6 +39,24 @@ const MAX_ROWS = 2000;
 
 /// Which line a comment box is open on, as `side:line`.
 const writing = ref<string | null>(null);
+
+/// What a comment would cover: one line, several, or a part of a line.
+///
+/// A reader picks it with the mouse, by selecting the text, or with the
+/// keyboard, by holding shift. It is drawn until the comment is written or
+/// the reader picks something else.
+interface Picked {
+  side: Side;
+  start: number;
+  end: number;
+  /// Where the range opens on `start` and closes on `end`, in UTF-16 units.
+  /// Absent when it covers whole lines.
+  startChar?: number;
+  endChar?: number;
+}
+const picked = ref<Picked | null>(null);
+/// Where the floating button sits, in the coordinates of the window.
+const offer = ref<{ x: number; y: number } | null>(null);
 
 /// Which of the two "write about" boxes is open.
 const about = ref<'change' | 'file' | null>(null);
@@ -196,15 +217,71 @@ function at(row: Row | null) {
     return [];
   }
   return props.comments.filter((comment) => {
-    if (comment.anchor?.file !== props.diff.path || comment.anchor.side !== sideOf(row)) {
-      return false;
-    }
-    const placed = props.placement(comment.id);
-    if (placed?.lost) {
-      return false;
-    }
-    return (placed?.line ?? comment.anchor.startLine) === line;
+    const found = span(comment);
+
+    return found?.side === sideOf(row) && found.end === line;
   });
+}
+
+/// The lines a comment covers in the patch set being read.
+///
+/// The card sits under the last of them, the way it reads: the remark comes
+/// after what it is about.
+function span(comment: Comment): { side: Side; start: number; end: number } | null {
+  const anchor = comment.anchor;
+  if (anchor?.file !== props.diff.path || anchor.startLine === null) {
+    return null;
+  }
+  const placed = props.placement(comment.id);
+  if (placed?.lost) {
+    return null;
+  }
+  const start = placed?.line ?? anchor.startLine;
+  const end = placed?.endLine ?? anchor.endLine ?? start;
+
+  return { side: anchor.side, start, end: Math.max(start, end) };
+}
+
+/// Every range drawn on the code: the one being picked, and the ones the
+/// comments of this file cover.
+const drawn = computed<Picked[]>(() => {
+  const out: Picked[] = picked.value ? [picked.value] : [];
+
+  for (const comment of props.comments) {
+    const found = span(comment);
+    if (found && (found.end > found.start || comment.anchor?.startChar !== null)) {
+      out.push({
+        ...found,
+        startChar: comment.anchor?.startChar ?? undefined,
+        endChar: comment.anchor?.endChar ?? undefined,
+      });
+    }
+  }
+  return out;
+});
+
+/// The part of one row that a range covers, if any.
+///
+/// `column` is the side the cell stands in. A context line is drawn in both
+/// columns of the side by side view, and only the column that owns the side
+/// of the range carries the mark.
+function markOf(row: Row | null, column: Side): Mark | undefined {
+  if (!row || sideOf(row) !== column) {
+    return undefined;
+  }
+  const line = lineOf(row);
+  const range = drawn.value.find(
+    (r) => r.side === column && line !== null && r.start <= line && line <= r.end,
+  );
+  if (!range || line === null) {
+    return undefined;
+  }
+
+  const length = row.text.length;
+  const from = line === range.start ? (range.startChar ?? 0) : 0;
+  const to = line === range.end ? (range.endChar ?? length) : length;
+
+  return { start: from, end: Math.max(to, from) };
 }
 
 /// A row that carries a comment, or an open box, gets its own row underneath
@@ -240,14 +317,67 @@ function place(row: Row | undefined) {
 }
 
 /// One line down or up.
+///
+/// While the reader is choosing a range, the movement grows it from the line
+/// it started on rather than leaving that line behind.
 function moveLine(by: number) {
   const list = walkable.value;
   if (list.length === 0) {
     return;
   }
   const at = list.findIndex((row) => key(row) === cursor.value);
-  const next = at === -1 ? 0 : Math.min(Math.max(at + by, 0), list.length - 1);
-  place(list[next]);
+
+  if (!choosing.value) {
+    const next = at === -1 ? 0 : Math.min(Math.max(at + by, 0), list.length - 1);
+    clearPicked();
+    place(list[next]);
+    return;
+  }
+
+  // A range lives on one side. The other side of a changed line belongs to
+  // another version of the file, so the walk steps over it.
+  const side = picked.value?.side;
+  let next = at + by;
+  while (next >= 0 && next < list.length && sideOf(list[next]) !== side) {
+    next += by;
+  }
+  const row = list[next];
+  const line = row ? lineOf(row) : null;
+  const first = origin.value;
+  if (!row || line === null || first === null) {
+    return;
+  }
+  picked.value = {
+    side: sideOf(row),
+    start: Math.min(first, line),
+    end: Math.max(first, line),
+  };
+  place(row);
+}
+
+/// True while the keyboard is choosing a range, after `v`.
+const choosing = ref(false);
+/// The line a keyboard range started on.
+const origin = ref<number | null>(null);
+
+/// Start a range on the line the keyboard is on, or drop the one being
+/// chosen. `j` and `k` then grow it, and `c` writes on it.
+function startRange() {
+  if (choosing.value) {
+    clearPicked();
+    return;
+  }
+  if (cursor.value === null) {
+    moveLine(1);
+  }
+  const row = walkable.value.find((r) => key(r) === cursor.value);
+  const line = row ? lineOf(row) : null;
+  if (!row || line === null) {
+    return;
+  }
+  choosing.value = true;
+  origin.value = line;
+  picked.value = { side: sideOf(row), start: line, end: line };
 }
 
 /// The first line of the next hunk, or of the one before.
@@ -270,8 +400,13 @@ function moveHunk(by: number) {
   place(found ?? heads[by > 0 ? heads.length - 1 : 0]);
 }
 
-/// Write on the line the keyboard is on.
+/// Write on what is picked, or on the line the keyboard is on.
 function commentHere() {
+  if (picked.value) {
+    writeOnPicked();
+    return;
+  }
+
   if (cursor.value === null) {
     moveLine(1);
   }
@@ -280,7 +415,98 @@ function commentHere() {
   }
 }
 
-defineExpose({ moveLine, moveHunk, commentHere });
+/// Open the box under the last line of the range.
+function writeOnPicked() {
+  if (!picked.value) {
+    return;
+  }
+  offer.value = null;
+  writing.value = `${picked.value.side}:${picked.value.end}`;
+  window.getSelection()?.removeAllRanges();
+}
+
+defineExpose({ moveLine, moveHunk, commentHere, startRange, clearPicked });
+
+/// What the reader selected with the mouse, as lines and characters.
+///
+/// The cells carry the line they hold, so a selection in the page is read
+/// back from the DOM rather than guessed from coordinates.
+function fromSelection(): Picked | null {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+    return null;
+  }
+  const range = selection.getRangeAt(0);
+  const head = cellOf(range.startContainer);
+  const tail = cellOf(range.endContainer);
+  if (!head || !tail || head.side !== tail.side) {
+    return null;
+  }
+
+  const startChar = charOffset(head.cell, range.startContainer, range.startOffset);
+  const endChar = charOffset(tail.cell, range.endContainer, range.endOffset);
+  const forward = head.line < tail.line || (head.line === tail.line && startChar <= endChar);
+  const first = forward ? head : tail;
+  const last = forward ? tail : head;
+
+  return {
+    side: first.side,
+    start: first.line,
+    end: last.line,
+    startChar: forward ? startChar : endChar,
+    endChar: forward ? endChar : startChar,
+  };
+}
+
+/// The code cell a node sits in, and the line it holds.
+function cellOf(node: Node): { cell: HTMLElement; side: Side; line: number } | null {
+  const start = node instanceof HTMLElement ? node : node.parentElement;
+  const cell = start?.closest<HTMLElement>('td.code-cell[data-line]');
+  const line = Number(cell?.dataset.line);
+  const side = cell?.dataset.side;
+  if (!cell || !Number.isFinite(line) || (side !== 'old' && side !== 'new')) {
+    return null;
+  }
+  return { cell, side, line };
+}
+
+/// How many UTF-16 units of the cell come before a point in it.
+function charOffset(cell: HTMLElement, node: Node, offset: number): number {
+  const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+  let count = 0;
+
+  while (walker.nextNode()) {
+    const text = walker.currentNode;
+    if (text === node) {
+      return count + offset;
+    }
+    count += text.textContent?.length ?? 0;
+  }
+  // The point is not in a text node of this cell: the whole cell, then.
+  return node === cell && offset === 0 ? 0 : count;
+}
+
+/// A selection in the code offers to become a comment.
+function onSelect(event: MouseEvent) {
+  // A box is open on what was picked. Saving it is a click inside the table,
+  // and that click must not take the range away before the box uses it.
+  const from = event.target as HTMLElement | null;
+  if (writing.value !== null || from?.closest('tr.talk, .offer')) {
+    return;
+  }
+
+  const found = fromSelection();
+  picked.value = found;
+  origin.value = found?.start ?? null;
+  offer.value = found ? { x: event.clientX, y: event.clientY } : null;
+}
+
+function clearPicked() {
+  picked.value = null;
+  offer.value = null;
+  origin.value = null;
+  choosing.value = false;
+}
 
 /// The left column of a pair only speaks for a removed line.
 ///
@@ -299,14 +525,21 @@ function write(row: Row, body: string) {
   if (line === null) {
     return;
   }
+  const range =
+    picked.value?.side === sideOf(row) && picked.value.end === line ? picked.value : null;
+
   emit('add', {
-    scope: 'line',
+    scope: range ? 'range' : 'line',
     file: props.diff.path,
     side: sideOf(row),
-    startLine: line,
+    startLine: range ? range.start : line,
+    endLine: range ? range.end : line,
+    startChar: range?.startChar,
+    endChar: range?.endChar,
     body,
   });
   writing.value = null;
+  clearPicked();
 }
 
 /// A comment about the whole change, or about this file. Neither belongs to
@@ -327,6 +560,20 @@ function writeAbout(scope: 'change' | 'file', body: string) {
     body,
   });
   about.value = null;
+}
+
+/// What the box says it is about.
+function boxLabel(row: Row): string {
+  const range = picked.value;
+  if (!range || range.side !== sideOf(row) || range.end !== lineOf(row)) {
+    return 'A remark about this line';
+  }
+  if (range.end > range.start) {
+    return `A remark about lines ${range.start} to ${range.end}`;
+  }
+  return range.startChar === undefined
+    ? 'A remark about this line'
+    : 'A remark about a part of this line';
 }
 
 function toggle(row: Row | null) {
@@ -403,7 +650,7 @@ function toggle(row: Row | null) {
 
     <p v-else-if="diff.hunks.length === 0" class="note">Nothing changed inside this file.</p>
 
-    <div v-else class="diff-scroll">
+    <div v-else class="diff-scroll" @mouseup="onSelect">
       <table v-if="split" class="code" :class="wrap ? '' : 'nowrap'">
         <colgroup>
           <col class="gut" />
@@ -415,8 +662,14 @@ function toggle(row: Row | null) {
           <template v-if="block.kind === 'gap'">
             <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
               <tr>
-                <DiffRow :row="row" side="old" />
-                <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+                <DiffRow :row="row" side="old" :mark="markOf(row, 'old')" />
+                <DiffRow
+                  :row="row"
+                  side="new"
+                  :mark="markOf(row, 'new')"
+                  commentable
+                  @comment="toggle(row)"
+                />
               </tr>
               <tr v-if="talkative(row)" class="talk">
                 <td colspan="2"></td>
@@ -430,7 +683,7 @@ function toggle(row: Row | null) {
                   />
                   <CommentBox
                     v-if="writing === key(row)"
-                    label="A remark about this line"
+                    :label="boxLabel(row)"
                     @save="(body) => write(row, body)"
                     @cancel="writing = null"
                   />
@@ -447,8 +700,14 @@ function toggle(row: Row | null) {
             />
             <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
               <tr :class="onCursor(row) ? 'row-cursor' : ''">
-                <DiffRow :row="row" side="old" />
-                <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+                <DiffRow :row="row" side="old" :mark="markOf(row, 'old')" />
+                <DiffRow
+                  :row="row"
+                  side="new"
+                  :mark="markOf(row, 'new')"
+                  commentable
+                  @comment="toggle(row)"
+                />
               </tr>
               <tr v-if="talkative(row)" class="talk">
                 <td colspan="2"></td>
@@ -462,7 +721,7 @@ function toggle(row: Row | null) {
                   />
                   <CommentBox
                     v-if="writing === key(row)"
-                    label="A remark about this line"
+                    :label="boxLabel(row)"
                     @save="(body) => write(row, body)"
                     @cancel="writing = null"
                   />
@@ -473,8 +732,19 @@ function toggle(row: Row | null) {
 
           <template v-for="(pair, p) in pairs(block.hunk?.rows ?? [])" v-else :key="p">
             <tr :class="onCursor(pair.right) || onCursor(ownLeft(pair)) ? 'row-cursor' : ''">
-              <DiffRow :row="pair.left" side="old" @comment="toggle(pair.left)" />
-              <DiffRow :row="pair.right" side="new" commentable @comment="toggle(pair.right)" />
+              <DiffRow
+                :row="pair.left"
+                side="old"
+                :mark="markOf(pair.left, 'old')"
+                @comment="toggle(pair.left)"
+              />
+              <DiffRow
+                :row="pair.right"
+                side="new"
+                :mark="markOf(pair.right, 'new')"
+                commentable
+                @comment="toggle(pair.right)"
+              />
             </tr>
             <!-- A comment sits under the side it was written on, not across
                both, so the two columns keep meaning what they mean. -->
@@ -489,7 +759,7 @@ function toggle(row: Row | null) {
                 />
                 <CommentBox
                   v-if="ownLeft(pair) && writing === key(ownLeft(pair)!)"
-                  label="A remark about this line"
+                  :label="boxLabel(ownLeft(pair)!)"
                   @save="(body) => write(ownLeft(pair)!, body)"
                   @cancel="writing = null"
                 />
@@ -504,7 +774,7 @@ function toggle(row: Row | null) {
                 />
                 <CommentBox
                   v-if="pair.right && writing === key(pair.right)"
-                  label="A remark about this line"
+                  :label="boxLabel(pair.right!)"
                   @save="(body) => write(pair.right!, body)"
                   @cancel="writing = null"
                 />
@@ -525,7 +795,13 @@ function toggle(row: Row | null) {
             <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
               <tr>
                 <td class="gutter">{{ row.oldLine ?? '' }}</td>
-                <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+                <DiffRow
+                  :row="row"
+                  side="new"
+                  :mark="markOf(row, sideOf(row))"
+                  commentable
+                  @comment="toggle(row)"
+                />
               </tr>
               <tr v-if="talkative(row)" class="talk">
                 <td colspan="3">
@@ -538,7 +814,7 @@ function toggle(row: Row | null) {
                   />
                   <CommentBox
                     v-if="writing === key(row)"
-                    label="A remark about this line"
+                    :label="boxLabel(row)"
                     @save="(body) => write(row, body)"
                     @cancel="writing = null"
                   />
@@ -556,7 +832,13 @@ function toggle(row: Row | null) {
             <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
               <tr :class="onCursor(row) ? 'row-cursor' : ''">
                 <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
-                <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+                <DiffRow
+                  :row="row"
+                  side="new"
+                  :mark="markOf(row, sideOf(row))"
+                  commentable
+                  @comment="toggle(row)"
+                />
               </tr>
               <tr v-if="talkative(row)" class="talk">
                 <td colspan="3">
@@ -569,7 +851,7 @@ function toggle(row: Row | null) {
                   />
                   <CommentBox
                     v-if="writing === key(row)"
-                    label="A remark about this line"
+                    :label="boxLabel(row)"
                     @save="(body) => write(row, body)"
                     @cancel="writing = null"
                   />
@@ -581,7 +863,13 @@ function toggle(row: Row | null) {
           <template v-for="(row, r) in block.hunk?.rows ?? []" v-else :key="r">
             <tr :class="onCursor(row) ? 'row-cursor' : ''">
               <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
-              <DiffRow :row="row" side="new" commentable @comment="toggle(row)" />
+              <DiffRow
+                :row="row"
+                side="new"
+                :mark="markOf(row, sideOf(row))"
+                commentable
+                @comment="toggle(row)"
+              />
             </tr>
             <tr v-if="talkative(row)" class="talk">
               <td colspan="3">
@@ -594,7 +882,7 @@ function toggle(row: Row | null) {
                 />
                 <CommentBox
                   v-if="writing === key(row)"
-                  label="A remark about this line"
+                  :label="boxLabel(row)"
                   @save="(body) => write(row, body)"
                   @cancel="writing = null"
                 />
@@ -604,6 +892,20 @@ function toggle(row: Row | null) {
         </tbody>
       </table>
     </div>
+
+    <button
+      v-if="offer && picked"
+      type="button"
+      class="offer"
+      :style="{ left: `${offer.x}px`, top: `${offer.y + 12}px` }"
+      @click="writeOnPicked"
+    >
+      {{
+        picked.end > picked.start
+          ? `Comment on ${picked.end - picked.start + 1} lines`
+          : 'Comment on this'
+      }}
+    </button>
 
     <p v-if="capped" role="status" class="note warn">
       This file is very large. {{ total - MAX_ROWS }} rows are not shown, because building them

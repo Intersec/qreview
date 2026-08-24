@@ -93,7 +93,8 @@ left is in [`plan.md`](./plan.md).
 ## Comments
 
 - ✅ A comment on a line
-- ⬜ A comment on a range of lines
+- ✅ A comment on a range of lines, and on a part of a line, picked with the
+  mouse or with `v` and the movement keys (v0.4.3)
 - ✅ A comment on a file, shown above its diff
 - ✅ A comment on the whole change, shown above the diff
 - ✅ Edit and delete a comment

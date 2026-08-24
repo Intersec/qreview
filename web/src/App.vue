@@ -120,6 +120,9 @@ function onKey(event: KeyboardEvent) {
     case 'c':
       diffView.value?.commentHere();
       break;
+    case 'v':
+      diffView.value?.startRange();
+      break;
     case 'u':
       toggleSide();
       break;
@@ -132,6 +135,7 @@ function onKey(event: KeyboardEvent) {
     case 'Escape':
       prefs.value = false;
       helping.value = false;
+      diffView.value?.clearPicked();
       break;
     case '/':
       event.preventDefault();

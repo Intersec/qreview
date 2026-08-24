@@ -59,8 +59,9 @@ What the browser shows:
   the walk stopped there and offers **Load 5 older**.
 - The files of the change, then the diff, unified or side by side, with the
   changed words marked inside a line.
-- Comments on a line, on a file, or on the change, in threads you can
-  resolve. Markdown in the body.
+- Comments on a line, on a range of lines, on a part of a line, on a file,
+  or on the change. Markdown in the body. Select the code with the mouse, or
+  press `v` and grow the range with `j` and `k`.
 - A patch set selector, and a diff between any two versions.
 - A merge read against the auto-merge, so you see the conflict resolution and
   not the whole branch it brought in.
@@ -76,7 +77,8 @@ second set of habits. `?` lists them in the interface.
 | `n` / `p` | The next or the previous hunk |
 | `]` / `[` | The next or the previous file |
 | `J` / `K` | The next or the previous change |
-| `c` | Write on the line the keyboard is on |
+| `v` | Start a range on this line. `j` and `k` grow it |
+| `c` | Write on the line, on the range, or on what the mouse selected |
 | `u` | Show or hide the series |
 | `/` | Filter the files |
 | `,` | Preferences |

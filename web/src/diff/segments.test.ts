@@ -19,7 +19,9 @@ function row(
 
 describe('segments', () => {
   it('gives one plain piece when nothing claims the row', () => {
-    expect(segments(row('plain text'))).toEqual([{ text: 'plain text', cls: '', changed: false }]);
+    expect(segments(row('plain text'))).toEqual([
+      { text: 'plain text', cls: '', changed: false, marked: false },
+    ]);
   });
 
   it('gives nothing for an empty row', () => {
@@ -33,7 +35,7 @@ describe('segments', () => {
 
   it('carries the syntax class of the piece', () => {
     const out = segments(row('int x;', [[0, 3, 'storage type']]));
-    expect(out[0]).toEqual({ text: 'int', cls: 'storage type', changed: false });
+    expect(out[0]).toEqual({ text: 'int', cls: 'storage type', changed: false, marked: false });
     expect(out[1].cls).toBe('');
   });
 
@@ -78,12 +80,23 @@ describe('segments', () => {
         [3, 2, 'y'],
       ]),
     );
-    expect(out).toEqual([{ text: 'abc', cls: '', changed: false }]);
+    expect(out).toEqual([{ text: 'abc', cls: '', changed: false, marked: false }]);
   });
 
   it('slices a line with an accent where the server said', () => {
     // "héllo world": the server counts é as one UTF-16 unit, so world is 6..11.
     const out = segments(row('héllo world', [], [[6, 11]]));
     expect(out.filter((s) => s.changed).map((s) => s.text)).toEqual(['world']);
+  });
+
+  it('cuts the row at the ends of a marked range', () => {
+    const found = segments(row('one two three'), { start: 4, end: 7 });
+
+    expect(found.map((s) => s.text)).toEqual(['one ', 'two', ' three']);
+    expect(found.map((s) => s.marked)).toEqual([false, true, false]);
+  });
+
+  it('marks nothing when no range is given', () => {
+    expect(segments(row('one two')).every((s) => !s.marked)).toBe(true);
   });
 });
