@@ -114,6 +114,15 @@ test('the slash key moves to the file filter', async ({ page }) => {
 test('a comment box takes the keyboard when it opens', async ({ page }) => {
   await openChange(page, /net: retry the read/);
   await openFile(page, 'net.blk');
+
+  // `c` opens the box. The letter opened it, so the letter is not in it.
+  await page.keyboard.press('j');
+  await page.keyboard.press('c');
+  await expect(page.getByRole('textbox')).toHaveValue('');
+  await expect(page.getByRole('textbox')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
   await page.locator('td.gutter-comment').first().click();
 
   await expect(page.getByRole('textbox')).toBeFocused();

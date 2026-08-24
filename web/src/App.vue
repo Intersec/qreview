@@ -176,7 +176,6 @@ function onKey(event: KeyboardEvent) {
       diffView.value?.clearPicked();
       break;
     case '/':
-      event.preventDefault();
       if (!side.value) {
         toggleSide();
       }
@@ -185,6 +184,11 @@ function onKey(event: KeyboardEvent) {
     default:
       return;
   }
+
+  // The key did something, so it must not also be typed. `c` opens a box and
+  // puts the keyboard in it, and the letter would land in the box before the
+  // reader wrote a word.
+  event.preventDefault();
 }
 
 /// The reader can follow the system or say outright. `system` leaves the
