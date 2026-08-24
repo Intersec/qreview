@@ -412,6 +412,13 @@ read, and one file is written.
 `scope` is `line`, `range`, `file`, or `change`. A `file` comment has an anchor
 with no line. A `change` comment has no anchor.
 
+A `range` covers `startLine` to `endLine`. It can also open and close inside a
+line: `startChar` and `endChar` then hold the first character on the first
+line and the one after the last on the last line. Both count **UTF-16 code
+units**, the units the browser measures a selection in, and the units every
+offset that crosses the wire already uses. A range with no characters covers
+whole lines.
+
 A comment stands alone. There is no author, no draft, no reply and no
 resolving: all four are for a conversation with a reviewer, and a review of
 your own series before the push has none. You write a remark, you correct the
@@ -431,6 +438,11 @@ set must still see it.
    context lines, keep the best score above the threshold.
 3. No candidate                           -> the comment is unanchored.
 ```
+
+A range is anchored by its first line, and keeps its length: the last line
+follows the first by however many lines it stood below it. The characters
+are kept as they were written. Anchoring reads lines, and a line that moved
+is still the same line.
 
 An unanchored comment is never dropped and never moved in silence. The
 interface lists it in a panel beside the file, with the patch set it was

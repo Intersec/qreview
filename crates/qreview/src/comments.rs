@@ -30,6 +30,12 @@ pub struct NewComment {
     pub start_line: Option<usize>,
     #[serde(default)]
     pub end_line: Option<usize>,
+    /// The character range inside the two lines, in UTF-16 units. Absent
+    /// when the comment covers whole lines.
+    #[serde(default)]
+    pub start_char: Option<usize>,
+    #[serde(default)]
+    pub end_char: Option<usize>,
     pub body: String,
 }
 
@@ -171,6 +177,8 @@ async fn anchor_of(git: &Git, rev: &str, base: &str, new: &NewComment) -> Result
         side,
         start_line: new.start_line,
         end_line: new.end_line.or(new.start_line),
+        start_char: new.start_char,
+        end_char: new.end_char,
         blob: None,
         line_hash: None,
         context: Vec::new(),

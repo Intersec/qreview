@@ -21,6 +21,8 @@ pub struct Placed {
     pub id: String,
     /// The line it lands on, absent when nothing was found.
     pub line: Option<usize>,
+    /// The last line of the range, which follows the first one.
+    pub end_line: Option<usize>,
     /// True when the line is not the one the comment was written against.
     pub moved: bool,
     /// True when the place is gone. The interface lists these apart.
@@ -43,40 +45,22 @@ pub async fn place(git: &Git, comment: &Comment, rev: &str) -> Placed {
 
     // A comment about the change belongs to no line and cannot be lost.
     let Some(anchor) = &comment.anchor else {
-        return Placed {
-            id,
-            line: None,
-            moved: false,
-            lost: false,
-        };
+        return nowhere(id);
     };
     if comment.scope == Scope::File {
-        return Placed {
-            id,
-            line: None,
-            moved: false,
-            lost: false,
-        };
+        return nowhere(id);
     }
 
     let Some(line) = anchor.start_line else {
-        return Placed {
-            id,
-            line: None,
-            moved: false,
-            lost: false,
-        };
+        return nowhere(id);
     };
+    // The range keeps its length wherever its first line lands.
+    let span = anchor.end_line.unwrap_or(line).saturating_sub(line);
 
     // A comment on the old side is read against the old side, which the
     // patch set being read does not own. It keeps the line it was written on.
     if anchor.side == Side::Old {
-        return Placed {
-            id,
-            line: Some(line),
-            moved: false,
-            lost: false,
-        };
+        return found(id, line, span, false);
     }
 
     // The commit message is not a blob. It is read from the commit, and the
@@ -86,12 +70,7 @@ pub async fn place(git: &Git, comment: &Comment, rev: &str) -> Placed {
         false => match blob_of(git, rev, &anchor.file).await {
             // One: the file did not change at all.
             Some(blob) if anchor.blob.as_deref() == Some(blob.as_str()) => {
-                return Placed {
-                    id,
-                    line: Some(line),
-                    moved: false,
-                    lost: false,
-                };
+                return found(id, line, span, false);
             }
             Some(blob) => git.text(&["cat-file", "blob", &blob]).await.ok(),
             None => None,
@@ -99,39 +78,52 @@ pub async fn place(git: &Git, comment: &Comment, rev: &str) -> Placed {
     };
 
     let Some(text) = read else {
-        return Placed {
-            id,
-            line: None,
-            moved: false,
-            lost: true,
-        };
+        return gone(id);
     };
     let fresh: Vec<&str> = text.lines().collect();
 
     // Two: the line moved. Look for it, and make the context agree.
     let Some(hash) = &anchor.line_hash else {
-        return Placed {
-            id,
-            line: None,
-            moved: false,
-            lost: true,
-        };
+        return gone(id);
     };
 
     match best_match(hash, &anchor.context, &fresh, line) {
-        Some(found) => Placed {
-            id,
-            line: Some(found),
-            moved: found != line,
-            lost: false,
-        },
+        Some(at) => found(id, at, span, at != line),
         // Three: the place is gone.
-        None => Placed {
-            id,
-            line: None,
-            moved: false,
-            lost: true,
-        },
+        None => gone(id),
+    }
+}
+
+/// A comment that belongs to no line of this patch set, and is not lost:
+/// one about the change, or about the file.
+fn nowhere(id: String) -> Placed {
+    Placed {
+        id,
+        line: None,
+        end_line: None,
+        moved: false,
+        lost: false,
+    }
+}
+
+/// A comment whose place this patch set no longer has.
+fn gone(id: String) -> Placed {
+    Placed {
+        id,
+        line: None,
+        end_line: None,
+        moved: false,
+        lost: true,
+    }
+}
+
+fn found(id: String, line: usize, span: usize, moved: bool) -> Placed {
+    Placed {
+        id,
+        line: Some(line),
+        end_line: Some(line + span),
+        moved,
+        lost: false,
     }
 }
 
@@ -306,6 +298,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_range_keeps_its_length_where_its_first_line_lands() {
+        let repo = crate::testutil::build_repo(&[
+            crate::testutil::commit("one").file("a.txt", "one\ntwo\nthree\nfour\nfive\n"),
+            crate::testutil::commit("two")
+                .file("a.txt", "added\nlines\none\ntwo\nthree\nfour\nfive\n"),
+        ])
+        .await;
+        let git = Git::discover(repo.path()).await.unwrap();
+
+        // Written on lines 2 to 4 of the first version, which two new lines
+        // above have pushed down to 4 to 6.
+        let comment = Comment {
+            id: "c-1".to_owned(),
+            patch_set: 1,
+            created_at: "t".to_owned(),
+            updated_at: "t".to_owned(),
+            scope: Scope::Range,
+            body: "b".to_owned(),
+            anchor: Some(Anchor {
+                file: "a.txt".to_owned(),
+                side: Side::New,
+                start_line: Some(2),
+                end_line: Some(4),
+                start_char: None,
+                end_char: None,
+                blob: Some("stale".to_owned()),
+                line_hash: Some(hash_line("two")),
+                context: vec!["one".to_owned(), "two".to_owned(), "three".to_owned()],
+            }),
+        };
+
+        let placed = place(&git, &comment, "HEAD").await;
+
+        assert_eq!(placed.line, Some(4));
+        assert_eq!(placed.end_line, Some(6));
+        assert!(placed.moved);
+        assert!(!placed.lost);
+    }
+
+    #[tokio::test]
     async fn a_comment_whose_file_is_gone_is_lost_and_kept() {
         let repo =
             crate::testutil::build_repo(&[crate::testutil::commit("one").file("a.txt", "1\n")])
@@ -324,6 +356,8 @@ mod tests {
                 side: Side::New,
                 start_line: Some(1),
                 end_line: Some(1),
+                start_char: None,
+                end_char: None,
                 blob: Some("dead".to_owned()),
                 line_hash: Some(hash_line("1")),
                 context: vec!["1".to_owned()],

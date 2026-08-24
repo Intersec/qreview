@@ -1582,6 +1582,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_comment_on_a_range_keeps_both_ends_and_the_characters() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+        let body = serde_json::json!({
+            "scope": "range",
+            "file": "src/a.blk",
+            "side": "new",
+            "startLine": 1,
+            "endLine": 2,
+            "startChar": 1,
+            "endChar": 3,
+            "body": "These two lines belong together.",
+        });
+        let request = Request::builder()
+            .method("POST")
+            .uri("/api/changes/I8f3ac21/comments")
+            .header(header::COOKIE, format!("{}={TOKEN}", auth::COOKIE))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let (status, _) = json(server.clone(), request).await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        let (status, read) = json(
+            server,
+            get_with_cookie("/api/changes/I8f3ac21/comments", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let anchor = &read["comments"][0]["anchor"];
+        assert_eq!(read["comments"][0]["scope"], "range");
+        assert_eq!(anchor["startLine"], 1);
+        assert_eq!(anchor["endLine"], 2);
+        assert_eq!(anchor["startChar"], 1);
+        assert_eq!(anchor["endChar"], 3);
+        assert_eq!(read["placed"][0]["line"], 1);
+        assert_eq!(read["placed"][0]["endLine"], 2);
+    }
+
+    #[tokio::test]
     async fn a_patch_set_that_does_not_exist_is_a_named_error() {
         let repo = fixture().await;
         let (status, body) = json(

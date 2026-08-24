@@ -164,13 +164,19 @@ async fn body(
 }
 
 fn place_of(comment: &Comment) -> String {
-    match (&comment.anchor, comment.scope) {
-        (Some(anchor), Scope::File) => format!("{} (the file)", anchor.file),
-        (Some(anchor), _) => match anchor.start_line {
-            Some(line) => format!("{}:{line}", anchor.file),
-            None => anchor.file.clone(),
-        },
-        (None, _) => "The change".to_owned(),
+    let (Some(anchor), scope) = (&comment.anchor, comment.scope) else {
+        return "The change".to_owned();
+    };
+    if scope == Scope::File {
+        return format!("{} (the file)", anchor.file);
+    }
+    let Some(start) = anchor.start_line else {
+        return anchor.file.clone();
+    };
+
+    match anchor.end_line {
+        Some(end) if end > start => format!("{}:{start}-{end}", anchor.file),
+        _ => format!("{}:{start}", anchor.file),
     }
 }
 
@@ -187,6 +193,7 @@ fn language_of(session: &Session, comment: &Comment) -> String {
 async fn excerpt(session: &Session, commit: &str, comment: &Comment) -> Option<String> {
     let anchor = comment.anchor.as_ref()?;
     let line = anchor.start_line?;
+    let last = anchor.end_line.unwrap_or(line).max(line);
     let rev = match anchor.side {
         Side::New => commit.to_owned(),
         Side::Old => session
@@ -206,7 +213,7 @@ async fn excerpt(session: &Session, commit: &str, comment: &Comment) -> Option<S
     let lines: Vec<&str> = text.lines().collect();
 
     let from = line.saturating_sub(CONTEXT).max(1);
-    let to = (line + CONTEXT).min(lines.len());
+    let to = (last + CONTEXT).min(lines.len());
     if from > lines.len() {
         return None;
     }
@@ -266,6 +273,8 @@ mod tests {
             side: Some(Side::New),
             start_line: Some(line),
             end_line: Some(line),
+            start_char: None,
+            end_char: None,
             body: body.to_owned(),
         }
     }
@@ -306,6 +315,8 @@ mod tests {
                     side: None,
                     start_line: None,
                     end_line: None,
+                    start_char: None,
+                    end_char: None,
                     body: "The whole change needs a test.".to_owned(),
                 },
             )
@@ -328,6 +339,42 @@ mod tests {
             .join("\n");
 
         insta::assert_snapshot!(stable);
+    }
+
+    #[tokio::test]
+    async fn a_comment_on_a_range_names_both_ends_and_shows_them() {
+        let repo = build_repo(&[
+            commit("first").file("a.c", "one\n"),
+            commit("work: several lines")
+                .file("a.c", "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n")
+                .change_id("Irange"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        session
+            .add_comment(
+                "Irange",
+                NewComment {
+                    scope: Scope::Range,
+                    file: Some("a.c".to_owned()),
+                    side: Some(Side::New),
+                    start_line: Some(3),
+                    end_line: Some(5),
+                    start_char: Some(1),
+                    end_char: Some(3),
+                    body: "These three lines say one thing.".to_owned(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Irange").await.unwrap();
+
+        assert!(text.contains("`a.c:3-5`"), "{text}");
+        for line in ["3 | three", "4 | four", "5 | five"] {
+            assert!(text.contains(line), "{line} is missing from\n{text}");
+        }
     }
 
     #[tokio::test]
@@ -397,6 +444,8 @@ mod tests {
                         side: None,
                         start_line: None,
                         end_line: None,
+                        start_char: None,
+                        end_char: None,
                         body: format!("A remark on {key}."),
                     },
                 )

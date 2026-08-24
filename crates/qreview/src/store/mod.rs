@@ -45,7 +45,7 @@ impl Store {
             return Ok(ChangeFile::new(key, subject));
         };
 
-        let file: ChangeFile = serde_json::from_str(&text).with_context(|| {
+        let mut file: ChangeFile = serde_json::from_str(&text).with_context(|| {
             format!(
                 "{} is not readable. It is left as it is: repair it by hand \
                  rather than lose the review",
@@ -61,6 +61,13 @@ impl Store {
                 model::VERSION
             );
         }
+
+        // The migration of an older file. Every format so far reads as the
+        // current one, so the stamp is the whole of it: the next write then
+        // says what the file holds, and an older qreview refuses it rather
+        // than dropping what it cannot read.
+        file.version = model::VERSION;
+
         Ok(file)
     }
 
@@ -149,6 +156,8 @@ mod tests {
                 side: Side::New,
                 start_line: Some(42),
                 end_line: Some(42),
+                start_char: None,
+                end_char: None,
                 blob: Some("b7a1".to_owned()),
                 line_hash: Some("sha256:9c1f".to_owned()),
                 context: vec!["one".to_owned(), "two".to_owned()],
@@ -238,6 +247,32 @@ mod tests {
 
         let error = store.load("I8f3a", "s").unwrap_err().to_string();
         assert!(error.contains("newer qreview"), "{error}");
+    }
+
+    #[test]
+    fn a_file_of_an_older_format_is_read_and_stamped() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::at(dir.path());
+        let path = dir.path().join("changes");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(
+            path.join("I8f3a.json"),
+            r#"{"version":1,"key":"I8f3a","subject":"s","comments":[{"id":"c1",
+               "patchSet":1,"createdAt":"","updatedAt":"","scope":"line",
+               "body":"a remark","anchor":{"file":"a.c","side":"new",
+               "startLine":3,"endLine":3}}]}"#,
+        )
+        .unwrap();
+
+        let file = store.load("I8f3a", "s").unwrap();
+
+        assert_eq!(file.comments.len(), 1, "the comment of the older file");
+        assert_eq!(file.comments[0].anchor.as_ref().unwrap().start_char, None);
+        assert_eq!(
+            file.version,
+            model::VERSION,
+            "a write must say what the file holds"
+        );
     }
 
     #[test]

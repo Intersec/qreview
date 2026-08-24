@@ -4,7 +4,11 @@ use serde::{Deserialize, Serialize};
 
 /// The format of a change file. A change owes a migration, or a refusal with
 /// a clear message. Never a silent read of an older shape.
-pub const VERSION: u32 = 1;
+///
+/// 2 added the character range of an anchor. A file of format 1 reads as one
+/// whose comments cover whole lines, and `Store::load` stamps it 2 so the
+/// next write says what it is.
+pub const VERSION: u32 = 2;
 
 /// Everything a review of one change holds.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -77,6 +81,16 @@ pub struct Anchor {
     pub start_line: Option<usize>,
     #[serde(default)]
     pub end_line: Option<usize>,
+    /// The first character of the range on `start_line`, and the one after
+    /// the last on `end_line`, in UTF-16 units. Absent when the comment
+    /// covers whole lines.
+    ///
+    /// UTF-16 because the browser makes them, out of a selection in the
+    /// page, and every offset that crosses the wire counts the same units.
+    #[serde(default)]
+    pub start_char: Option<usize>,
+    #[serde(default)]
+    pub end_char: Option<usize>,
     /// The blob the lines were read from.
     #[serde(default)]
     pub blob: Option<String>,
