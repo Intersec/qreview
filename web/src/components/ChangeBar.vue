@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { ChangeSummary, FileEntry } from '@/api/types';
+import type { ChangeSummary, FileEntry, GerritChange } from '@/api/types';
 
 const props = defineProps<{
   change: ChangeSummary | null;
   files: FileEntry[];
   filePath: string | null;
+  /// The change on the server, when the remote names one.
+  gerrit: GerritChange | null;
 }>();
 const emit = defineEmits<{ step: [by: number] }>();
 
@@ -17,7 +19,16 @@ const at = computed(() => readable.value.findIndex((f) => f.path === props.fileP
   <div v-if="change" class="change-bar">
     <span class="subject">{{ change.subject }}</span>
     <code class="quiet">{{ change.commit.slice(0, 12) }}</code>
-    <span v-if="change.changeId" class="quiet change-id">{{ change.changeId }}</span>
+    <a
+      v-if="change.changeId && gerrit"
+      class="change-id"
+      :href="gerrit.url"
+      target="_blank"
+      rel="noreferrer"
+      :title="`Change ${gerrit.number} on Gerrit`"
+      >{{ change.changeId }}</a
+    >
+    <code v-else-if="change.changeId" class="quiet change-id">{{ change.changeId }}</code>
     <span v-else class="tag">no Change-Id</span>
 
     <span class="bar-actions">

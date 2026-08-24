@@ -217,7 +217,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       />
 
       <section class="work">
-        <ChangeBar :change="change" :files="files" :file-path="filePath" @step="stepFile" />
+        <ChangeBar
+          :change="change"
+          :files="files"
+          :file-path="filePath"
+          :gerrit="gerrit"
+          @step="stepFile"
+        />
         <PatchSetBar
           :sets="patchSets"
           :current="patchSet"

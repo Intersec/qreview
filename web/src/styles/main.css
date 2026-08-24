@@ -768,6 +768,10 @@ tr.talk td {
   font-size: 12px;
 }
 .change-bar .subject {
+  /* The subject gives way first. The identifiers beside it are fixed
+     lengths, and half a Change-Id is worth nothing. */
+  flex: 0 1 auto;
+  min-width: 3rem;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -778,10 +782,17 @@ tr.talk td {
   font-size: 11px;
 }
 .change-id {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: none;
+  font-family: var(--code-font);
+  font-size: 11px;
   white-space: nowrap;
-  max-width: 16rem;
+}
+a.change-id {
+  color: var(--action);
+  text-decoration: none;
+}
+a.change-id:hover {
+  text-decoration: underline;
 }
 .change-bar .bar-actions {
   align-items: baseline;
