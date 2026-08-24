@@ -12,6 +12,8 @@ import type { ChangeComments, Comment, Side } from '@/api/types';
 const props = defineProps<{
   written: ChangeComments[];
   openKey: string | null;
+  /// How tall the reader made it, in pixels.
+  height: number;
 }>();
 const emit = defineEmits<{
   go: [key: string, file: string, side: Side, line: number | null];
@@ -61,7 +63,12 @@ function go(change: ChangeComments, comment: Comment) {
 </script>
 
 <template>
-  <section v-if="total > 0" class="comment-list" :class="folded ? 'is-folded' : ''">
+  <section
+    v-if="total > 0"
+    class="comment-list"
+    :class="folded ? 'is-folded' : ''"
+    :style="folded ? undefined : { height: `${height}px` }"
+  >
     <button
       type="button"
       class="pane-title list-head"

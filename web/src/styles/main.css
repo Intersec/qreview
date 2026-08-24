@@ -747,7 +747,8 @@ tr.talk td {
 
 .body {
   display: grid;
-  grid-template-columns: 17rem minmax(0, 1fr);
+  /* The width is set on the element, and this is what it starts from. */
+  grid-template-columns: 17rem 6px minmax(0, 1fr);
   flex: 1;
   min-height: 0;
 }
@@ -816,6 +817,28 @@ a.change-id:hover {
   align-items: baseline;
 }
 
+/* ------------------------------------------------- the bar between panes */
+
+.split {
+  background: var(--pane);
+  border-left: 1px solid var(--edge);
+  border-right: 1px solid var(--edge);
+}
+.split-vertical {
+  cursor: col-resize;
+}
+.split-horizontal {
+  height: 6px;
+  border: none;
+  border-top: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge);
+  cursor: row-resize;
+}
+.split:hover,
+.split.is-dragging {
+  background: var(--pick-edge);
+}
+
 /* --------------------------------------- what the session holds, listed */
 
 /*
@@ -825,12 +848,13 @@ a.change-id:hover {
  */
 .comment-list {
   /* Never shrink. The series above it scrolls, and on a short window it is
-     the series that gives way, not the pane the reader asked for. */
+     the series that gives way, not the pane the reader asked for. The
+     height comes from the bar above it, which the reader drags. */
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: 40%;
+  max-height: 80%;
   border-top: 1px solid var(--edge);
   background: var(--page);
 }

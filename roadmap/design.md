@@ -678,6 +678,23 @@ notices the typo. `examples/` holds a copy of both files.
 A language map is merged, not replaced: a repository adds its own file types
 without repeating the ones the tool already knows.
 
+### 10.1 What the browser keeps for itself
+
+Some state belongs to the screen in front of the reader, not to the tool.
+The browser keeps it under `qreview.*` in its own storage, and the
+configuration file never sees it:
+
+| Key | What it holds |
+|---|---|
+| `qreview.side` | The series pane is shown or hidden |
+| `qreview.side.width` | How wide the series pane is |
+| `qreview.comments.height` | How tall the list of comments is |
+| `qreview.drafts` | Remarks typed and not saved, by change, file and line |
+
+A size dragged with the mouse would be a poor thing to write to a file that
+the command line reads, and the same file on two screens would be wrong on
+one of them. Losing this state costs a drag, and nothing else.
+
 ## 11. Command line
 
 ```

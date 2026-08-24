@@ -218,6 +218,8 @@ surprised by anything.*
 - [x] A pane that lists the remarks: the change being read first, then the
       rest in the order of the export
 - [x] A row of that pane opens the place it names
+- [x] The bar between the series and the code, and the one between the
+      series and the comments, dragged to give a pane more room
 
 ## After that
 

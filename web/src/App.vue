@@ -7,6 +7,7 @@ import PreferencesDialog from './components/PreferencesDialog.vue';
 import ShortcutHelp from './components/ShortcutHelp.vue';
 import LoadingVeil from './components/LoadingVeil.vue';
 import MergeBar from './components/MergeBar.vue';
+import PaneSplit from './components/PaneSplit.vue';
 import PatchSetBar from './components/PatchSetBar.vue';
 import SidePane from './components/SidePane.vue';
 import { useReview } from './stores/review';
@@ -81,6 +82,20 @@ const prefs = ref(false);
 const helping = ref(false);
 const diffView = ref<InstanceType<typeof DiffView> | null>(null);
 const side = ref(localStorage.getItem('qreview.side') !== 'hidden');
+
+/// How wide the series pane is. The browser keeps it, not the configuration
+/// file: it belongs to this screen, not to the tool.
+const SIDE_MIN = 130;
+const sideWidth = ref(Number(localStorage.getItem('qreview.side.width')) || 272);
+
+function widen(by: number) {
+  const room = Math.max(SIDE_MIN, window.innerWidth - 320);
+  sideWidth.value = Math.min(Math.max(sideWidth.value + by, SIDE_MIN), room);
+}
+
+function keepWidth() {
+  localStorage.setItem('qreview.side.width', String(Math.round(sideWidth.value)));
+}
 const pane = ref<InstanceType<typeof SidePane> | null>(null);
 
 function toggleSide() {
@@ -241,7 +256,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 
     <p v-if="error" role="alert" class="error">{{ error }}</p>
 
-    <main v-if="series" class="body" :class="side ? '' : 'no-side'">
+    <main
+      v-if="series"
+      class="body"
+      :class="side ? '' : 'no-side'"
+      :style="side ? { gridTemplateColumns: `${sideWidth}px 6px minmax(0, 1fr)` } : undefined"
+    >
       <SidePane
         v-if="side"
         ref="pane"
@@ -260,6 +280,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         @mark="review.markChange"
         @more="review.loadMore(5)"
         @review-merge="review.openMerge()"
+      />
+
+      <PaneSplit
+        v-if="side"
+        direction="vertical"
+        label="Make the series pane wider or narrower"
+        @move="widen"
+        @done="keepWidth"
       />
 
       <section class="work">

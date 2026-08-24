@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import BoundaryCard from './BoundaryCard.vue';
 import { group } from '@/diff/tree';
 import CommentList from './CommentList.vue';
+import PaneSplit from './PaneSplit.vue';
 import LoadingVeil from './LoadingVeil.vue';
 import type { ChangeComments, ChangeSummary, FileEntry, Series, Side } from '@/api/types';
 
@@ -34,6 +35,20 @@ const filter = ref('');
 // A ref inside a `v-for` is a list, even when one element carries it. Only
 // the open change draws the filter, so the list holds one input at most.
 const boxes = ref<HTMLInputElement[]>([]);
+
+/// How tall the list of comments is. Its title must stay on the screen,
+/// and so must a line or two of the series above it.
+const LIST_MIN = 28;
+const listHeight = ref(Number(localStorage.getItem('qreview.comments.height')) || 180);
+
+function taller(by: number) {
+  const room = Math.max(LIST_MIN, window.innerHeight - 200);
+  listHeight.value = Math.min(Math.max(listHeight.value - by, LIST_MIN), room);
+}
+
+function keepHeight() {
+  localStorage.setItem('qreview.comments.height', String(Math.round(listHeight.value)));
+}
 
 const MARK: Record<FileEntry['status'], string> = {
   added: 'A',
@@ -167,9 +182,18 @@ defineExpose({ focusFilter: () => boxes.value[0]?.focus() });
       />
     </div>
 
+    <PaneSplit
+      v-if="written.length > 0"
+      direction="horizontal"
+      label="Make the list of comments taller or shorter"
+      @move="taller"
+      @done="keepHeight"
+    />
+
     <!-- Last, and it takes the room that is left rather than pushing the
          series out of the pane. -->
     <CommentList
+      :height="listHeight"
       :written="written"
       :open-key="selected"
       @go="(key, file, side, line) => emit('go', key, file, side, line)"

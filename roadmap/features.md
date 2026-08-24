@@ -74,6 +74,8 @@ left is in [`plan.md`](./plan.md).
 - ✅ Whitespace changes shown or hidden
 - ✅ A file too large is shown with a warning and no colors
 - ✅ The file tree, with a filter
+- ✅ Panes the reader resizes: the series against the code, and the series
+  against the list of comments (v0.5.0)
 
 ## Colors
 
