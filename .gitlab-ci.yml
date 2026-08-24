@@ -17,6 +17,24 @@
 # CA that the runner passes in `CI_SERVER_TLS_CA_FILE`, and the one the
 # project sets in `ADDITIONAL_CA_CERT_BUNDLE`. Either is enough.
 
+# One pipeline per commit, never two.
+#
+# `git push --follow-tags` sends the release commit and its tag together, and
+# GitLab starts a pipeline for each: one for the branch, one for the tag. The
+# two run the same gate on the same commit, which costs twenty minutes twice,
+# gives a flake two chances to stop a release, and has both jobs pulling on
+# one cache at the same time.
+#
+# The tag pipeline is the one that matters, because it publishes. So the
+# branch stands down on a release commit, which `cargo xtask release` always
+# names the same way.
+workflow:
+  rules:
+    # Quoted, because the colon of the subject is not a YAML one.
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_TITLE =~ /^chore\(release\): v/'
+      when: never
+    - when: always
+
 stages:
   - verify
   - release

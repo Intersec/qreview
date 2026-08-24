@@ -89,6 +89,11 @@ The tag starts a pipeline that runs the gate again, builds the static Linux
 x86-64 binary, uploads it to the package registry of the project, and creates
 the release that links to it. A tag whose gate is red publishes nothing.
 
+One pipeline runs, not two. The push carries the release commit and its tag,
+and GitLab would start a pipeline for each. The branch one stands down on a
+commit named `chore(release): v…`, because the tag one runs the same gate on
+the same commit and is the one that publishes.
+
 The pipeline talks to its own GitLab server and to nothing else. It pulls no
 image from another registry, and `scripts/gitlab-release.sh` calls the API of
 the project it runs in.
