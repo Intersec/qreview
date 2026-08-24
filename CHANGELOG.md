@@ -12,6 +12,30 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.4.3]
+
+### Added
+
+- **A comment on a range.** Select the code with the mouse, over several
+  lines or over a part of one, and the selection offers to become a comment.
+  The keyboard does it too: `v` starts a range on the line it is on, `j` and
+  `k` grow it, `c` writes on it. The range is drawn on the code, and it
+  follows its first line into the next patch set.
+- **What you type is kept as you type it.** A remark you have not saved
+  survives opening another file, another change, and a reload: it comes back
+  in its box, on the line it was written on. Cancel drops it.
+
+### Changed
+
+- The export orders the comments the way the code reads: the commits from
+  the oldest, the files of a commit in alphabetic order with the commit
+  message first, and the remarks of a file from top to bottom. It followed
+  the order the remarks were written before.
+
+### Fixed
+
+- A click on a line puts the keyboard on it, so `c` writes there. The
+  keyboard stayed where it was, and the remark opened on another line.
 ## [0.4.2]
 
 ### Added
