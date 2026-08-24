@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { drop, read, write } from '@/diff/drafts';
 
 const props = defineProps<{
@@ -11,6 +11,16 @@ const props = defineProps<{
 const emit = defineEmits<{ save: [body: string]; cancel: [] }>();
 
 const body = ref(props.start ?? (props.draft ? read(props.draft) : ''));
+const area = ref<HTMLTextAreaElement | null>(null);
+
+// A box that opens is a box the reader asked for, so the keyboard goes into
+// it. A box that comes back with an unfinished remark does not take the
+// keyboard: the reader opened a file, not that box.
+onMounted(() => {
+  if (body.value === '') {
+    area.value?.focus();
+  }
+});
 
 // Every key stroke, so that opening another file costs nothing. The store
 // is the browser's own: an unfinished remark is not a comment.
@@ -43,6 +53,7 @@ function forget() {
       <label class="sr-only" :for="`box-${label}`">{{ label }}</label>
       <textarea
         :id="`box-${label}`"
+        ref="area"
         v-model="body"
         class="talk-text"
         :placeholder="label"

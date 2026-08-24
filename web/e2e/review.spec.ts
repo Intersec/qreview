@@ -111,6 +111,32 @@ test('the slash key moves to the file filter', async ({ page }) => {
   await expect(page.locator('.file-row')).toContainText('doc.h');
 });
 
+test('a comment box takes the keyboard when it opens', async ({ page }) => {
+  await openChange(page, /net: retry the read/);
+  await openFile(page, 'net.blk');
+  await page.locator('td.gutter-comment').first().click();
+
+  await expect(page.getByRole('textbox')).toBeFocused();
+  await page.keyboard.type('Typed without touching the box.');
+  await expect(page.getByRole('textbox')).toHaveValue('Typed without touching the box.');
+});
+
+test('an unfinished remark comes back without taking the keyboard', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+  await page.locator('td.gutter-comment').first().click();
+  await page.getByRole('textbox').fill('Left half written.');
+
+  await openFile(page, 'added.py');
+  await openFile(page, 'long.c');
+
+  // The box is there again, and the keyboard still walks the code.
+  await expect(page.getByRole('textbox')).toHaveValue('Left half written.');
+  await expect(page.getByRole('textbox')).not.toBeFocused();
+  await page.keyboard.press('j');
+  await expect(page.locator('tr.row-cursor')).toHaveCount(1);
+});
+
 test('the question mark lists the keys', async ({ page }) => {
   await page.keyboard.press('?');
 
