@@ -208,7 +208,8 @@ surprised by anything.*
       the mouse, or with `v` and the movement keys
 - [x] A remark that is typed is kept as it is typed, and survives another
       file, another change and a reload
-- [x] The export ordered: the change first, then file by file, oldest first
+- [x] The export ordered: the oldest commit first, the files in alphabetic
+      order with the commit message first, and each file top to bottom
 
 ## After that
 

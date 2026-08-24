@@ -610,6 +610,16 @@ Rules for the format:
 - The export names the commit and the patch set, so the session knows the
   state the remarks were written against.
 
+The comments are ordered the way a reader walks the code:
+
+- the commits from the oldest to the newest, which is the order they were
+  written in and the order they will be corrected in;
+- inside a commit, the files in alphabetic order, with the commit message
+  before them, and a remark about the whole change before that, because it
+  belongs to no file;
+- inside a file, top to bottom. Two remarks on one line keep the order they
+  were written in.
+
 ## 10. Configuration
 
 Three layers, the later one wins:

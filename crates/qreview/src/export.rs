@@ -47,7 +47,9 @@ pub async fn change(session: &Session, key: &str) -> Result<String> {
 pub async fn series(session: &Session) -> Result<String> {
     let mut reviewed = Vec::new();
 
-    for summary in &session.series.changes {
+    // The series is walked backwards, newest first. A review reads the other
+    // way: the oldest commit is the one the others were built on.
+    for summary in session.series.changes.iter().rev() {
         // The store is asked, never a count the session cached: a comment
         // written a moment ago must be in the export.
         let file = session.comments(&summary.key, &summary.subject)?;
@@ -77,11 +79,11 @@ pub async fn series(session: &Session) -> Result<String> {
         "I reviewed this series and left the comments below. Please address them."
     );
 
-    for (key, file) in &reviewed {
+    for (key, _) in &reviewed {
         let head = header(session, key).await?;
         let _ = writeln!(out);
         let _ = writeln!(out, "### {} — {}", head.short, head.subject);
-        out.push_str(&body(session, &head.commit, &file.comments).await);
+        out.push_str(&body(session, &head.commit, &head.comments).await);
     }
     Ok(out)
 }
@@ -124,13 +126,47 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
         if count == 1 { "" } else { "s" }
     );
 
+    let mut comments = file.comments;
+    sort(&mut comments);
+
     Ok(Head {
         short: short(&commit).to_owned(),
         commit,
         subject,
         about,
-        comments: file.comments,
+        comments,
     })
+}
+
+/// The order a review reads in.
+///
+/// The files in alphabetic order, the commit message before them, and a
+/// remark about the whole change before that, because it belongs to no
+/// file. Inside a file, top to bottom, and two remarks on one line in the
+/// order they were written.
+fn sort(comments: &mut [Comment]) {
+    comments.sort_by(|a, b| {
+        place_key(a)
+            .cmp(&place_key(b))
+            .then_with(|| line_of(a).cmp(&line_of(b)))
+            .then_with(|| a.created_at.cmp(&b.created_at))
+    });
+}
+
+/// What orders two comments by the place they speak of. The rank comes
+/// first, so the order does not rest on where a slash sits in the alphabet.
+fn place_key(comment: &Comment) -> (u8, &str) {
+    match comment.anchor.as_ref() {
+        None => (0, ""),
+        Some(anchor) if crate::commitmsg::is(&anchor.file) => (1, ""),
+        Some(anchor) => (2, anchor.file.as_str()),
+    }
+}
+
+/// The line a comment sits on. A remark about a whole file has none, and
+/// comes before the lines of that file.
+fn line_of(comment: &Comment) -> Option<usize> {
+    comment.anchor.as_ref().and_then(|anchor| anchor.start_line)
 }
 
 /// The comments of one change, numbered, each under the code it speaks of.
@@ -339,6 +375,141 @@ mod tests {
             .join("\n");
 
         insta::assert_snapshot!(stable);
+    }
+
+    #[tokio::test]
+    async fn the_comments_are_exported_by_file_then_top_to_bottom() {
+        let repo = build_repo(&[
+            commit("first").file("a.c", "one\n"),
+            commit("work: several files")
+                .file("a.c", "one\ntwo\n")
+                .file("b.c", "three\n")
+                .change_id("Iorder"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        // Written out of order on purpose: the second file first, and the
+        // second line of the first file before its first line. The name
+        // orders the files, and the line orders the remarks inside one.
+        for (file, line, body) in [
+            ("b.c", 1, "About b."),
+            ("a.c", 2, "Written first, on line 2 of a."),
+            ("a.c", 1, "Written second, on line 1 of a."),
+        ] {
+            session
+                .add_comment("Iorder", line_comment(file, line, body))
+                .await
+                .unwrap();
+        }
+        session
+            .add_comment(
+                "Iorder",
+                NewComment {
+                    scope: Scope::Change,
+                    file: None,
+                    side: None,
+                    start_line: None,
+                    end_line: None,
+                    start_char: None,
+                    end_char: None,
+                    body: "About the change.".to_owned(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Iorder").await.unwrap();
+        let places: Vec<usize> = [
+            "About the change.",
+            "Written second, on line 1 of a.",
+            "Written first, on line 2 of a.",
+            "About b.",
+        ]
+        .iter()
+        .map(|body| {
+            text.find(body)
+                .unwrap_or_else(|| panic!("{body} is not in\n{text}"))
+        })
+        .collect();
+
+        assert!(
+            places.windows(2).all(|two| two[0] < two[1]),
+            "the order is wrong:\n{text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_commit_message_comes_before_the_files() {
+        let repo = build_repo(&[
+            commit("first").file("a.c", "one\n"),
+            commit("work: a change")
+                .file("a.c", "one\ntwo\n")
+                .change_id("Imsgfirst"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        session
+            .add_comment("Imsgfirst", line_comment("a.c", 1, "About the code."))
+            .await
+            .unwrap();
+        session
+            .add_comment(
+                "Imsgfirst",
+                line_comment("/COMMIT_MSG", 1, "About the subject."),
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Imsgfirst").await.unwrap();
+        let message = text.find("About the subject.").unwrap();
+        let code = text.find("About the code.").unwrap();
+
+        assert!(message < code, "the message reads first:\n{text}");
+    }
+
+    #[tokio::test]
+    async fn a_series_reads_from_the_oldest_commit() {
+        let repo = build_repo(&[
+            commit("base").file("a.txt", "0\n"),
+            commit("first: the older one")
+                .file("a.txt", "1\n")
+                .change_id("Iolder"),
+            commit("second: the newer one")
+                .file("b.txt", "2\n")
+                .change_id("Inewer"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        for key in ["Iolder", "Inewer"] {
+            session
+                .add_comment(
+                    key,
+                    NewComment {
+                        scope: Scope::Change,
+                        file: None,
+                        side: None,
+                        start_line: None,
+                        end_line: None,
+                        start_char: None,
+                        end_char: None,
+                        body: format!("A remark on {key}."),
+                    },
+                )
+                .await
+                .unwrap();
+        }
+
+        let text = series(&session).await.unwrap();
+        let older = text.find("first: the older one").unwrap();
+        let newer = text.find("second: the newer one").unwrap();
+
+        assert!(
+            older < newer,
+            "the series is walked backwards, the review is not:\n{text}"
+        );
     }
 
     #[tokio::test]
