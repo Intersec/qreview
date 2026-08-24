@@ -50,14 +50,25 @@ function opening(row: Row | null): boolean {
   return row !== null && writing.value.has(key(row));
 }
 
-function openBox(at: string) {
+/// What an open box covers, when it was opened on a range.
+///
+/// The box keeps its own copy. What the reader picks after that belongs to
+/// the next comment, and clicking another line must not turn this one into
+/// a comment on a single line.
+const covered = reactive(new Map<string, Picked>());
+
+function openBox(at: string, range?: Picked) {
   writing.value = new Set(writing.value).add(at);
+  if (range) {
+    covered.set(at, { ...range });
+  }
 }
 
 function closeBox(at: string) {
   const rest = new Set(writing.value);
   rest.delete(at);
   writing.value = rest;
+  covered.delete(at);
 }
 
 /// What a comment would cover: one line, several, or a part of a line.
@@ -266,6 +277,7 @@ function span(comment: Comment): { side: Side; start: number; end: number } | nu
 /// comments of this file cover.
 const drawn = computed<Picked[]>(() => {
   const out: Picked[] = picked.value ? [picked.value] : [];
+  out.push(...covered.values());
 
   for (const comment of props.comments) {
     const found = span(comment);
@@ -441,7 +453,7 @@ function writeOnPicked() {
     return;
   }
   offer.value = null;
-  openBox(`${picked.value.side}:${picked.value.end}`);
+  openBox(`${picked.value.side}:${picked.value.end}`, picked.value);
   window.getSelection()?.removeAllRanges();
 }
 
@@ -508,17 +520,28 @@ function charOffset(cell: HTMLElement, node: Node, offset: number): number {
 
 /// A selection in the code offers to become a comment.
 function onSelect(event: MouseEvent) {
-  // A box is open on what was picked. Saving it is a click inside the table,
-  // and that click must not take the range away before the box uses it.
+  // A click inside a comment row is not a click on the code. Saving a box
+  // is one of those, and it must change nothing under it.
   const from = event.target as HTMLElement | null;
-  if (writing.value.size > 0 || from?.closest('tr.talk, .offer')) {
+  if (from?.closest('tr.talk, .offer')) {
     return;
   }
 
   const found = fromSelection();
-  picked.value = found;
-  origin.value = found?.start ?? null;
-  offer.value = found ? { x: event.clientX, y: event.clientY } : null;
+  if (found) {
+    picked.value = found;
+    origin.value = found.start;
+    offer.value = { x: event.clientX, y: event.clientY };
+    return;
+  }
+
+  // A plain click puts the keyboard on the line, so `c` writes there. No
+  // scrolling: the reader is looking at the line already.
+  clearPicked();
+  const cell = cellOf(event.target as Node);
+  if (cell) {
+    cursor.value = `${cell.side}:${cell.line}`;
+  }
 }
 
 function clearPicked() {
@@ -545,8 +568,7 @@ function write(row: Row, body: string) {
   if (line === null) {
     return;
   }
-  const range =
-    picked.value?.side === sideOf(row) && picked.value.end === line ? picked.value : null;
+  const range = covered.get(key(row)) ?? null;
 
   emit('add', {
     scope: range ? 'range' : 'line',
@@ -589,8 +611,8 @@ function draftAt(row: Row): string {
 
 /// What the box says it is about.
 function boxLabel(row: Row): string {
-  const range = picked.value;
-  if (!range || range.side !== sideOf(row) || range.end !== lineOf(row)) {
+  const range = covered.get(key(row));
+  if (!range) {
     return 'A remark about this line';
   }
   if (range.end > range.start) {

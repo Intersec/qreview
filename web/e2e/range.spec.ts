@@ -94,6 +94,34 @@ test('the keyboard picks a range with v, and c writes on it', async ({ page }) =
   await expect(page.getByText('Three lines from the keyboard.')).toBeVisible();
 });
 
+test('a click puts the keyboard on the line, and c writes there', async ({ page }) => {
+  await page.locator('td.code-cell[data-line="7"]').click();
+  await expect(page.locator('tr.row-cursor')).toContainText('line 7');
+
+  await page.keyboard.press('c');
+  await page.getByRole('textbox').first().fill('About line 7.');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  // The card sits under line 7, not under the line the keyboard started on.
+  const talk = page.locator('tr.talk', { hasText: 'About line 7.' });
+  await expect(talk).toHaveCount(1);
+  const before = page.locator('td.code-cell[data-line="7"]');
+  await expect(before).toBeVisible();
+});
+
+test('a click while a box is open leaves the range of that box alone', async ({ page }) => {
+  await drag(page, 5, 8);
+  await page.getByRole('button', { name: /Comment on 4 lines/ }).click();
+
+  // The reader looks at another line before finishing the remark.
+  await page.locator('td.code-cell[data-line="12"]').click();
+  await page.getByRole('textbox').first().fill('Still about four lines.');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await expect(page.getByText('Still about four lines.')).toBeVisible();
+  await expect(page.locator('td.code-cell:has(.in-range)')).toHaveCount(4);
+});
+
 test('escape drops a range that is being picked', async ({ page }) => {
   await page.keyboard.press('j');
   await page.keyboard.press('v');
