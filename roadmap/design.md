@@ -543,6 +543,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/changes/:key/diff?ps=2&base=parent&file=...` | The hunks of one file |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
+| `GET /api/comments` | Every comment of the session, in reading order |
 | `GET /api/changes/:key/comments` | Every comment of the change |
 | `POST /api/changes/:key/comments` | Create a comment or a reply |
 | `PATCH /api/changes/:key/comments/:id` | Change the body, or resolve the thread |
@@ -562,6 +563,18 @@ and on a merge `automerge` (its default), `parent1` or `parent2`.
 
 One file at a time on the diff route. A change with 200 files must not build
 200 diffs to show the first one.
+
+### 8.1 One list, four counts
+
+`GET /api/comments` answers with the comments of every change, in the order
+of section 9: the oldest commit first, and inside it the order of the
+export. The interface counts from that one answer, and from nothing else:
+the two copy buttons, the changes in the series, the files of a change, and
+the pane that lists the remarks. Four numbers computed four ways are four
+numbers that end up disagreeing.
+
+It also means a count is right the moment a remark is written, which a
+number the server put in the file list would not be.
 
 ## 9. Export for a Claude session
 

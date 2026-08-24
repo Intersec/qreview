@@ -121,6 +121,16 @@ pub struct FileEntry {
     pub removed: usize,
 }
 
+/// The comments of one change, in the order a review reads them.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeComments {
+    pub key: String,
+    pub subject: String,
+    pub commit: String,
+    pub comments: Vec<crate::store::model::Comment>,
+}
+
 /// One file of a change, with its content.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

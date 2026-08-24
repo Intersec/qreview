@@ -73,6 +73,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/files", get(files))
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/mergelist", get(mergelist))
+        .route("/api/comments", get(all_comments))
         .route("/api/export", get(export))
         .route("/api/config", get(config).put(save_config))
         .route("/api/changes/{key}/lines", get(lines))
@@ -504,6 +505,19 @@ async fn comments(
     let placed = anchor::place_all(&session.git, &file.comments, &rev).await;
 
     Ok(Json(Review { file, placed }))
+}
+
+/// Every comment of the session, in the order a review reads them.
+///
+/// One answer for the counts on the buttons, on the changes and on the
+/// files, and for the pane that lists them. Counting them four ways from
+/// four places is how four numbers end up disagreeing.
+async fn all_comments(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::model::ChangeComments>>, ApiError> {
+    let session = state.session.read().await;
+
+    Ok(Json(session.all_comments()))
 }
 
 async fn add_comment(
@@ -1579,6 +1593,50 @@ mod tests {
         let placed = &body["placed"][0];
         assert_eq!(placed["line"], 3, "the comment is still on its line");
         assert_eq!(placed["lost"], false);
+    }
+
+    #[tokio::test]
+    async fn the_session_answers_with_every_comment_it_holds() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        for (line, body) in [(2, "The second line."), (1, "The first line.")] {
+            let comment = serde_json::json!({
+                "scope": "line",
+                "file": "src/a.blk",
+                "side": "new",
+                "startLine": line,
+                "body": body,
+            });
+            let request = Request::builder()
+                .method("POST")
+                .uri("/api/changes/I8f3ac21/comments")
+                .header(header::COOKIE, format!("{}={TOKEN}", auth::COOKIE))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(comment.to_string()))
+                .unwrap();
+            let (status, _) = json(server.clone(), request).await;
+            assert_eq!(status, StatusCode::CREATED);
+        }
+
+        let (status, body) = json(server.clone(), get_with_cookie("/api/comments", TOKEN)).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body[0]["key"], "I8f3ac21");
+        assert_eq!(body[0]["subject"], "second: go on");
+        // The order of the export, not the order they were written in.
+        assert_eq!(body[0]["comments"][0]["body"], "The first line.");
+        assert_eq!(body[0]["comments"][1]["body"], "The second line.");
+
+        // The file list is unchanged by it: the counts per file are the
+        // browser's business, out of this one answer.
+        let (_, files) = json(
+            server,
+            get_with_cookie("/api/changes/I8f3ac21/files", TOKEN),
+        )
+        .await;
+        assert_eq!(files[0]["path"], "/COMMIT_MSG");
+        assert_eq!(files[1]["path"], "src/a.blk");
     }
 
     #[tokio::test]

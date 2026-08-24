@@ -225,6 +225,32 @@ impl Session {
         Ok(entries)
     }
 
+    /// Every comment of the session, change by change, in the order a review
+    /// reads them: the oldest commit first, and inside it the order of the
+    /// export.
+    pub fn all_comments(&self) -> Vec<crate::model::ChangeComments> {
+        let mut out = Vec::new();
+
+        for change in self.series.changes.iter().rev() {
+            let Ok(file) = self.comments(&change.key, &change.subject) else {
+                continue;
+            };
+            if file.comments.is_empty() {
+                continue;
+            }
+            let mut comments = file.comments;
+            comments::in_reading_order(&mut comments);
+
+            out.push(crate::model::ChangeComments {
+                key: change.key.clone(),
+                subject: change.subject.clone(),
+                commit: change.commit.clone(),
+                comments,
+            });
+        }
+        out
+    }
+
     /// The message the reviewed one is read against.
     ///
     /// Only another patch set carries one. The parent of a change carries

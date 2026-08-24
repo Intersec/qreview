@@ -7,6 +7,7 @@ use std::fmt::Write;
 
 use anyhow::Result;
 
+use crate::comments;
 use crate::session::Session;
 use crate::store::model::{Comment, Scope, Side};
 
@@ -127,7 +128,7 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
     );
 
     let mut comments = file.comments;
-    sort(&mut comments);
+    comments::in_reading_order(&mut comments);
 
     Ok(Head {
         short: short(&commit).to_owned(),
@@ -136,37 +137,6 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
         about,
         comments,
     })
-}
-
-/// The order a review reads in.
-///
-/// The files in alphabetic order, the commit message before them, and a
-/// remark about the whole change before that, because it belongs to no
-/// file. Inside a file, top to bottom, and two remarks on one line in the
-/// order they were written.
-fn sort(comments: &mut [Comment]) {
-    comments.sort_by(|a, b| {
-        place_key(a)
-            .cmp(&place_key(b))
-            .then_with(|| line_of(a).cmp(&line_of(b)))
-            .then_with(|| a.created_at.cmp(&b.created_at))
-    });
-}
-
-/// What orders two comments by the place they speak of. The rank comes
-/// first, so the order does not rest on where a slash sits in the alphabet.
-fn place_key(comment: &Comment) -> (u8, &str) {
-    match comment.anchor.as_ref() {
-        None => (0, ""),
-        Some(anchor) if crate::commitmsg::is(&anchor.file) => (1, ""),
-        Some(anchor) => (2, anchor.file.as_str()),
-    }
-}
-
-/// The line a comment sits on. A remark about a whole file has none, and
-/// comes before the lines of that file.
-fn line_of(comment: &Comment) -> Option<usize> {
-    comment.anchor.as_ref().and_then(|anchor| anchor.start_line)
 }
 
 /// The comments of one change, numbered, each under the code it speaks of.
