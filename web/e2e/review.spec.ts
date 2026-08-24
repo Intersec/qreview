@@ -98,6 +98,19 @@ test('c writes on the line the keyboard is on', async ({ page }) => {
   await expect(page.getByText('Written from the keyboard.')).toBeVisible();
 });
 
+test('the slash key moves to the file filter', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await expect(page.locator('.change-bar')).toContainText('File 1 of 5');
+
+  await page.keyboard.press('/');
+  await expect(page.locator('.file-filter')).toBeFocused();
+
+  // And it filters, so the key led somewhere that does something.
+  await page.keyboard.type('doc');
+  await expect(page.locator('.file-row')).toHaveCount(1);
+  await expect(page.locator('.file-row')).toContainText('doc.h');
+});
+
 test('the question mark lists the keys', async ({ page }) => {
   await page.keyboard.press('?');
 

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import BoundaryCard from './BoundaryCard.vue';
 import { group } from '@/diff/tree';
+import LoadingVeil from './LoadingVeil.vue';
 import type { ChangeSummary, FileEntry, Series } from '@/api/types';
 
 const props = defineProps<{
@@ -10,6 +11,8 @@ const props = defineProps<{
   files: FileEntry[];
   filePath: string | null;
   busy: boolean;
+  /// True while the file list of the open change is being read.
+  loadingFiles: boolean;
 }>();
 const emit = defineEmits<{
   openChange: [key: string];
@@ -20,7 +23,9 @@ const emit = defineEmits<{
 }>();
 
 const filter = ref('');
-const box = ref<HTMLInputElement | null>(null);
+// A ref inside a `v-for` is a list, even when one element carries it. Only
+// the open change draws the filter, so the list holds one input at most.
+const boxes = ref<HTMLInputElement[]>([]);
 
 const MARK: Record<FileEntry['status'], string> = {
   added: 'A',
@@ -48,7 +53,7 @@ function short(change: ChangeSummary): string {
   return change.commit.slice(0, 8);
 }
 
-defineExpose({ focusFilter: () => box.value?.focus() });
+defineExpose({ focusFilter: () => boxes.value[0]?.focus() });
 </script>
 
 <template>
@@ -95,9 +100,11 @@ defineExpose({ focusFilter: () => box.value?.focus() });
 
         <!-- The files of the change being read, and of no other. -->
         <div v-if="change.key === selected" class="files">
+          <!-- `/` moves here, so the box is there whenever it can filter
+               anything. One file needs no filter. -->
           <input
-            v-if="files.length > 6"
-            ref="box"
+            v-if="files.length > 1"
+            ref="boxes"
             v-model="filter"
             type="search"
             placeholder="Filter the files"
@@ -128,6 +135,7 @@ defineExpose({ focusFilter: () => box.value?.focus() });
             </button>
           </template>
           <p v-if="shown.length === 0" class="quiet pad">No file matches.</p>
+          <LoadingVeil :when="loadingFiles" label="Reading the files" />
         </div>
       </li>
     </ul>

@@ -584,6 +584,21 @@ tr.talk td {
   border-top: 1px solid var(--edge-soft);
   border-bottom: 1px solid var(--edge-soft);
 }
+/*
+ * Where the keyboard is.
+ *
+ * Nothing said it before, so `/` looked like it did nothing: it moves to
+ * the filter, and the filter looked the same focused as not.
+ */
+:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 1px;
+}
+.file-filter:focus {
+  border-color: var(--action);
+  outline: 2px solid var(--action);
+  outline-offset: -1px;
+}
 .file-filter {
   width: calc(100% - 16px);
   margin: 4px 8px;
