@@ -133,13 +133,16 @@ fn found(id: String, line: usize, span: usize, moved: bool) -> Placed {
 /// between two candidates, and the one nearest the old position breaks a tie.
 pub fn best_match(hash: &str, context: &[String], fresh: &[&str], was_at: usize) -> Option<usize> {
     let mut best: Option<(f32, usize)> = None;
+    // The lines the store kept above the anchored one. Fewer than the
+    // context asks for when the anchor sat near the top of the file.
+    let above = was_at.saturating_sub(1).min(crate::comments::CONTEXT);
 
     for (index, line) in fresh.iter().enumerate() {
         if hash_line(line) != hash {
             continue;
         }
         let at = index + 1;
-        let score = score(context, fresh, at);
+        let score = score(context, fresh, at, above);
 
         let better = match best {
             None => true,
@@ -158,20 +161,20 @@ pub fn best_match(hash: &str, context: &[String], fresh: &[&str], was_at: usize)
 
 /// How much of the stored context is still around the candidate line.
 ///
-/// The stored context is the lines around the anchor, the anchored one in
-/// the middle. It is compared position by position.
-pub fn score(context: &[String], fresh: &[&str], at: usize) -> f32 {
+/// `above` is how many of the stored lines sat above the anchored one. It is
+/// not always half of them: a line near the top of a file has fewer lines
+/// above it than the context asks for. Reading the middle there shifts every
+/// comparison by one or two lines, nothing matches, and a comment that never
+/// moved is declared lost.
+pub fn score(context: &[String], fresh: &[&str], at: usize, above: usize) -> f32 {
     if context.is_empty() {
         return 1.0;
     }
 
-    // The anchored line sits in the middle of what was stored, unless it was
-    // near the top of the file, where there was less room above it.
-    let middle = context.len() / 2;
     let mut matched = 0;
 
     for (offset, stored) in context.iter().enumerate() {
-        let line = at as isize + offset as isize - middle as isize;
+        let line = at as isize + offset as isize - above as isize;
         let Some(index) = usize::try_from(line - 1).ok() else {
             continue;
         };
@@ -264,16 +267,36 @@ mod tests {
     #[test]
     fn a_score_of_a_whole_match_is_one() {
         let file = lines("one\ntwo\nthree\n");
-        assert_eq!(score(&context(&["one", "two", "three"]), &file, 2), 1.0);
+        assert_eq!(score(&context(&["one", "two", "three"]), &file, 2, 1), 1.0);
     }
 
     #[test]
     fn a_score_with_nothing_around_it_is_zero() {
         let file = lines("x\ntwo\ny\n");
         assert_eq!(
-            score(&context(&["one", "two", "three"]), &file, 2),
+            score(&context(&["one", "two", "three"]), &file, 2, 1),
             1.0 / 3.0
         );
+    }
+
+    #[test]
+    fn the_first_line_of_a_file_is_scored_where_it_is() {
+        // Nothing sits above line 1, so the store kept nothing above it.
+        // Reading the middle of the three would compare every line with the
+        // one before it, and a line that never moved would look gone.
+        let file = lines("one\ntwo\nthree\n");
+        let stored = context(&["one", "two", "three"]);
+
+        assert_eq!(score(&stored, &file, 1, 0), 1.0);
+        assert_eq!(best_match(&hash_line("one"), &stored, &file, 1), Some(1));
+    }
+
+    #[test]
+    fn the_first_line_is_found_again_after_lines_are_put_above_it() {
+        let file = lines("new\nlines\none\ntwo\nthree\n");
+        let stored = context(&["one", "two", "three"]);
+
+        assert_eq!(best_match(&hash_line("one"), &stored, &file, 1), Some(3));
     }
 
     #[tokio::test]

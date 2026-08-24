@@ -15,7 +15,7 @@ use crate::store::Store;
 use crate::store::model::{Anchor, ChangeFile, Comment, Scope, Side};
 
 /// How many lines above and below the anchor are kept.
-const CONTEXT: usize = 3;
+pub const CONTEXT: usize = 3;
 
 /// What the interface sends to write a comment.
 #[derive(Clone, Debug, Deserialize)]
@@ -161,6 +161,40 @@ pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
     store.save(&file)?;
 
     Ok(before - file.comments.len())
+}
+
+/// Put the comments of one change in the order a review reads them.
+///
+/// The files in alphabetic order, the commit message before them, and a
+/// remark about the whole change before that, because it belongs to no
+/// file. Inside a file, top to bottom, and two remarks on one line in the
+/// order they were written.
+///
+/// The export reads this order, and so does the pane that lists what the
+/// session holds. One order, said once.
+pub fn in_reading_order(comments: &mut [Comment]) {
+    comments.sort_by(|a, b| {
+        place_key(a)
+            .cmp(&place_key(b))
+            .then_with(|| line_of(a).cmp(&line_of(b)))
+            .then_with(|| a.created_at.cmp(&b.created_at))
+    });
+}
+
+/// What orders two comments by the place they speak of. The rank comes
+/// first, so the order does not rest on where a slash sits in the alphabet.
+fn place_key(comment: &Comment) -> (u8, &str) {
+    match comment.anchor.as_ref() {
+        None => (0, ""),
+        Some(anchor) if crate::commitmsg::is(&anchor.file) => (1, ""),
+        Some(anchor) => (2, anchor.file.as_str()),
+    }
+}
+
+/// The line a comment sits on. A remark about a whole file has none, and
+/// comes before the lines of that file.
+fn line_of(comment: &Comment) -> Option<usize> {
+    comment.anchor.as_ref().and_then(|anchor| anchor.start_line)
 }
 
 /// Where the comment sits, with enough of the file around it to find the
