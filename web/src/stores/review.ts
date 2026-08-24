@@ -5,6 +5,7 @@ import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
 import type {
+  ChangeComments,
   Comment,
   Config,
   EditComment,
@@ -67,9 +68,39 @@ export const useReview = defineStore('review', () => {
   const mergeList = ref<MergeListItem[]>([]);
 
   /// True while the reader is on the merge under the boundary.
+  /// Every comment of the session, change by change, in reading order.
+  const written = ref<ChangeComments[]>([]);
+
   const onMerge = computed(
     () => changeKey.value !== null && changeKey.value === series.value?.boundary.commit,
   );
+  /// How many comments the session holds, and how many each change holds.
+  const total = computed(() =>
+    written.value.reduce((sum, change) => sum + change.comments.length, 0),
+  );
+  /// How many comments sit in each file of the change being read. Out of
+  /// the same list as every other count on the screen.
+  const inFile = computed(() => {
+    const counts = new Map<string, number>();
+    const here = written.value.find((change) => change.key === changeKey.value);
+
+    for (const comment of here?.comments ?? []) {
+      const file = comment.anchor?.file;
+      if (file) {
+        counts.set(file, (counts.get(file) ?? 0) + 1);
+      }
+    }
+    return counts;
+  });
+
+  const countOf = computed(() => {
+    const counts = new Map<string, number>();
+    for (const change of written.value) {
+      counts.set(change.key, change.comments.length);
+    }
+    return counts;
+  });
+
   const loadingFiles = computed(() => filesLoading.value > 0);
   const loadingDiff = computed(() => diffLoading.value > 0);
 
@@ -104,6 +135,8 @@ export const useReview = defineStore('review', () => {
       version.value = body.version;
       series.value = body.series;
       config.value = body.config;
+
+      void readWritten();
 
       const first = body.series.changes[0];
       if (first) {
@@ -296,6 +329,17 @@ export const useReview = defineStore('review', () => {
     if (key) {
       review.value = await api.comments(key, patchSet.value);
     }
+    await readWritten();
+  }
+
+  /// Read what the whole session holds. Every count on the screen comes
+  /// from this one list, so no two of them can disagree.
+  async function readWritten() {
+    try {
+      written.value = await api.allComments();
+    } catch {
+      // A count is not worth an error in the reader's face.
+    }
   }
 
   async function addComment(comment: NewComment) {
@@ -398,6 +442,10 @@ export const useReview = defineStore('review', () => {
     diff,
     error,
     busy,
+    written,
+    total,
+    countOf,
+    inFile,
     loadingFiles,
     loadingDiff,
     mergeBase,

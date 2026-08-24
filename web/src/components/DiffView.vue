@@ -457,7 +457,17 @@ function writeOnPicked() {
   window.getSelection()?.removeAllRanges();
 }
 
-defineExpose({ moveLine, moveHunk, commentHere, startRange, clearPicked });
+/// Put the keyboard on one line and bring it into view. This is how the
+/// list of comments arrives at the place a remark speaks of.
+function revealLine(side: Side, line: number) {
+  const row = walkable.value.find((r) => sideOf(r) === side && lineOf(r) === line);
+  if (row) {
+    clearPicked();
+    place(row);
+  }
+}
+
+defineExpose({ moveLine, moveHunk, commentHere, startRange, clearPicked, revealLine });
 
 /// What the reader selected with the mouse, as lines and characters.
 ///

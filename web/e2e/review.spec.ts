@@ -1,7 +1,7 @@
 // Reading a series, and writing on it.
 
 import { expect, test } from '@playwright/test';
-import { openChange, openFile, useSplit } from './act.ts';
+import { card, openChange, openFile, useSplit } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -42,12 +42,12 @@ test('a comment on a line comes back after a reload', async ({ page }) => {
   await page.getByRole('textbox').first().fill('This loop never ends.');
   await page.getByRole('button', { name: 'Save' }).click();
 
-  await expect(page.getByText('This loop never ends.')).toBeVisible();
+  await expect(card(page, 'This loop never ends.')).toBeVisible();
 
   await page.reload();
   await openChange(page, /net: retry the read/);
   await openFile(page, 'net.blk');
-  await expect(page.getByText('This loop never ends.')).toBeVisible();
+  await expect(card(page, 'This loop never ends.')).toBeVisible();
 });
 
 test('the keyboard walks the files the way Gerrit does', async ({ page }) => {
@@ -95,7 +95,7 @@ test('c writes on the line the keyboard is on', async ({ page }) => {
   await expect(page.getByRole('textbox')).toHaveCount(1);
   await page.getByRole('textbox').fill('Written from the keyboard.');
   await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('Written from the keyboard.')).toBeVisible();
+  await expect(card(page, 'Written from the keyboard.')).toBeVisible();
 });
 
 test('the slash key moves to the file filter', async ({ page }) => {
@@ -220,7 +220,7 @@ test('a comment can be written on a line the diff did not carry', async ({ page 
   await page.getByRole('textbox').first().fill('Context lines take comments too.');
   await page.getByRole('button', { name: 'Save' }).click();
 
-  await expect(page.getByText('Context lines take comments too.')).toBeVisible();
+  await expect(card(page, 'Context lines take comments too.')).toBeVisible();
 });
 
 test('what is typed and not saved comes back with the file', async ({ page }) => {

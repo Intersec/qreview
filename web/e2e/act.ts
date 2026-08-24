@@ -23,6 +23,14 @@ export async function useSplit(page: Page) {
   await expect(page.getByRole('button', { name: 'Unified' })).toBeVisible();
 }
 
+/// A saved comment, as the diff shows it.
+///
+/// The text of a remark is on the screen twice: in its card, and in the list
+/// of what the session holds. A test about the card says which one it means.
+export function card(page: Page, body: string) {
+  return page.getByRole('article').filter({ hasText: body });
+}
+
 export async function openFile(page: Page, name: string) {
   const row = page.locator('.file-row', { hasText: name });
   await row.first().waitFor();

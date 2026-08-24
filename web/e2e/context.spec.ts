@@ -1,7 +1,7 @@
 // The lines a diff does not carry, opened from the bar between two hunks.
 
 import { expect, test } from '@playwright/test';
-import { openChange, openFile, useSplit } from './act.ts';
+import { card, openChange, openFile, useSplit } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -107,6 +107,6 @@ for (const [button, line] of [
     await expect(page.getByRole('textbox')).toHaveCount(1);
     await page.getByRole('textbox').fill(`A remark on ${line}.`);
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText(`A remark on ${line}.`)).toBeVisible();
+    await expect(card(page, `A remark on ${line}.`)).toBeVisible();
   });
 }

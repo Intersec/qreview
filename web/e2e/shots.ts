@@ -91,6 +91,22 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.getByRole('textbox').first().fill('This loop never ends when the socket closes.');
   await page.screenshot({ path: join(OUT, `${scheme}-comment.png`) });
 
+  // The list of what the session holds, with a remark in two changes. The
+  // two themes share one server, so the second pass finds the remarks of
+  // the first: the wait is on a count of rows, never on a total.
+  await page.getByRole('button', { name: 'Save' }).click();
+  await page.locator('.list-row').first().waitFor();
+
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+  await page.locator('td.gutter-comment').nth(3).click();
+  const box = page.getByRole('textbox').first();
+  await box.waitFor();
+  await box.fill('This line is the one to read twice.');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await page.locator('.list-row').nth(1).waitFor();
+  await page.screenshot({ path: join(OUT, `${scheme}-comment-list.png`) });
+
   if (complaints.length) {
     console.log(`${scheme}: the page complained\n  ${complaints.join('\n  ')}`);
   }

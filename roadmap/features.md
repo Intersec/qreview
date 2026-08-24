@@ -104,6 +104,10 @@ left is in [`plan.md`](./plan.md).
 - ✅ Storage under `~/.local/state/qreview`, one file per change
 - ✅ An atomic write, and a read that survives a corrupt file
 - ✅ Comments keyed by `Change-Id`, so an amend keeps them
+- ✅ The count of what the session holds, on the copy buttons, on every
+  change of the series and on every file of a change (v0.5.0)
+- ✅ A pane that lists the remarks of the session, the change being read
+  first, and opens the place a row names (v0.5.0)
 
 ## Patch sets
 

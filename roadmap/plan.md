@@ -211,6 +211,14 @@ surprised by anything.*
 - [x] The export ordered: the oldest commit first, the files in alphabetic
       order with the commit message first, and each file top to bottom
 
+## M12 — Seeing what the session holds
+
+- [x] The count of comments on the two copy buttons, on each change of the
+      series, and on each file of a change
+- [x] A pane that lists the remarks: the change being read first, then the
+      rest in the order of the export
+- [x] A row of that pane opens the place it names
+
 ## After that
 
 1. A rebase-aware diff between two patch sets.

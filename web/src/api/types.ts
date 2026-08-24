@@ -229,6 +229,14 @@ export interface Placed {
   lost: boolean;
 }
 
+/** The comments of one change, in the order a review reads them. */
+export interface ChangeComments {
+  key: string;
+  subject: string;
+  commit: string;
+  comments: Comment[];
+}
+
 export interface Review extends ChangeFile {
   placed: Placed[];
 }

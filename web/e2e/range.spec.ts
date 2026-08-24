@@ -1,7 +1,7 @@
 // A comment on more than one line, and on a part of a line.
 
 import { expect, test, type Page } from '@playwright/test';
-import { openChange, openFile } from './act.ts';
+import { card, openChange, openFile } from './act.ts';
 import { start, type Running } from './server.ts';
 
 // A server for each test, not one for the suite. Every test writes a
@@ -53,13 +53,13 @@ test('the range comes back after a reload, over the same lines', async ({ page }
   await page.getByRole('button', { name: /Comment on 3 lines/ }).click();
   await page.getByRole('textbox').first().fill('Three lines.');
   await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('Three lines.')).toBeVisible();
+  await expect(card(page, 'Three lines.')).toBeVisible();
 
   await page.reload();
   await openChange(page, /long: touch two places/);
   await openFile(page, 'long.c');
 
-  await expect(page.getByText('Three lines.')).toBeVisible();
+  await expect(card(page, 'Three lines.')).toBeVisible();
   const marked = page.locator('td.code-cell:has(.in-range)');
   await expect(marked).toHaveCount(3);
 });
@@ -72,7 +72,7 @@ test('a part of one line can carry a comment of its own', async ({ page }) => {
   await page.getByRole('textbox').first().fill('This word is wrong.');
   await page.getByRole('button', { name: 'Save' }).click();
 
-  await expect(page.getByText('This word is wrong.')).toBeVisible();
+  await expect(card(page, 'This word is wrong.')).toBeVisible();
   // The mark covers a part of the line, not the whole of it.
   const cell = page.locator('td.code-cell[data-line="6"]').first();
   await expect(cell.locator('.in-range')).toHaveCount(1);
@@ -91,7 +91,7 @@ test('the keyboard picks a range with v, and c writes on it', async ({ page }) =
   await page.getByRole('textbox').first().fill('Three lines from the keyboard.');
   await page.getByRole('button', { name: 'Save' }).click();
 
-  await expect(page.getByText('Three lines from the keyboard.')).toBeVisible();
+  await expect(card(page, 'Three lines from the keyboard.')).toBeVisible();
 });
 
 test('a click puts the keyboard on the line, and c writes there', async ({ page }) => {
@@ -118,7 +118,7 @@ test('a click while a box is open leaves the range of that box alone', async ({ 
   await page.getByRole('textbox').first().fill('Still about four lines.');
   await page.getByRole('button', { name: 'Save' }).click();
 
-  await expect(page.getByText('Still about four lines.')).toBeVisible();
+  await expect(card(page, 'Still about four lines.')).toBeVisible();
   await expect(page.locator('td.code-cell:has(.in-range)')).toHaveCount(4);
 });
 

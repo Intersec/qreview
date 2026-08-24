@@ -1,7 +1,7 @@
 // The commit message, reviewed like a file of the change.
 
 import { expect, test } from '@playwright/test';
-import { openChange, openFile } from './act.ts';
+import { card, openChange, openFile } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -41,12 +41,12 @@ test('a comment on the message comes back after a reload', async ({ page }) => {
   await page.locator('td.gutter-comment').first().click();
   await page.getByRole('textbox').first().fill('The subject says what, not why.');
   await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('The subject says what, not why.')).toBeVisible();
+  await expect(card(page, 'The subject says what, not why.')).toBeVisible();
 
   await page.reload();
   await openChange(page, /docs: rename the document/);
   await openFile(page, 'Commit message');
-  await expect(page.getByText('The subject says what, not why.')).toBeVisible();
+  await expect(card(page, 'The subject says what, not why.')).toBeVisible();
 });
 
 test('a message that did not change between two versions is still readable', async ({ page }) => {

@@ -2,6 +2,7 @@
 // load left behind, so nothing here carries it.
 
 import type {
+  ChangeComments,
   ChangeSummary,
   Config,
   Comment,
@@ -122,6 +123,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reviewed }),
     }),
+
+  /// Every comment of the session, in the order a review reads them.
+  allComments: () => call<ChangeComments[]>('/api/comments'),
 
   comments: (key: string, ps?: number) =>
     call<Review>(`/api/changes/${encodeURIComponent(key)}/comments${query({ ps: num(ps) })}`),

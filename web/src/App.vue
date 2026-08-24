@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
@@ -10,6 +10,7 @@ import MergeBar from './components/MergeBar.vue';
 import PatchSetBar from './components/PatchSetBar.vue';
 import SidePane from './components/SidePane.vue';
 import { useReview } from './stores/review';
+import type { Side } from './api/types';
 
 const review = useReview();
 const {
@@ -22,6 +23,10 @@ const {
   busy,
   loadingFiles,
   loadingDiff,
+  written,
+  total,
+  countOf,
+  inFile,
   version,
   onMerge,
   mergeBase,
@@ -36,6 +41,8 @@ const {
 } = storeToRefs(review);
 
 const comments = computed(() => review.comments());
+/// How many comments the change on the screen carries.
+const here = computed(() => (changeKey.value ? (countOf.value.get(changeKey.value) ?? 0) : 0));
 /// The two settings the browser owns rather than the server.
 const codeStyle = computed(() => ({
   '--code-size': `${config.value?.diff.fontSize ?? 12}px`,
@@ -45,6 +52,21 @@ const codeStyle = computed(() => ({
 const change = computed(() => series.value?.changes.find((c) => c.key === changeKey.value) ?? null);
 
 /// Move to the file before or after the one being read.
+/// Open the place a comment speaks of: the change, then the file, then the
+/// line the keyboard lands on.
+async function goToComment(key: string, file: string, side: Side, line: number | null) {
+  if (key !== changeKey.value) {
+    await review.openChange(key);
+  }
+  if (file !== '' && file !== filePath.value) {
+    await review.openFile(file);
+  }
+  if (line !== null) {
+    await nextTick();
+    diffView.value?.revealLine(side, line);
+  }
+}
+
 function stepFile(by: number) {
   const paths = files.value.filter((f) => !f.binary).map((f) => f.path);
   const at = filePath.value === null ? -1 : paths.indexOf(filePath.value);
@@ -188,11 +210,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       <p v-if="series" class="repo">{{ series.repo.remote ?? series.repo.root }}</p>
 
       <span class="bar-actions">
-        <button type="button" class="chip" title="This change, as Markdown" @click="copy('change')">
-          Copy this change
+        <button
+          type="button"
+          class="chip"
+          title="This change, as Markdown"
+          :disabled="here === 0"
+          @click="copy('change')"
+        >
+          Copy this change<span v-if="here" class="count"> · {{ here }}</span>
         </button>
-        <button type="button" class="chip" title="The whole series" @click="copy('series')">
-          Copy the series
+        <button
+          type="button"
+          class="chip"
+          title="The whole series"
+          :disabled="total === 0"
+          @click="copy('series')"
+        >
+          Copy the series<span v-if="total" class="count"> · {{ total }}</span>
         </button>
         <button type="button" class="chip" title="Keyboard shortcuts ( ? )" @click="helping = true">
           ?
@@ -217,8 +251,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         :file-path="filePath"
         :busy="busy"
         :loading-files="loadingFiles"
+        :counts="countOf"
+        :written="written"
+        :in-file="inFile"
         @open-change="review.openChange"
         @open-file="review.openFile"
+        @go="goToComment"
         @mark="review.markChange"
         @more="review.loadMore(5)"
         @review-merge="review.openMerge()"
