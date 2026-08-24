@@ -12,6 +12,32 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.4.2]
+
+### Added
+
+- **The Change-Id opens the change on Gerrit**, when the remote names a
+  server.
+- **A read that takes a moment says so.** The file list and the diff each
+  carry a spinner while they are being read, so a slow repository no longer
+  looks like a frozen one. It appears only when the wait is long enough to
+  notice.
+
+### Changed
+
+- The README opens with how to install qreview, and the link it names always
+  holds the latest release.
+- A release now carries `qreview-<tag>-linux-x86_64.xz` rather than the bare
+  binary: 2.5M instead of 6.4M. Unpack it with
+  `curl -L <link> | xz -d > ~/.local/bin/qreview`.
+
+### Fixed
+
+- The Change-Id in the change bar is shown whole. It was cut short while the
+  bar had room for it.
+- The `/` key reaches the file filter. It moved nowhere before, and the box
+  it moves to now says that the keyboard is in it. A change with more than
+  one file always offers the box.
 ## [0.4.1]
 
 ### Fixed
