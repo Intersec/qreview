@@ -7,20 +7,20 @@ One binary, no runtime to install, nothing leaves your machine.
 
 ## Install
 
-This link always holds the latest release. The binary is static: it needs
-`git` on the PATH and nothing else.
+Open the [releases page](https://gitlab.corp/pauss/qreview/-/releases) and
+download the file of the latest one, `qreview-<tag>-linux-x86_64.xz`.
+
+Then unpack it and put it where your shell looks:
 
 ```sh
-curl -L https://gitlab.corp/pauss/qreview/-/releases/permalink/latest/downloads/qreview-linux-x86_64.xz \
-  | xz -d > ~/.local/bin/qreview
-chmod +x ~/.local/bin/qreview
+cd ~/Downloads
+xz -d qreview-v0.5.0-linux-x86_64.xz
+install -m 755 qreview-v0.5.0-linux-x86_64 ~/.local/bin/qreview
 qreview --version
 ```
 
-Make sure `~/.local/bin` is on your PATH. Every version, with its notes, is
-on the [releases page](https://gitlab.corp/pauss/qreview/-/releases). If the
-server asks you to log in, pass a token:
-`curl -H "PRIVATE-TOKEN: <your token>" -L <the same link>`.
+Make sure `~/.local/bin` is on your PATH. The binary is static: it needs
+`git` on the PATH and nothing else.
 
 To build it yourself instead, see [Build from source](#build-from-source).
 
@@ -129,17 +129,24 @@ every reader of that repository gets the map with no setup:
 A grammar is data too. Drop a `.sublime-syntax` or `.tmLanguage` file in
 `~/.config/qreview/grammars/` and name it in the map. No rebuild.
 
-qreview can also say when a newer release is out. It ships with no address
-to ask, so nothing leaves your machine until you name one:
+qreview can also say when a newer release is out, beside the version it
+runs. It ships with no address to ask, so nothing leaves your machine until
+you name one. A project that is not public needs a token with the
+`read_api` scope, from **Preferences → Access tokens**:
 
 ```json
-{ "update": { "url": "https://gitlab.example.com/api/v4/projects/42/releases/permalink/latest" } }
+{
+  "update": {
+    "url": "https://gitlab.corp/api/v4/projects/pauss%2Fqreview/releases/permalink/latest",
+    "token": "<your token>"
+  }
+}
 ```
 
 The address must answer with JSON holding `tag_name`; the releases API of
-GitLab and of GitHub both do. Add `"token"` for a project that is not
+GitLab and of GitHub both do. Leave `token` out for a project that is
 public. The check runs once per run, with `curl`, and a failure to reach it
-says nothing.
+says nothing at all.
 
 Personal settings go in `~/.config/qreview/config.json`. The preferences
 panel behind `,` writes that same file, so the next run starts the way you
