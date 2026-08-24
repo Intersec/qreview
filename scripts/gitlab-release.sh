@@ -52,7 +52,17 @@ writeFileSync(process.argv[1], JSON.stringify({
     name: `qreview ${TAG}`,
     tag_name: TAG,
     description: readFileSync(NOTES, "utf8"),
-    assets: { links: [{ name: NAME, url: URL, link_type: "package" }] },
+    assets: {
+        links: [{
+            name: NAME,
+            url: URL,
+            link_type: "package",
+            // A path that carries no version. It is what makes
+            // /-/releases/permalink/latest/downloads/<path> reach this file,
+            // so the README can name one URL and never touch it again.
+            direct_asset_path: "/qreview-linux-x86_64.xz",
+        }],
+    },
 }));
 ' "$body"
 
