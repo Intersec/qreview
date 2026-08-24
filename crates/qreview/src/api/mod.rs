@@ -33,6 +33,8 @@ pub struct AppState {
     pub config: Arc<std::sync::RwLock<crate::config::Config>>,
     /// Where the repository layer lives, so a write can read it back.
     pub root: Arc<std::path::PathBuf>,
+    /// Whether a newer qreview is out. Asked once, by whoever asks first.
+    release: Arc<tokio::sync::OnceCell<crate::update::Release>>,
 }
 
 impl AppState {
@@ -42,6 +44,7 @@ impl AppState {
             token: Arc::new(token),
             config: Arc::new(std::sync::RwLock::new(crate::config::Config::default())),
             root: Arc::new(std::path::PathBuf::from(".")),
+            release: Arc::new(tokio::sync::OnceCell::new()),
         }
     }
 
@@ -74,6 +77,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/mergelist", get(mergelist))
         .route("/api/comments", get(all_comments))
+        .route("/api/update", get(update))
         .route("/api/export", get(export))
         .route("/api/config", get(config).put(save_config))
         .route("/api/changes/{key}/lines", get(lines))
@@ -505,6 +509,25 @@ async fn comments(
     let placed = anchor::place_all(&session.git, &file.comments, &rev).await;
 
     Ok(Json(Review { file, placed }))
+}
+
+/// Is a newer qreview out?
+///
+/// The interface asks after it has painted, so nothing waits on this. The
+/// answer is kept for the life of the run: a reader who reloads the page
+/// does not send the question again.
+async fn update(State(state): State<AppState>) -> Json<crate::update::Release> {
+    let where_to = state.config.read().map(|c| c.update.clone()).ok();
+    let Some(where_to) = where_to else {
+        return Json(crate::update::Release::default());
+    };
+
+    let found = state
+        .release
+        .get_or_init(|| crate::update::check(&where_to, env!("CARGO_PKG_VERSION")))
+        .await;
+
+    Json(found.clone())
 }
 
 /// Every comment of the session, in the order a review reads them.
@@ -1593,6 +1616,33 @@ mod tests {
         let placed = &body["placed"][0];
         assert_eq!(placed["line"], 3, "the comment is still on its line");
         assert_eq!(placed["lost"], false);
+    }
+
+    #[tokio::test]
+    async fn with_no_address_the_version_check_asks_nothing() {
+        let repo = fixture().await;
+        let (status, body) = json(server(&repo).await, get_with_cookie("/api/update", TOKEN)).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["latest"], serde_json::Value::Null);
+        assert_eq!(body["newer"], false);
+    }
+
+    #[tokio::test]
+    async fn an_address_that_answers_nothing_is_not_an_error() {
+        let repo = fixture().await;
+        let session = session_of(&repo, Options::new()).await;
+        let mut config = crate::config::Config::default();
+        // A port nothing listens on. curl fails, and the reader is not told.
+        config.update.url = Some("http://127.0.0.1:1/latest".to_owned());
+        let state =
+            AppState::new(session, TOKEN.to_owned()).with_config(config, repo.path().to_path_buf());
+
+        let (status, body) = json(app(state), get_with_cookie("/api/update", TOKEN)).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["latest"], serde_json::Value::Null);
+        assert_eq!(body["newer"], false);
     }
 
     #[tokio::test]

@@ -129,6 +129,18 @@ every reader of that repository gets the map with no setup:
 A grammar is data too. Drop a `.sublime-syntax` or `.tmLanguage` file in
 `~/.config/qreview/grammars/` and name it in the map. No rebuild.
 
+qreview can also say when a newer release is out. It ships with no address
+to ask, so nothing leaves your machine until you name one:
+
+```json
+{ "update": { "url": "https://gitlab.example.com/api/v4/projects/42/releases/permalink/latest" } }
+```
+
+The address must answer with JSON holding `tag_name`; the releases API of
+GitLab and of GitHub both do. Add `"token"` for a project that is not
+public. The check runs once per run, with `curl`, and a failure to reach it
+says nothing.
+
 Personal settings go in `~/.config/qreview/config.json`. The preferences
 panel behind `,` writes that same file, so the next run starts the way you
 left it. See `examples/config.json`.

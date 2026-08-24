@@ -13,6 +13,7 @@ import type {
   NewComment,
   PatchSet,
   PatchSets,
+  Release,
   Review,
   Row,
   Series,
@@ -123,6 +124,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reviewed }),
     }),
+
+  /// Is a newer qreview out? A failure to ask is not an error.
+  update: () => call<Release>('/api/update'),
 
   /// Every comment of the session, in the order a review reads them.
   allComments: () => call<ChangeComments[]>('/api/comments'),

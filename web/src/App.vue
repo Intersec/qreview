@@ -28,6 +28,7 @@ const {
   total,
   countOf,
   inFile,
+  release,
   version,
   onMerge,
   mergeBase,
@@ -251,6 +252,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         </button>
         <span v-if="copied" role="status" class="copied">copied</span>
         <span class="quiet">{{ version }}</span>
+        <a
+          v-if="release?.newer"
+          class="newer"
+          :href="release.url ?? undefined"
+          :target="release.url ? '_blank' : undefined"
+          rel="noreferrer"
+          :title="`You are running ${version}`"
+          >{{ release.latest }} available</a
+        >
       </span>
     </header>
 

@@ -237,6 +237,13 @@ export interface ChangeComments {
   comments: Comment[];
 }
 
+/** Whether a newer qreview is out. */
+export interface Release {
+  latest: string | null;
+  url: string | null;
+  newer: boolean;
+}
+
 export interface Review extends ChangeFile {
   placed: Placed[];
 }

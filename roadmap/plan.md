@@ -221,6 +221,9 @@ surprised by anything.*
 - [x] The bar between the series and the code, and the one between the
       series and the comments, dragged to give a pane more room
 
+- [x] Say at start when a newer release is out, and say nothing at all when
+      the question cannot be asked
+
 ## After that
 
 1. A rebase-aware diff between two patch sets.

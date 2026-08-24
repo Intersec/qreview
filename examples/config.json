@@ -17,5 +17,9 @@
   },
   "ui": {
     "diff": "unified"
+  },
+  "update": {
+    "url": "https://gitlab.example.com/api/v4/projects/42/releases/permalink/latest",
+    "token": null
   }
 }

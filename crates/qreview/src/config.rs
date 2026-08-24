@@ -20,6 +20,23 @@ pub struct Config {
     pub series: Series,
     pub ui: Ui,
     pub diff: Diff,
+    pub update: Update,
+}
+
+/// Where to ask whether a newer qreview is out.
+///
+/// The tool ships with no address: it does not know where it is published,
+/// and a version check that phones a place the reader did not name is not
+/// one they asked for. A site writes the address once, in the configuration
+/// of the user or of the repository.
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Update {
+    /// A URL that answers with JSON holding a `tagName`. The releases API
+    /// of GitLab and of GitHub both do.
+    pub url: Option<String>,
+    /// Sent as `PRIVATE-TOKEN`, for a project that is not public.
+    pub token: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -92,6 +109,7 @@ impl Default for Config {
                 font_size: 12,
                 syntax: true,
             },
+            update: Update::default(),
         }
     }
 }
@@ -111,6 +129,15 @@ pub struct Layer {
     pub ui: Option<UiLayer>,
     #[serde(default)]
     pub diff: Option<DiffLayer>,
+    #[serde(default)]
+    pub update: Option<UpdateLayer>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateLayer {
+    pub url: Option<String>,
+    pub token: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -187,6 +214,10 @@ impl Config {
             self.diff.tab_width = diff.tab_width.unwrap_or(self.diff.tab_width).clamp(1, 16);
             self.diff.font_size = diff.font_size.unwrap_or(self.diff.font_size).clamp(8, 24);
             self.diff.syntax = diff.syntax.unwrap_or(self.diff.syntax);
+        }
+        if let Some(update) = layer.update {
+            self.update.url = update.url.or(self.update.url.take());
+            self.update.token = update.token.or(self.update.token.take());
         }
     }
 }

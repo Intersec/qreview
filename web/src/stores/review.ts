@@ -17,6 +17,7 @@ import type {
   NewComment,
   PatchSet,
   Placed,
+  Release,
   Review,
   Series,
 } from '@/api/types';
@@ -68,6 +69,10 @@ export const useReview = defineStore('review', () => {
   const mergeList = ref<MergeListItem[]>([]);
 
   /// True while the reader is on the merge under the boundary.
+  /// Whether a newer qreview is out. Empty until the answer lands, and
+  /// empty for ever when nothing answers.
+  const release = ref<Release | null>(null);
+
   /// Every comment of the session, change by change, in reading order.
   const written = ref<ChangeComments[]>([]);
 
@@ -137,6 +142,13 @@ export const useReview = defineStore('review', () => {
       config.value = body.config;
 
       void readWritten();
+      // After the page, never before it: a reader came to read a diff.
+      void api
+        .update()
+        .then((found) => {
+          release.value = found;
+        })
+        .catch(() => undefined);
 
       const first = body.series.changes[0];
       if (first) {
@@ -443,6 +455,7 @@ export const useReview = defineStore('review', () => {
     error,
     busy,
     written,
+    release,
     total,
     countOf,
     inFile,

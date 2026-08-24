@@ -544,6 +544,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
 | `GET /api/comments` | Every comment of the session, in reading order |
+| `GET /api/update` | Whether a newer qreview is out. Empty when nothing answers |
 | `GET /api/changes/:key/comments` | Every comment of the change |
 | `POST /api/changes/:key/comments` | Create a comment or a reply |
 | `PATCH /api/changes/:key/comments/:id` | Change the body, or resolve the thread |
@@ -652,6 +653,7 @@ Three layers, the later one wins:
     "integrationBranch": null
   },
   "ui": { "diff": "unified", "theme": "system" },
+  "update": { "url": null, "token": null },
   "diff": {
     "context": 10,
     "wrap": false,
@@ -677,6 +679,21 @@ notices the typo. `examples/` holds a copy of both files.
 
 A language map is merged, not replaced: a repository adds its own file types
 without repeating the ones the tool already knows.
+
+`update.url` is the address that says which release is the newest. The tool
+ships with none: it does not know where it is published, and a check that
+phones a place the reader did not name is not one they asked for. A site
+writes it once, in the configuration of the user.
+
+The address must answer with JSON holding `tag_name`. The releases API of
+GitLab and of GitHub both do, and `_links.self` or `html_url` gives the page
+to link to. `update.token` is sent as `PRIVATE-TOKEN`, for a project that is
+not public.
+
+`curl` asks, with a three second cap, once for the life of the run and only
+after the interface has painted. Every failure is silence: no network, a
+server that is down, a token that is refused, curl that is not installed.
+Nothing of that is worth a word to a reader who came to read a diff.
 
 ### 10.1 What the browser keeps for itself
 

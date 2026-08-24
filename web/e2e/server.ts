@@ -1,6 +1,7 @@
 // The real binary, on a real repository, for the browser to talk to.
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { build, type Fixture } from './fixture.ts';
 
@@ -16,8 +17,18 @@ const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qrevi
 ///
 /// The token is read from that line rather than forced in: the test walks the
 /// same path a person does.
-export async function start(options: { prev?: boolean; gerrit?: boolean } = {}): Promise<Running> {
+export async function start(
+  options: { prev?: boolean; gerrit?: boolean; config?: object } = {},
+): Promise<Running> {
   const fixture = build();
+
+  if (options.config) {
+    mkdirSync(join(fixture.config, 'qreview'), { recursive: true });
+    writeFileSync(
+      join(fixture.config, 'qreview', 'config.json'),
+      JSON.stringify(options.config, null, 2),
+    );
+  }
   const args = ['--no-open', '--port', '0'];
   if (!options.gerrit) {
     args.push('--no-gerrit');
