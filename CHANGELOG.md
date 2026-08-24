@@ -12,6 +12,30 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.5.1]
+
+### Added
+
+- **qreview says when a newer release is out**, beside the version it runs.
+  It ships with no address to ask: name one in `update.url` of the
+  configuration, pointing at a releases API that answers with `tag_name`.
+  The check runs once per run and a failure to reach it says nothing.
+
+### Changed
+
+- The install steps in the README start on the releases page, where the
+  reader is signed in already: download the file, unpack it, put it on the
+  PATH. The link they held before sent `curl` to a sign-in page, and the
+  sign-in page into `xz`.
+- The file of a release is `qreview-linux-x86_64.xz`, with no version in the
+  name. One link now holds the newest build, and the install steps name no
+  version either. The release page and `qreview --version` say which one it
+  is.
+
+### Fixed
+
+- Pressing `c` no longer writes a `c` in the comment it opens. Every key the
+  interface answers to is now kept out of the text under it.
 ## [0.5.0]
 
 ### Added
