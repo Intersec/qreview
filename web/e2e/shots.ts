@@ -68,6 +68,11 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.screenshot({ path: join(OUT, `${scheme}-preferences.png`) });
   await page.getByRole('button', { name: 'Cancel' }).click();
 
+  // The whole Change-Id in the bar, and the file filter under the keyboard.
+  await openChange(page, /long: touch two places/);
+  await page.keyboard.press('/');
+  await page.screenshot({ path: join(OUT, `${scheme}-filter.png`) });
+
   // A comment, open on its line.
   await openChange(page, /net: retry the read/);
   await openFile(page, 'net.blk');

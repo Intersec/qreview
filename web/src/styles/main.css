@@ -579,6 +579,9 @@ tr.talk td {
 }
 
 .files {
+  /* The veil of a read sits over this list alone, not over the pane. */
+  position: relative;
+  min-height: 24px;
   padding: 2px 0 6px;
   background: var(--page);
   border-top: 1px solid var(--edge-soft);
@@ -754,6 +757,14 @@ tr.talk td {
   flex: 1;
   min-height: 0;
 }
+/* Where the diff goes, and where its veil goes with it. */
+.diff-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
 
 /* ------------------------------------------------------- the change bar */
 
@@ -796,6 +807,46 @@ a.change-id:hover {
 }
 .change-bar .bar-actions {
   align-items: baseline;
+}
+
+/* ---------------------------------------------------- waiting for a read */
+
+/*
+ * It sits over what is on the screen, rather than replacing it. A comment
+ * box open on the diff must survive a setting that reads it again.
+ *
+ * Not `.veil`: that one is the backdrop of a dialog, and it is fixed to the
+ * window.
+ */
+.waiting {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--page) 70%, transparent);
+  color: var(--ink-quiet);
+  font-size: 12px;
+}
+.ring {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--edge);
+  border-top-color: var(--action);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ring {
+    animation: none;
+  }
 }
 
 /* -------------------------------------- the read mark and the directory */

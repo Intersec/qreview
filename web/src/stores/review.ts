@@ -2,7 +2,7 @@
 // and the diff of the file being read.
 
 import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
 import type {
   Comment,
@@ -40,6 +40,10 @@ export const useReview = defineStore('review', () => {
   const diff = ref<FileDiff | null>(null);
   const error = ref<string | null>(null);
   const busy = ref(false);
+  // What is being read right now. The interface waits on a repository that
+  // can be slow, and a reader who sees nothing move thinks it is stuck.
+  const filesLoading = ref(0);
+  const diffLoading = ref(0);
   /// An answer that arrives after the reader has moved on belongs to
   /// nothing. Every read checks that what it was asked for is still what is
   /// being read, rather than counting the reads: opening a change opens a
@@ -66,6 +70,21 @@ export const useReview = defineStore('review', () => {
   const onMerge = computed(
     () => changeKey.value !== null && changeKey.value === series.value?.boundary.commit,
   );
+  const loadingFiles = computed(() => filesLoading.value > 0);
+  const loadingDiff = computed(() => diffLoading.value > 0);
+
+  /// Count one call in, and out whatever happens.
+  ///
+  /// A counter, not a flag: two reads can overlap, and the older one must
+  /// not say that the newer one is done.
+  async function track<T>(count: Ref<number>, work: Promise<T>): Promise<T> {
+    count.value += 1;
+    try {
+      return await work;
+    } finally {
+      count.value -= 1;
+    }
+  }
 
   async function guard(work: () => Promise<void>) {
     busy.value = true;
@@ -122,10 +141,10 @@ export const useReview = defineStore('review', () => {
         })
         .catch(() => undefined);
 
-      const [comments, list] = await Promise.all([
-        api.comments(key),
-        api.files(key, undefined, base, ignoreWs.value),
-      ]);
+      const [comments, list] = await track(
+        filesLoading,
+        Promise.all([api.comments(key), api.files(key, undefined, base, ignoreWs.value)]),
+      );
       if (changeKey.value !== key) {
         return;
       }
@@ -148,12 +167,9 @@ export const useReview = defineStore('review', () => {
     }
     await guard(async () => {
       filePath.value = path;
-      const read = await api.diff(
-        key,
-        path,
-        patchSet.value,
-        against.value ?? mergeBase.value,
-        ignoreWs.value,
+      const read = await track(
+        diffLoading,
+        api.diff(key, path, patchSet.value, against.value ?? mergeBase.value, ignoreWs.value),
       );
       if (changeKey.value === key && filePath.value === path) {
         diff.value = read;
@@ -192,11 +208,11 @@ export const useReview = defineStore('review', () => {
       patchSet.value = number;
       against.value = base;
       review.value = await api.comments(key, number);
-      files.value = await api.files(key, number, base);
+      files.value = await track(filesLoading, api.files(key, number, base));
 
       const stays = files.value.find((f) => f.path === was && !f.binary);
       const first = stays ?? files.value.find((f) => !f.binary);
-      const read = first ? await api.diff(key, first.path, number, base) : null;
+      const read = first ? await track(diffLoading, api.diff(key, first.path, number, base)) : null;
 
       // The reader can open a file while this is in flight. That choice is
       // newer than this one, so it wins.
@@ -329,12 +345,12 @@ export const useReview = defineStore('review', () => {
       }
       const base = against.value ?? mergeBase.value;
       const was = filePath.value;
-      files.value = await api.files(key, patchSet.value, base, ignoreWs.value);
+      files.value = await track(filesLoading, api.files(key, patchSet.value, base, ignoreWs.value));
 
       const stays = files.value.find((f) => f.path === was && !f.binary);
       const first = stays ?? files.value.find((f) => !f.binary);
       const read = first
-        ? await api.diff(key, first.path, patchSet.value, base, ignoreWs.value)
+        ? await track(diffLoading, api.diff(key, first.path, patchSet.value, base, ignoreWs.value))
         : null;
 
       // The reader can open another file while this is in flight, and that
@@ -382,6 +398,8 @@ export const useReview = defineStore('review', () => {
     diff,
     error,
     busy,
+    loadingFiles,
+    loadingDiff,
     mergeBase,
     mergeList,
     onMerge,

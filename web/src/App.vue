@@ -5,6 +5,7 @@ import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
 import PreferencesDialog from './components/PreferencesDialog.vue';
 import ShortcutHelp from './components/ShortcutHelp.vue';
+import LoadingVeil from './components/LoadingVeil.vue';
 import MergeBar from './components/MergeBar.vue';
 import PatchSetBar from './components/PatchSetBar.vue';
 import SidePane from './components/SidePane.vue';
@@ -19,6 +20,8 @@ const {
   diff,
   error,
   busy,
+  loadingFiles,
+  loadingDiff,
   version,
   onMerge,
   mergeBase,
@@ -209,6 +212,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         :files="files"
         :file-path="filePath"
         :busy="busy"
+        :loading-files="loadingFiles"
         @open-change="review.openChange"
         @open-file="review.openFile"
         @mark="review.markChange"
@@ -239,27 +243,32 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           @pick="review.openMerge($event)"
           @show-list="review.loadMergeList()"
         />
-        <DiffView
-          v-if="diff"
-          ref="diffView"
-          class="grow"
-          :diff="diff"
-          :split="split"
-          :wrap="wrap"
-          :comments="comments"
-          :lost="lost"
-          :placement="review.placement"
-          :load-lines="review.loadLines"
-          @update:split="review.setSplit"
-          @add="review.addComment"
-          @edit="(id, body) => review.editComment(id, { body })"
-          @remove="review.deleteComment"
-        />
-        <p v-else class="note">
-          {{
-            files.length === 0 ? 'This change touches no file.' : 'Pick a file to read its diff.'
-          }}
-        </p>
+        <div class="diff-slot">
+          <DiffView
+            v-if="diff"
+            ref="diffView"
+            class="grow"
+            :diff="diff"
+            :split="split"
+            :wrap="wrap"
+            :comments="comments"
+            :lost="lost"
+            :placement="review.placement"
+            :load-lines="review.loadLines"
+            @update:split="review.setSplit"
+            @add="review.addComment"
+            @edit="(id, body) => review.editComment(id, { body })"
+            @remove="review.deleteComment"
+          />
+          <p v-else class="note">
+            {{
+              files.length === 0 ? 'This change touches no file.' : 'Pick a file to read its diff.'
+            }}
+          </p>
+          <!-- The file list is read first, and the diff on the screen is
+               the one from before until the new one lands. -->
+          <LoadingVeil :when="loadingDiff || loadingFiles" label="Reading the file" />
+        </div>
       </section>
     </main>
 
