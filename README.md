@@ -5,6 +5,25 @@ one change at a time, with patch sets.
 
 One binary, no runtime to install, nothing leaves your machine.
 
+## Install
+
+This link always holds the latest release. The binary is static: it needs
+`git` on the PATH and nothing else.
+
+```sh
+curl -L https://gitlab.corp/pauss/qreview/-/releases/permalink/latest/downloads/qreview-linux-x86_64.xz \
+  | xz -d > ~/.local/bin/qreview
+chmod +x ~/.local/bin/qreview
+qreview --version
+```
+
+Make sure `~/.local/bin` is on your PATH. Every version, with its notes, is
+on the [releases page](https://gitlab.corp/pauss/qreview/-/releases). If the
+server asks you to log in, pass a token:
+`curl -H "PRIVATE-TOKEN: <your token>" -L <the same link>`.
+
+To build it yourself instead, see [Build from source](#build-from-source).
+
 ## Why
 
 Local diff viewers copy the GitHub model: one branch, one flat diff. A Gerrit
@@ -66,32 +85,20 @@ second set of habits. `?` lists them in the interface.
 Comments are stored under `~/.local/state/qreview`, keyed by `Change-Id`. An
 amend keeps them.
 
-## Install
-
-Copy the binary and run it. It needs `git` on the PATH and nothing else.
-
-Every tag carries `qreview-<tag>-linux-x86_64.xz`, the static binary that the
-pipeline built, compressed. Take the link from the release page.
-
-```sh
-curl -L <the link to the file> | xz -d > ~/.local/bin/qreview
-chmod +x ~/.local/bin/qreview
-```
-
-### Build from source
+## Build from source
 
 Rust and Node, both pinned in `.tool-versions` for
 [mise](https://mise.jdx.dev) or asdf. Node builds the interface. It is not
 needed to run the tool.
 
 ```sh
-git clone <this repository>
+git clone https://gitlab.corp/pauss/qreview.git
 cd qreview
 make setup         # the interface dependencies, once
 make build         # the interface, then the binary
 make check         # the gate: lint, format, tests, build
 make install       # into ~/.local/bin
-make dist          # a static musl binary, for a colleague
+make dist          # the release file, under dist/
 ```
 
 `make dist` adds the `x86_64-unknown-linux-musl` target when it is missing. It
