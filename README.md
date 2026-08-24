@@ -7,20 +7,23 @@ One binary, no runtime to install, nothing leaves your machine.
 
 ## Install
 
-Open the [releases page](https://gitlab.corp/pauss/qreview/-/releases) and
-download the file of the latest one, `qreview-<tag>-linux-x86_64.xz`.
+One link, always the newest build. Open it in the browser you read GitLab
+with, where you are signed in already:
+
+<https://gitlab.corp/pauss/qreview/-/releases/permalink/latest/downloads/qreview-linux-x86_64.xz>
 
 Then unpack it and put it where your shell looks:
 
 ```sh
 cd ~/Downloads
-xz -d qreview-v0.5.0-linux-x86_64.xz
-install -m 755 qreview-v0.5.0-linux-x86_64 ~/.local/bin/qreview
+xz -d qreview-linux-x86_64.xz
+install -m 755 qreview-linux-x86_64 ~/.local/bin/qreview
 qreview --version
 ```
 
 Make sure `~/.local/bin` is on your PATH. The binary is static: it needs
-`git` on the PATH and nothing else.
+`git` on the PATH and nothing else. Every version, with its notes, is on the
+[releases page](https://gitlab.corp/pauss/qreview/-/releases).
 
 To build it yourself instead, see [Build from source](#build-from-source).
 

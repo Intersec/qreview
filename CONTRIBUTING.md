@@ -115,7 +115,13 @@ the variable unprotected.
 
 `make dist` packs the same file on your machine, under `dist/`, beside the
 binary itself. Use it to release locally: to hand a colleague a build before
-a tag, or when no pipeline is available. `make dist TAG=v1.2.3` names it.
+a tag, or when no pipeline is available.
+
+The name carries no version, on purpose: `qreview-linux-x86_64.xz`, the same
+on your machine and on the server. The release page and the package registry
+both say which version it is, and a name that never changes is what the
+permanent link of the newest release points at. `qreview --version` says it
+too.
 
 The version lives in `Cargo.toml`, alone. The `package.json` of the interface
 is private and carries no version.
