@@ -824,16 +824,18 @@ a.change-id:hover {
  * written, so the files keep the room on a review that has none.
  */
 .comment-list {
-  flex: 0 1 auto;
+  /* Never shrink. The series above it scrolls, and on a short window it is
+     the series that gives way, not the pane the reader asked for. */
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: 33%;
+  max-height: 40%;
   border-top: 1px solid var(--edge);
   background: var(--page);
 }
 .comment-list.is-folded {
-  flex: none;
+  max-height: none;
 }
 .list-head {
   display: flex;
