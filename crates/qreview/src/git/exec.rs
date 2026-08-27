@@ -24,7 +24,7 @@ pub struct Git {
 impl Git {
     /// Find the repository that contains `cwd`.
     pub async fn discover(cwd: &Path) -> Result<Self> {
-        let out = run_in(cwd, &["rev-parse", "--show-toplevel"]).await?;
+        let out = run_in(cwd, &["rev-parse", "--show-toplevel"], &[]).await?;
         let root = String::from_utf8(out.stdout)
             .context("git printed a path that is not UTF-8")?
             .trim()
@@ -44,7 +44,19 @@ impl Git {
 
     /// Run git and return its standard output as text.
     pub async fn text<S: AsRef<OsStr>>(&self, args: &[S]) -> Result<String> {
-        let out = run_in(&self.root, args).await?;
+        self.text_with(args, &[]).await
+    }
+
+    /// The same, with a few variables added to the environment.
+    ///
+    /// Only `commit-tree` needs this, to fix the dates it stamps. Everything
+    /// else git takes from a `-c` option or from the repository.
+    pub async fn text_with<S: AsRef<OsStr>>(
+        &self,
+        args: &[S],
+        env: &[(&str, &str)],
+    ) -> Result<String> {
+        let out = run_in(&self.root, args, env).await?;
         String::from_utf8(out.stdout).context("git printed output that is not UTF-8")
     }
 
@@ -54,15 +66,19 @@ impl Git {
     /// `merge-tree` does exactly that when the merge conflicts, which is the
     /// case we care about most.
     pub async fn output<S: AsRef<OsStr>>(&self, args: &[S]) -> Result<(bool, String)> {
-        let out = raw(&self.root, args).await?;
+        let out = raw(&self.root, args, &[]).await?;
         let text = String::from_utf8_lossy(&out.stdout).into_owned();
 
         Ok((out.status.success(), text))
     }
 }
 
-async fn run_in<S: AsRef<OsStr>>(dir: &Path, args: &[S]) -> Result<std::process::Output> {
-    let out = raw(dir, args).await?;
+async fn run_in<S: AsRef<OsStr>>(
+    dir: &Path,
+    args: &[S],
+    env: &[(&str, &str)],
+) -> Result<std::process::Output> {
+    let out = raw(dir, args, env).await?;
 
     if !out.status.success() {
         let cmd = describe(args);
@@ -73,7 +89,11 @@ async fn run_in<S: AsRef<OsStr>>(dir: &Path, args: &[S]) -> Result<std::process:
     Ok(out)
 }
 
-async fn raw<S: AsRef<OsStr>>(dir: &Path, args: &[S]) -> Result<std::process::Output> {
+async fn raw<S: AsRef<OsStr>>(
+    dir: &Path,
+    args: &[S],
+    env: &[(&str, &str)],
+) -> Result<std::process::Output> {
     let mut cmd = Command::new("git");
     cmd.current_dir(dir)
         .args(args)
@@ -84,6 +104,10 @@ async fn raw<S: AsRef<OsStr>>(dir: &Path, args: &[S]) -> Result<std::process::Ou
         .env("GIT_PAGER", "cat")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("LC_ALL", "C");
+
+    for (name, value) in env {
+        cmd.env(name, value);
+    }
 
     let run = cmd.output();
 

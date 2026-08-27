@@ -123,7 +123,10 @@ struct SessionBody {
 }
 
 async fn session(State(state): State<AppState>) -> Json<SessionBody> {
-    let session = state.session.read().await;
+    // The working tree moves while the page is open. The reload is where the
+    // series catches up with it.
+    let mut session = state.session.write().await;
+    session.refresh_worktree().await;
 
     Json(SessionBody {
         version: crate::version::VERSION,
@@ -810,6 +813,146 @@ mod tests {
                 .unwrap()
                 .starts_with(crate::version::VERSION)
         );
+    }
+
+    /// A repository whose working tree has a tracked change that is not
+    /// committed, and a file nobody has added.
+    async fn dirty() -> Repo {
+        let repo = fixture().await;
+        std::fs::write(repo.path().join("src/a.blk"), "one\nTWO\nthree\n").unwrap();
+        std::fs::write(repo.path().join("untracked.txt"), "not added\n").unwrap();
+
+        repo
+    }
+
+    #[tokio::test]
+    async fn the_work_that_is_not_committed_stands_at_the_top_of_the_series() {
+        let repo = dirty().await;
+        let (status, body) =
+            json(server(&repo).await, get_with_cookie("/api/session", TOKEN)).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let first = &body["series"]["changes"][0];
+        assert_eq!(first["key"], "working-tree");
+        assert_eq!(first["subject"], "Uncommitted changes");
+        assert_eq!(first["worktree"], true);
+        // The commits are still there, under it.
+        assert_eq!(body["series"]["changes"][1]["key"], "I8f3ac21");
+    }
+
+    #[tokio::test]
+    async fn the_diff_of_the_working_tree_is_what_is_not_committed() {
+        let repo = dirty().await;
+        let app = server(&repo).await;
+        let (status, files) = json(
+            app,
+            get_with_cookie("/api/changes/working-tree/files", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        // No `/COMMIT_MSG`: the message on the synthetic commit is a label
+        // this tool wrote, not a message anybody reviews.
+        assert_eq!(tree_paths(&files), ["src/a.blk"]);
+        assert_eq!(
+            files.as_array().unwrap().len(),
+            1,
+            "the working tree has no commit message to review"
+        );
+
+        let (_, diff) = json(
+            server(&repo).await,
+            get_with_cookie("/api/changes/working-tree/diff?file=src/a.blk", TOKEN),
+        )
+        .await;
+        let rows = &diff["hunks"][0]["rows"];
+        let texts: Vec<&str> = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["text"].as_str().unwrap())
+            .collect();
+
+        assert!(texts.contains(&"TWO"), "the change on the disk is shown");
+        assert!(!texts.contains(&"not added"), "an untracked file is not");
+    }
+
+    #[tokio::test]
+    async fn a_clean_working_tree_adds_nothing() {
+        let repo = fixture().await;
+        let (_, body) = json(server(&repo).await, get_with_cookie("/api/session", TOKEN)).await;
+
+        assert_eq!(body["series"]["changes"][0]["key"], "I8f3ac21");
+    }
+
+    #[tokio::test]
+    async fn no_worktree_leaves_the_series_to_the_commits() {
+        let repo = dirty().await;
+        let opts = Options {
+            worktree: false,
+            ..Options::new()
+        };
+        let app = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
+        let (_, body) = json(app, get_with_cookie("/api/session", TOKEN)).await;
+
+        assert_eq!(body["series"]["changes"][0]["key"], "I8f3ac21");
+    }
+
+    #[tokio::test]
+    async fn a_series_read_from_another_revision_ignores_the_tree() {
+        // The tree sits on HEAD. A series read from HEAD~1 has nothing to do
+        // with it, and diffing the two would be a diff of unrelated things.
+        let repo = dirty().await;
+        let opts = Options {
+            rev: Some("HEAD~1".to_owned()),
+            ..Options::new()
+        };
+        let app = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
+        let (_, body) = json(app, get_with_cookie("/api/session", TOKEN)).await;
+
+        let keys: Vec<&str> = body["series"]["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["key"].as_str().unwrap())
+            .collect();
+        assert!(!keys.contains(&"working-tree"), "{keys:?}");
+    }
+
+    #[tokio::test]
+    async fn a_remark_on_the_working_tree_is_kept_under_one_key() {
+        let repo = dirty().await;
+        let app = server(&repo).await;
+
+        let (status, _) = json(
+            app,
+            post(
+                "/api/changes/working-tree/comments",
+                r#"{"scope":"line","file":"src/a.blk","side":"new","startLine":2,"body":"why shout"}"#,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        // The tree moves, so the synthetic commit does. The remark does not:
+        // it is filed under the key, and anchored on the line.
+        std::fs::write(repo.path().join("src/a.blk"), "zero\none\nTWO\nthree\n").unwrap();
+
+        let (_, body) = json(
+            server(&repo).await,
+            get_with_cookie("/api/changes/working-tree/comments", TOKEN),
+        )
+        .await;
+
+        assert_eq!(body["comments"][0]["body"], "why shout");
+        assert_eq!(body["placed"][0]["line"], 3, "the line moved down by one");
+        assert_eq!(body["placed"][0]["lost"], false);
     }
 
     #[tokio::test]

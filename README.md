@@ -48,13 +48,15 @@ qreview list                                     # what this repository holds
 | `--base <rev>` | Set the base of the series. It wins over every rule |
 | `--prev <sha>` | Treat a commit as an older patch set. Repeatable |
 | `--no-gerrit` | Skip the Gerrit query |
+| `--no-worktree` | Leave out the changes that are not committed |
 | `--no-open` | Print the URL, open no browser |
 | `--port <n>` | Use a fixed port |
 
 What the browser shows:
 
 - The series on the left, one line per commit, ending in a card that says why
-  the walk stopped there and offers **Load 5 older**.
+  the walk stopped there and offers **Load 5 older**. What you have changed
+  and not committed stands above the newest commit, as one more change.
 - The files of the change, then the diff, unified or side by side, with the
   changed words marked inside a line.
 - Comments on a line, on a range of lines, on a part of a line, on a file,

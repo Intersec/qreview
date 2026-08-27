@@ -41,6 +41,7 @@ async fn main() -> Result<()> {
         .or_else(|| config.gerrit.branch.clone());
     // The option only ever switches Gerrit off, never on.
     opts.gerrit = config.gerrit.enabled && !cli.no_gerrit;
+    opts.worktree = config.series.worktree && !cli.no_worktree;
 
     let mut langs = Languages::new();
     langs.extend(&config.languages);

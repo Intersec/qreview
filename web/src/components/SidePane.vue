@@ -108,9 +108,12 @@ defineExpose({ focusFilter: () => boxes.value[0]?.focus() });
             >
               <span class="change-subject">{{ change.subject }}</span>
               <span class="change-facts">
-                <code>{{ short(change) }}</code>
+                <!-- The sha of the working tree is synthetic: it changes at
+                   every keystroke and names nothing a reader can look up. -->
+                <span v-if="change.worktree" class="tag tag-worktree">not committed</span>
+                <code v-else>{{ short(change) }}</code>
                 <span v-if="change.isMerge" class="tag">merge</span>
-                <span v-if="!change.changeId" class="tag">no Change-Id</span>
+                <span v-if="!change.changeId && !change.worktree" class="tag">no Change-Id</span>
                 <span
                   v-else-if="change.key.startsWith('sha-')"
                   class="tag"

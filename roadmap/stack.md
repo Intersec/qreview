@@ -298,3 +298,33 @@ The export names a place as `` `path:line` ``, and a line that only exists
 before the change reads as a line of the new file. An old side place now
 reads `` `src/net.blk:42` (before the change) ``. The suffix is added, so
 every export written until now says the same thing it said.
+
+## 2026-08-27 — The work that is not committed, as a change of the series
+
+GitHub issue #6 asks to review the tracked changes that are not committed.
+Two rules of the project stand in the way, and only one of them moves.
+
+**Nothing reads the working tree** stays. `git stash create` hashes the
+tracked changes into the object database and returns a commit for them,
+without touching the index, the working tree or a ref. Everything after that
+reads the object database the way it reads any other commit: the diff, the
+blobs, the highlighting, the anchoring. No code path opens a file of the
+tree.
+
+**The only write is `git fetch`** moves, a little. The tool now writes objects
+of its own: the blobs and the tree of the uncommitted work, and one commit to
+hold them. It still writes no ref and no file of the working tree, so nothing
+a person can see changes, and git prunes what nothing points at. The rule was
+about not touching the reader's checkout, and it still holds.
+
+The stash commit is a merge of `HEAD` and the index, and a merge is a boundary
+everywhere else in the tool. Only its tree is used: `commit-tree` makes a plain
+commit of that tree on `HEAD`. The dates are fixed to the epoch, so the same
+working tree always gives the same commit, and a reload does not move the sha
+on the screen nor write a second object for the same work.
+
+The change is keyed `working-tree`, not by a sha: the commit changes at every
+keystroke, and a remark on the work has to outlive that. It is shown only when
+the series stands on the checkout, because a series read from another revision
+has nothing to do with what sits in the tree. `--no-worktree` and
+`series.worktree` turn it off.

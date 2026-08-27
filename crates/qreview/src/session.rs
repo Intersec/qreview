@@ -16,12 +16,13 @@ use crate::git::exec::Git;
 use crate::git::merge::{self, Base};
 use crate::highlight::Highlighter;
 use crate::lang::Languages;
-use crate::model::{BoundaryKind, FileDiff, FileEntry, RepoInfo, RowKind, Series};
+use crate::model::{BoundaryKind, ChangeSummary, FileDiff, FileEntry, RepoInfo, RowKind, Series};
 use crate::patchset::{self, PatchSet};
 use crate::repo;
 use crate::series::{self, Options, Plan};
 use crate::store::Store;
 use crate::store::model::{ChangeFile, Comment};
+use crate::worktree;
 
 pub struct Session {
     pub git: Git,
@@ -35,6 +36,8 @@ pub struct Session {
     pub prevs: Vec<String>,
     /// Where the Gerrit server is, when the remote names one.
     pub gerrit: Option<Coordinates>,
+    /// Show the tracked changes that are not committed as a change.
+    pub worktree: bool,
     /// One query per change, kept for the life of the run.
     gerrit_answers: tokio::sync::Mutex<std::collections::HashMap<String, Option<gerrit::Change>>>,
 }
@@ -113,11 +116,13 @@ impl Session {
             series,
             prevs,
             gerrit,
+            worktree: opts.worktree,
             gerrit_answers: tokio::sync::Mutex::new(std::collections::HashMap::new()),
         };
         session.make_keys_unique();
         session.count_comments();
         session.count_patch_sets().await;
+        session.refresh_worktree().await;
 
         Ok(session)
     }
@@ -170,6 +175,54 @@ impl Session {
         Ok(added)
     }
 
+    /// Put the work that is not committed at the top of the series, take it
+    /// away, or leave it alone.
+    ///
+    /// The interface asks for the session again at every reload, and the
+    /// working tree has moved by then. This is where it catches up.
+    pub async fn refresh_worktree(&mut self) {
+        let had = self.series.changes.first().is_some_and(|c| c.worktree);
+        let found = match self.worktree {
+            true => self.uncommitted().await,
+            false => None,
+        };
+
+        match (had, found) {
+            (true, Some(change)) => self.series.changes[0] = change,
+            (true, None) => {
+                self.series.changes.remove(0);
+                return;
+            }
+            (false, Some(change)) => self.series.changes.insert(0, change),
+            (false, None) => return,
+        }
+        self.count_comments();
+    }
+
+    /// The change the working tree stands for, when it stands for one.
+    ///
+    /// Only when the series is the checkout. A series read from another
+    /// revision has nothing to do with what sits in the tree, and putting the
+    /// tree on top of it would be a diff of two unrelated things.
+    async fn uncommitted(&self) -> Option<ChangeSummary> {
+        let head = commit::resolve(&self.git, "HEAD").await.ok()?;
+        if head != self.series.head {
+            return None;
+        }
+        let hash = worktree::commit_of(&self.git).await?;
+        let info = commit::info(&self.git, &hash).await.ok()?;
+
+        Some(worktree::summary(&hash, &info.author))
+    }
+
+    /// True when the revision is the work that is not committed.
+    pub fn is_worktree(&self, rev: &str) -> bool {
+        self.series
+            .changes
+            .iter()
+            .any(|change| change.worktree && change.commit == rev)
+    }
+
     /// The tree a change is diffed against.
     ///
     /// A normal change is diffed against its first parent, or against the
@@ -218,7 +271,11 @@ impl Session {
     ) -> Result<Vec<FileEntry>> {
         let mut entries = self.files(rev, against, how).await?;
 
-        if let Some(new) = commitmsg::text(&self.git, rev).await {
+        // The work that is not committed carries no message to review. The
+        // one on the synthetic commit is a label this tool wrote.
+        if !self.is_worktree(rev)
+            && let Some(new) = commitmsg::text(&self.git, rev).await
+        {
             let old = self.message_base(against).await;
             entries.insert(0, commitmsg::entry(&old, &new));
         }
@@ -552,6 +609,13 @@ impl Session {
             .commit_of(key)
             .with_context(|| format!("no change {key} in the series"))?;
         let info = commit::info(&self.git, &rev).await?;
+
+        // The work that is not committed has one version: the one on the
+        // disk. It has no Change-Id either, so a `--prev` with none would
+        // otherwise be read as an older version of it.
+        if self.is_worktree(&rev) {
+            return patchset::of_change(&self.git, &info, &[]).await;
+        }
         let mut sets = patchset::of_change(&self.git, &info, &self.prevs).await?;
 
         if let Some(change) = self.ask_gerrit(&info).await {

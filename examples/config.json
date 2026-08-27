@@ -13,7 +13,8 @@
     "maxCommits": 50,
     "guessMax": 10,
     "batchSize": 5,
-    "integrationBranch": null
+    "integrationBranch": null,
+    "worktree": true
   },
   "ui": {
     "diff": "unified"

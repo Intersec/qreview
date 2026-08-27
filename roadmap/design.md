@@ -150,6 +150,25 @@ Every card carries **Load 5 older**. A merge card also carries **Review the
 merge** and, when the second parent is not a remote branch, **Follow the other
 parent**.
 
+#### The work that is not committed
+
+The tracked changes that are not committed are one more change, above the
+newest commit. `git stash create` writes them into the object database, and
+`commit-tree` makes a plain commit of that tree on `HEAD`. From there the tool
+reads them the way it reads any commit.
+
+| | |
+|---|---|
+| Key | `working-tree`, never a sha: the commit changes at every keystroke |
+| Shown when | the series stands on the checkout, and the tree is dirty |
+| Holds | every tracked change, staged or not. Never an untracked file |
+| Has no | commit message to review, patch set, or `Change-Id` |
+| Off with | `--no-worktree`, or `series.worktree` in the configuration |
+
+The commit is stamped with a fixed date, so the same tree always gives the
+same commit: a reload moves no sha on the screen and writes no second object.
+Nothing shows that date. See `roadmap/stack.md`, 2026-08-27.
+
 ### 3.2 Change identity
 
 The key of a review is the `Change-Id` trailer of the commit. It survives an

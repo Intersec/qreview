@@ -581,6 +581,12 @@ tr.talk td {
   background: var(--edge);
   font-size: 10px;
 }
+/* The work that is not committed. Not a commit, and it should not read
+   like one. */
+.tag-worktree {
+  background: var(--context-bar);
+  color: var(--context-ink);
+}
 .count {
   margin-left: 4px;
 }

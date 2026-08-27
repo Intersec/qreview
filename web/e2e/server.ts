@@ -1,6 +1,6 @@
 // The real binary, on a real repository, for the browser to talk to.
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { build, type Fixture } from './fixture.ts';
@@ -18,9 +18,15 @@ const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qrevi
 /// The token is read from that line rather than forced in: the test walks the
 /// same path a person does.
 export async function start(
-  options: { prev?: boolean; gerrit?: boolean; config?: object } = {},
+  options: { prev?: boolean; gerrit?: boolean; dirty?: boolean; config?: object } = {},
 ): Promise<Running> {
   const fixture = build();
+
+  // A working tree with work in it. Only the suite about that asks for it:
+  // it puts one more change at the top of the series.
+  if (options.dirty) {
+    dirty(fixture.repo);
+  }
 
   // No test talks to a server. qreview asks its home whether a newer
   // release is out, so every fixture says to ask nobody, and the suite that
@@ -78,4 +84,25 @@ export async function start(
       fixture.remove();
     },
   };
+}
+
+/// Change a tracked file, stage another, and leave one untracked.
+///
+/// The three states a working tree can be in, so a test can say which of
+/// them the review shows.
+function dirty(repo: string) {
+  writeFileSync(join(repo, 'src', 'long.c'), longWithAnEdit());
+  writeFileSync(join(repo, 'src', 'added.py'), 'def hello():\n    return "hi there"\n');
+  execFileSync('git', ['add', 'src/added.py'], { cwd: repo });
+  writeFileSync(join(repo, 'src', 'nobody-added-me.c'), 'int stray(void);\n');
+}
+
+/// `long.c` as the last commit left it, with line 7 changed on top.
+function longWithAnEdit(): string {
+  const lines = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`);
+  lines[2] = 'LINE THREE';
+  lines[6] = 'LINE SEVEN, NOT COMMITTED';
+  lines[49] = 'LINE FIFTY';
+
+  return `${lines.join('\n')}\n`;
 }

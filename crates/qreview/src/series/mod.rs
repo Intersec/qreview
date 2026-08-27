@@ -33,6 +33,9 @@ pub struct Options {
     pub prevs: Vec<String>,
     /// Ask Gerrit for the patch sets already pushed.
     pub gerrit: bool,
+    /// Show the tracked changes that are not committed as a change of the
+    /// series, above the newest commit.
+    pub worktree: bool,
 }
 
 impl Options {
@@ -46,6 +49,7 @@ impl Options {
             integration_branch: None,
             prevs: Vec::new(),
             gerrit: true,
+            worktree: true,
         }
     }
 }
@@ -345,6 +349,7 @@ pub(crate) fn summary(info: CommitInfo) -> ChangeSummary {
         comment_count: 0,
         reviewed: false,
         is_merge: info.is_merge(),
+        worktree: false,
     }
 }
 

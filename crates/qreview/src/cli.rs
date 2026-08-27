@@ -23,6 +23,10 @@ pub struct Cli {
     #[arg(long)]
     pub no_gerrit: bool,
 
+    /// Do not show the tracked changes that are not committed.
+    #[arg(long)]
+    pub no_worktree: bool,
+
     /// Print the URL, open no browser.
     #[arg(long)]
     pub no_open: bool,

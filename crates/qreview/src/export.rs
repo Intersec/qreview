@@ -19,12 +19,7 @@ pub async fn change(session: &Session, key: &str) -> Result<String> {
     let mut out = String::new();
     let head = header(session, key).await?;
 
-    let _ = writeln!(
-        out,
-        "## Review: {}, commit {}",
-        place(session).await,
-        head.short
-    );
+    let _ = writeln!(out, "## Review: {}, {}", place(session).await, head.what());
     let _ = writeln!(out);
     let _ = writeln!(
         out,
@@ -83,7 +78,7 @@ pub async fn series(session: &Session) -> Result<String> {
     for (key, _) in &reviewed {
         let head = header(session, key).await?;
         let _ = writeln!(out);
-        let _ = writeln!(out, "### {} — {}", head.short, head.subject);
+        let _ = writeln!(out, "### {} — {}", head.name(), head.subject);
         out.push_str(&body(session, &head.commit, &head.comments).await);
     }
     Ok(out)
@@ -100,6 +95,27 @@ struct Head {
     subject: String,
     about: String,
     comments: Vec<crate::store::model::Comment>,
+    /// The work that is not committed. It has no sha worth printing: the one
+    /// it carries is synthetic, and a session cannot look it up.
+    worktree: bool,
+}
+
+impl Head {
+    /// What the opening line calls the thing being reviewed.
+    fn what(&self) -> String {
+        match self.worktree {
+            true => "the changes that are not committed".to_owned(),
+            false => format!("commit {}", self.short),
+        }
+    }
+
+    /// What names it in the heading of one change of a series.
+    fn name(&self) -> &str {
+        match self.worktree {
+            true => "not committed",
+            false => &self.short,
+        }
+    }
 }
 
 async fn header(session: &Session, key: &str) -> Result<Head> {
@@ -119,11 +135,16 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
     let patch_set = sets.last().map(|s| s.number).unwrap_or(1);
     let count = file.comments.len();
 
+    let worktree = session.is_worktree(&commit);
     let mut about = String::new();
     let _ = writeln!(about, "Change: {subject}");
     let _ = writeln!(
         about,
-        "Patch set {patch_set} · {count} comment{}",
+        "{} · {count} comment{}",
+        match worktree {
+            true => "Not committed yet".to_owned(),
+            false => format!("Patch set {patch_set}"),
+        },
         if count == 1 { "" } else { "s" }
     );
 
@@ -136,6 +157,7 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
         subject,
         about,
         comments,
+        worktree,
     })
 }
 

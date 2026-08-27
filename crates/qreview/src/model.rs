@@ -43,6 +43,9 @@ pub struct ChangeSummary {
     /// The reader marked this change read.
     pub reviewed: bool,
     pub is_merge: bool,
+    /// The work that is not committed yet, not a commit of the history.
+    #[serde(default)]
+    pub worktree: bool,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]

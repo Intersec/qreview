@@ -26,6 +26,7 @@ pub mod session;
 pub mod store;
 pub mod update;
 pub mod version;
+pub mod worktree;
 
 #[cfg(test)]
 mod testutil;

@@ -30,14 +30,19 @@ pub fn render(series: &Series, files: &[ChangeFiles]) -> String {
             out,
             "{:>3}. {}  {}",
             index + 1,
-            short(&change.commit),
+            match change.worktree {
+                // The sha of the working tree is synthetic. Printing it
+                // would invite someone to look it up.
+                true => "not committed".to_owned(),
+                false => short(&change.commit).to_owned(),
+            },
             change.subject
         );
         let _ = writeln!(
             out,
             "     {}  {}",
             change.key,
-            if change.change_id.is_some() {
+            if change.change_id.is_some() || change.worktree {
                 ""
             } else {
                 "(no Change-Id: an amend loses the comments)"

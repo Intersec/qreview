@@ -18,7 +18,10 @@ const at = computed(() => readable.value.findIndex((f) => f.path === props.fileP
 <template>
   <div v-if="change" class="change-bar">
     <span class="subject">{{ change.subject }}</span>
-    <code class="quiet">{{ change.commit.slice(0, 12) }}</code>
+    <!-- The work that is not committed has a synthetic sha and no
+       Change-Id. Printing either would invite a look-up that fails. -->
+    <span v-if="change.worktree" class="tag tag-worktree">not committed</span>
+    <code v-else class="quiet">{{ change.commit.slice(0, 12) }}</code>
     <a
       v-if="change.changeId && gerrit"
       class="change-id"
@@ -29,7 +32,7 @@ const at = computed(() => readable.value.findIndex((f) => f.path === props.fileP
       >{{ change.changeId }}</a
     >
     <code v-else-if="change.changeId" class="quiet change-id">{{ change.changeId }}</code>
-    <span v-else class="tag">no Change-Id</span>
+    <span v-else-if="!change.worktree" class="tag">no Change-Id</span>
 
     <span class="bar-actions">
       <span v-if="at >= 0" class="quiet">File {{ at + 1 }} of {{ readable.length }}</span>

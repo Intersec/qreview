@@ -38,6 +38,8 @@ export interface ChangeSummary {
   commentCount: number;
   reviewed: boolean;
   isMerge: boolean;
+  /// The work that is not committed yet, not a commit of the history.
+  worktree: boolean;
 }
 
 export interface Series {

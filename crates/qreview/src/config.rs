@@ -55,6 +55,8 @@ pub struct Series {
     pub guess_max: usize,
     pub batch_size: usize,
     pub integration_branch: Option<String>,
+    /// Show the tracked changes that are not committed as a change.
+    pub worktree: bool,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -95,6 +97,7 @@ impl Default for Config {
                 guess_max: 10,
                 batch_size: 5,
                 integration_branch: None,
+                worktree: true,
             },
             ui: Ui {
                 diff: "unified".to_owned(),
@@ -158,6 +161,7 @@ pub struct SeriesLayer {
     pub guess_max: Option<usize>,
     pub batch_size: Option<usize>,
     pub integration_branch: Option<String>,
+    pub worktree: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -204,6 +208,7 @@ impl Config {
             self.series.integration_branch = series
                 .integration_branch
                 .or(self.series.integration_branch.take());
+            self.series.worktree = series.worktree.unwrap_or(self.series.worktree);
         }
         if let Some(ui) = layer.ui {
             self.ui.diff = ui.diff.unwrap_or_else(|| self.ui.diff.clone());
