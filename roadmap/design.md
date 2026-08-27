@@ -653,7 +653,7 @@ Three layers, the later one wins:
     "integrationBranch": null
   },
   "ui": { "diff": "unified", "theme": "system" },
-  "update": { "url": null, "token": null },
+  "update": { "url": "https://api.github.com/…/releases/latest", "token": null },
   "diff": {
     "context": 10,
     "wrap": false,
@@ -680,14 +680,14 @@ notices the typo. `examples/` holds a copy of both files.
 A language map is merged, not replaced: a repository adds its own file types
 without repeating the ones the tool already knows.
 
-`update.url` is the address that says which release is the newest. The tool
-ships with none: it does not know where it is published, and a check that
-phones a place the reader did not name is not one they asked for. A site
-writes it once, in the configuration of the user.
+`update.url` is the address that says which release is the newest. It
+defaults to the releases API of the project on GitHub, which is where the
+tool is published. An empty address asks nobody, and that is how the check
+is turned off. A fork writes its own.
 
 The address must answer with JSON holding `tag_name`. The releases API of
-GitLab and of GitHub both do, and `_links.self` or `html_url` gives the page
-to link to. `update.token` is sent as `PRIVATE-TOKEN`, for a project that is
+GitHub and of GitLab both do, and `html_url` or `_links.self` gives the page
+to link to. `update.token` is sent as `PRIVATE-TOKEN`, for a fork that is
 not public.
 
 `curl` asks, with a three second cap, once for the life of the run and only

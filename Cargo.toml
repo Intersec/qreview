@@ -9,7 +9,7 @@ version = "0.5.1"
 edition = "2024"
 rust-version = "1.92"
 license = "Apache-2.0"
-repository = "https://github.com/nicopauss/qreview"
+repository = "https://github.com/Intersec/qreview"
 
 [workspace.dependencies]
 anyhow = "1"

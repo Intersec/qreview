@@ -1619,9 +1619,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn with_no_address_the_version_check_asks_nothing() {
+    async fn an_empty_address_asks_nobody() {
         let repo = fixture().await;
-        let (status, body) = json(server(&repo).await, get_with_cookie("/api/update", TOKEN)).await;
+        let session = session_of(&repo, Options::new()).await;
+        // The default is the home of the project, and no test talks to it.
+        let mut config = crate::config::Config::default();
+        config.update.url = Some(String::new());
+        let state =
+            AppState::new(session, TOKEN.to_owned()).with_config(config, repo.path().to_path_buf());
+
+        let (status, body) = json(app(state), get_with_cookie("/api/update", TOKEN)).await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["latest"], serde_json::Value::Null);

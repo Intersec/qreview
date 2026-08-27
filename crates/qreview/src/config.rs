@@ -25,19 +25,20 @@ pub struct Config {
 
 /// Where to ask whether a newer qreview is out.
 ///
-/// The tool ships with no address: it does not know where it is published,
-/// and a version check that phones a place the reader did not name is not
-/// one they asked for. A site writes the address once, in the configuration
-/// of the user or of the repository.
+/// The default is the home of the project. An empty address asks nowhere,
+/// which is the way to turn the check off, and a fork writes its own.
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Update {
     /// A URL that answers with JSON holding a `tagName`. The releases API
-    /// of GitLab and of GitHub both do.
+    /// of GitHub and of GitLab both do.
     pub url: Option<String>,
-    /// Sent as `PRIVATE-TOKEN`, for a project that is not public.
+    /// Sent as `PRIVATE-TOKEN`, for a fork that is not public.
     pub token: Option<String>,
 }
+
+/// The releases of qreview, where the tool is published.
+const HOME: &str = "https://api.github.com/repos/Intersec/qreview/releases/latest";
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -109,7 +110,10 @@ impl Default for Config {
                 font_size: 12,
                 syntax: true,
             },
-            update: Update::default(),
+            update: Update {
+                url: Some(HOME.to_owned()),
+                token: None,
+            },
         }
     }
 }
@@ -216,6 +220,8 @@ impl Config {
             self.diff.syntax = diff.syntax.unwrap_or(self.diff.syntax);
         }
         if let Some(update) = layer.update {
+            // An empty address is a choice, not an absence: it is how a
+            // reader says to ask nobody.
             self.update.url = update.url.or(self.update.url.take());
             self.update.token = update.token.or(self.update.token.take());
         }

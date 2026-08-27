@@ -11,8 +11,9 @@ let server: Running;
 
 test.afterEach(() => server?.stop());
 
-test('with no address, nothing is said', async ({ page }) => {
-  server = await start();
+test('an empty address asks nobody, and says nothing', async ({ page }) => {
+  // The default address is the home of the project. No test talks to it.
+  server = await start({ config: { update: { url: '' } } });
   await page.goto(server.url);
 
   await expect(page.locator('.top-bar')).toBeVisible();

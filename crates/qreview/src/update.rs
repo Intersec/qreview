@@ -179,11 +179,13 @@ mod tests {
 
     #[tokio::test]
     async fn no_address_asks_nothing() {
-        let quiet = Update {
-            url: None,
-            token: None,
-        };
+        for quiet in [None, Some(String::new())] {
+            let config = Update {
+                url: quiet,
+                token: None,
+            };
 
-        assert_eq!(check(&quiet, "0.5.0").await, Release::default());
+            assert_eq!(check(&config, "0.5.0").await, Release::default());
+        }
     }
 }

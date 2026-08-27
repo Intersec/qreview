@@ -22,13 +22,13 @@ export async function start(
 ): Promise<Running> {
   const fixture = build();
 
-  if (options.config) {
-    mkdirSync(join(fixture.config, 'qreview'), { recursive: true });
-    writeFileSync(
-      join(fixture.config, 'qreview', 'config.json'),
-      JSON.stringify(options.config, null, 2),
-    );
-  }
+  // No test talks to a server. qreview asks its home whether a newer
+  // release is out, so every fixture says to ask nobody, and the suite that
+  // is about that check names its own address.
+  const config = { update: { url: '' }, ...options.config };
+
+  mkdirSync(join(fixture.config, 'qreview'), { recursive: true });
+  writeFileSync(join(fixture.config, 'qreview', 'config.json'), JSON.stringify(config, null, 2));
   const args = ['--no-open', '--port', '0'];
   if (!options.gerrit) {
     args.push('--no-gerrit');

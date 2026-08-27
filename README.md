@@ -7,15 +7,10 @@ One binary, no runtime to install, nothing leaves your machine.
 
 ## Install
 
-One link, always the newest build. Open it in the browser you read GitLab
-with, where you are signed in already:
-
-<https://gitlab.corp/pauss/qreview/-/releases/permalink/latest/downloads/qreview-linux-x86_64.xz>
-
-Then unpack it and put it where your shell looks:
+One link, always the newest build:
 
 ```sh
-cd ~/Downloads
+curl -fLO https://github.com/Intersec/qreview/releases/latest/download/qreview-linux-x86_64.xz
 xz -d qreview-linux-x86_64.xz
 install -m 755 qreview-linux-x86_64 ~/.local/bin/qreview
 qreview --version
@@ -23,7 +18,7 @@ qreview --version
 
 Make sure `~/.local/bin` is on your PATH. The binary is static: it needs
 `git` on the PATH and nothing else. Every version, with its notes, is on the
-[releases page](https://gitlab.corp/pauss/qreview/-/releases).
+[releases page](https://github.com/Intersec/qreview/releases).
 
 To build it yourself instead, see [Build from source](#build-from-source).
 
@@ -97,7 +92,7 @@ Rust and Node, both pinned in `.tool-versions` for
 needed to run the tool.
 
 ```sh
-git clone https://gitlab.corp/pauss/qreview.git
+git clone https://github.com/Intersec/qreview.git
 cd qreview
 make setup         # the interface dependencies, once
 make build         # the interface, then the binary
@@ -132,24 +127,18 @@ every reader of that repository gets the map with no setup:
 A grammar is data too. Drop a `.sublime-syntax` or `.tmLanguage` file in
 `~/.config/qreview/grammars/` and name it in the map. No rebuild.
 
-qreview can also say when a newer release is out, beside the version it
-runs. It ships with no address to ask, so nothing leaves your machine until
-you name one. A project that is not public needs a token with the
-`read_api` scope, from **Preferences → Access tokens**:
+qreview says when a newer release is out, beside the version it runs. It
+asks GitHub once per run, with `curl`, after the page is on the screen, and
+a failure to reach it says nothing at all. To ask somewhere else, or to ask
+nowhere:
 
 ```json
-{
-  "update": {
-    "url": "https://gitlab.corp/api/v4/projects/pauss%2Fqreview/releases/permalink/latest",
-    "token": "<your token>"
-  }
-}
+{ "update": { "url": "" } }
 ```
 
-The address must answer with JSON holding `tag_name`; the releases API of
-GitLab and of GitHub both do. Leave `token` out for a project that is
-public. The check runs once per run, with `curl`, and a failure to reach it
-says nothing at all.
+An address must answer with JSON holding `tag_name`; the releases API of
+GitHub and of GitLab both do. `token` is sent as `PRIVATE-TOKEN`, for a
+fork that is not public.
 
 Personal settings go in `~/.config/qreview/config.json`. The preferences
 panel behind `,` writes that same file, so the next run starts the way you
