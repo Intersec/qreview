@@ -8,7 +8,7 @@ across sessions. Read it before you write code.
 | [`concept.md`](./concept.md) | The problem, the users, the non-goals, the prior art |
 | [`stack.md`](./stack.md) | The technology decisions and the rejected alternatives |
 | [`design.md`](./design.md) | The architecture, the data model, the storage format, the API |
-| [`features.md`](./features.md) | The feature backlog with a status per line |
+| [`features.md`](./features.md) | Where the backlog went: the GitHub issues |
 | [`plan.md`](./plan.md) | The milestones, the tasks, and the session protocol |
 | [`testing.md`](./testing.md) | The test policy. It is strict on purpose |
 
@@ -19,8 +19,7 @@ across sessions. Read it before you write code.
 3. Write the code and the tests together.
 4. Run `make check`. The task is not done while the command is red.
 5. Commit the task alone.
-6. Mark the task done in `plan.md`. Update `features.md` if a feature changed
-   status.
+6. Mark the task done in `plan.md`.
 
 If a task contradicts the design, stop and report. Do not change the design in
 silence.

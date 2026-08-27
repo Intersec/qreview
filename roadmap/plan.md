@@ -6,7 +6,8 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: v0.2.0 is cut, M9 is done.** What is left is in *After that*.
+**Status: v0.5.4 is cut, M12 is done.** Two tasks of M3 are still open.
+Everything after the milestones is in the GitHub issues.
 
 ---
 
@@ -85,7 +86,8 @@ change of the batch, and loads the next batch on demand.*
 
 - [x] The side-by-side view
 - [x] The intra-line marks
-- [ ] Folded context, opened line by line or whole
+- [x] Folded context, opened line by line or whole. Done by the context bar
+      of M8
 - [x] Renames and copies as one file
 - [x] The merge review: the auto-merge base, parent 1, parent 2
 - [x] The merge list, behind a button
@@ -229,9 +231,11 @@ surprised by anything.*
 
 ## After that
 
-1. A rebase-aware diff between two patch sets.
-2. A JSON export, and a Claude Code skill that reads it.
-3. An HTTP transport for Gerrit, for a server with ssh closed.
+The backlog is in the GitHub issues. A rebase-aware diff between two patch
+sets is issue #5.
+
+One idea has no issue yet: an HTTP transport for Gerrit, for a server with
+ssh closed.
 
 ## Session protocol
 
@@ -241,7 +245,6 @@ surprised by anything.*
 4. Run `make check`.
 5. Commit the task alone, with the why in the message.
 6. Mark the task `[x]` here. Move the **Status** line when a milestone ends.
-7. Update [`features.md`](./features.md) when a feature changes status.
 
 If a task contradicts [`design.md`](./design.md), stop and report. Write the
 new decision in [`stack.md`](./stack.md) with the date, then continue.

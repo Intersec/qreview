@@ -51,9 +51,7 @@ The interface is built before every Rust step, because the binary embeds
 
 1. Commit the task alone.
 2. Mark the task `[x]` in [`roadmap/plan.md`](./roadmap/plan.md).
-3. Update [`roadmap/features.md`](./roadmap/features.md) when a feature
-   changes status.
-4. Drop a changelog fragment when a user can see the change. See
+3. Drop a changelog fragment when a user can see the change. See
    [`changelog/README.md`](./changelog/README.md).
 
 ## The design is a contract
