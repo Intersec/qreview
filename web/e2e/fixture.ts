@@ -249,6 +249,9 @@ export function build(): Fixture {
   );
 
   git(repo, ['mv', 'docs/old-name.md', 'docs/new-name.md']);
+  // A rename with a line of work in it. A rename alone has no diff to read,
+  // and the newest change is the one a second round amends.
+  write(repo, 'docs/new-name.md', '# A document\n\nIt has words in it.\nAnd one more line.\n');
   commit(repo, 'docs: rename the document', 'Change-Id: Irenamedocaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
   const gerrit = fakeGerrit(base, repo);

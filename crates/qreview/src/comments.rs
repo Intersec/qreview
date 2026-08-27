@@ -111,6 +111,7 @@ impl Target<'_> {
         let comment = Comment {
             id: new_id(),
             patch_set: self.patch_set,
+            commit: self.rev.to_owned(),
             created_at: now.clone(),
             updated_at: now,
             scope: new.scope,

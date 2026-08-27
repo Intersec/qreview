@@ -81,6 +81,7 @@ async fn one(
         placeable: Comment {
             id: wire.id.clone(),
             patch_set,
+            commit: revision.to_owned(),
             created_at: String::new(),
             updated_at: String::new(),
             scope,

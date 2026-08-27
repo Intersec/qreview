@@ -168,6 +168,9 @@ export interface Anchor {
 export interface Comment {
   id: string;
   patchSet: number;
+  /// The commit it was written against. Empty on a remark written by a
+  /// qreview older than storage format 3.
+  commit: string;
   createdAt: string;
   updatedAt: string;
   scope: Scope;
@@ -231,6 +234,9 @@ export interface Placed {
   endLine: number | null;
   moved: boolean;
   lost: boolean;
+  /// Written on another version, and the line it spoke of is gone from this
+  /// one. The work it asked for was done.
+  answered: boolean;
 }
 
 /**

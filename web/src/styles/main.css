@@ -595,6 +595,12 @@ tr.talk td {
 }
 /* The work that is not committed. Not a commit, and it should not read
    like one. */
+/* The remarks a later version has answered. Out of the way, not gone. */
+.answered .lost-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
 .tag-worktree {
   background: var(--context-bar);
   color: var(--context-ink);

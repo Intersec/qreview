@@ -398,18 +398,15 @@ read, and one file is written.
 
 ```json
 {
-  "version": 1,
-  "changeId": "I8f3a...c21",
+  "version": 3,
+  "key": "I8f3a...c21",
   "subject": "net: fix the retry loop",
-  "patchSets": [
-    { "number": 1, "commit": "4888eaa8...", "origin": "gerrit",
-      "gerritRef": "refs/changes/21/12321/1" },
-    { "number": 2, "commit": "af448g15...", "origin": "local" }
-  ],
+  "reviewed": false,
   "comments": [
     {
       "id": "c-01H...",
       "patchSet": 2,
+      "commit": "af448g15...",
       "createdAt": "2026-08-20T14:02:11Z",
       "updatedAt": "2026-08-20T14:02:11Z",
       "scope": "line",
@@ -427,6 +424,10 @@ read, and one file is written.
   ]
 }
 ```
+
+The versions of a change are not stored. They are read from git, and the
+`commit` of each comment says which one a remark was written against. See
+section 5.4.
 
 `scope` is `line`, `range`, `file`, or `change`. A `file` comment has an anchor
 with no line. A `change` comment has no anchor.
@@ -477,6 +478,30 @@ is still the same line.
 An unanchored comment is never dropped and never moved in silence. The
 interface lists it in a panel beside the file, with the patch set it was
 written against and the text of the line it pointed to.
+
+### 5.4 The second round
+
+You review, an agent corrects the code and amends the commits, you review
+again. The remarks of the first round are all still there, and every one of
+them is one you have already dealt with.
+
+Each comment records the commit it was written against. Two things follow.
+
+**The version that was reviewed is found on its own.** A commit that carries
+a remark and is not the one under review is offered as a patch set, without
+`--prev`. The diff between the two is what the correction did.
+
+**A remark that was answered says so.** The line it spoke of is not in this
+version any more, and the remark was not written on this version, so the only
+thing that can have taken the line away is the work in between. The interface
+lists these apart, under **Answered**, with one action that drops them all.
+
+That is a guess, and it is the honest one available: nothing else in the
+repository says whether a remark was dealt with. It never deletes anything on
+its own.
+
+A version that is not the newest is history. Its remarks are shown and cannot
+be edited there: the newest version is where a review is written.
 
 ## 6. Gerrit integration
 

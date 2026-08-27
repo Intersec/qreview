@@ -1601,6 +1601,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_second_round_finds_the_version_that_was_reviewed() {
+        // Round one: read the change, write two remarks on it.
+        let repo = build_repo(&[
+            commit("base").file("a.txt", "0\n"),
+            commit("work")
+                .file("a.txt", "alpha\nbeta\ngamma\n")
+                .change_id("Iwork"),
+        ])
+        .await;
+        let first = repo.sha("HEAD").await;
+
+        for line in [2, 3] {
+            json(
+                server(&repo).await,
+                post(
+                    "/api/changes/Iwork/comments",
+                    &format!(
+                        r#"{{"scope":"line","file":"a.txt","side":"new","startLine":{line},"body":"about {line}"}}"#
+                    ),
+                ),
+            )
+            .await;
+        }
+
+        // An agent answers the first remark and leaves the second alone.
+        std::fs::write(repo.path().join("a.txt"), "alpha\nBETA IS FIXED\ngamma\n").unwrap();
+        repo.git(&["add", "-A"]).await;
+        repo.git(&["commit", "--amend", "--no-edit"]).await;
+
+        // Round two, with no `--prev`: the store remembers the version.
+        let (status, sets) = json(
+            server(&repo).await,
+            get_with_cookie("/api/changes/Iwork/patchsets", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let list = sets["sets"].as_array().unwrap();
+        assert_eq!(list.len(), 2, "the version that was reviewed is offered");
+        assert_eq!(list[0]["commit"], first);
+        assert_eq!(list[0]["origin"], "prev");
+        assert_eq!(list[1]["commit"], repo.sha("HEAD").await);
+
+        let (_, body) = json(
+            server(&repo).await,
+            get_with_cookie("/api/changes/Iwork/comments", TOKEN),
+        )
+        .await;
+        let placed = body["placed"].as_array().unwrap();
+        let about2 = &placed[0];
+        let about3 = &placed[1];
+
+        assert_eq!(about2["lost"], true);
+        assert_eq!(about2["answered"], true, "the line it spoke of is gone");
+        assert_eq!(about3["lost"], false);
+        assert_eq!(about3["answered"], false, "that line was not touched");
+        assert_eq!(about3["line"], 3);
+    }
+
+    #[tokio::test]
+    async fn a_remark_written_on_this_version_is_never_called_answered() {
+        let repo = fixture().await;
+        let app = server(&repo).await;
+
+        json(app, post("/api/changes/I8f3ac21/comments", LINE_COMMENT)).await;
+
+        let (_, body) = json(
+            server(&repo).await,
+            get_with_cookie("/api/changes/I8f3ac21/comments", TOKEN),
+        )
+        .await;
+
+        assert_eq!(body["placed"][0]["answered"], false);
+        assert_eq!(
+            body["comments"][0]["commit"],
+            repo.sha("HEAD").await,
+            "a remark says which version it was written on"
+        );
+    }
+
+    #[tokio::test]
     async fn the_lines_route_reads_the_context_the_diff_left_out() {
         let long: String = (1..=30).map(|i| format!("line {i}\n")).collect();
         let repo = build_repo(&[

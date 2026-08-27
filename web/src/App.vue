@@ -32,6 +32,7 @@ const {
   version,
   build,
   posted,
+  readingOlder,
   onMerge,
   mergeBase,
   mergeList,
@@ -83,6 +84,9 @@ const lost = computed(() => review.lost());
 /// What Gerrit already holds for the change being read, and the part of it
 /// this version has no line for.
 const postedLost = computed(() => review.postedLost());
+/// The remarks a later version has answered: the second round reads past
+/// these, or drops them all at once.
+const answered = computed(() => review.answered());
 const copied = ref(false);
 const prefs = ref(false);
 const helping = ref(false);
@@ -348,7 +352,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
             :posted="posted.comments"
             :posted-placement="review.postedPlacement"
             :posted-lost="postedLost"
+            :answered="answered"
+            :read-only="readingOlder"
             :load-lines="review.loadLines"
+            @drop-answered="review.dropAnswered"
             @update:split="review.setSplit"
             @add="review.addComment"
             @edit="(id, body) => review.editComment(id, { body })"

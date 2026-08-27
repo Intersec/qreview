@@ -4,7 +4,12 @@ import CommentBox from './CommentBox.vue';
 import { render } from '@/diff/markdown';
 import type { Comment } from '@/api/types';
 
-defineProps<{ comment: Comment }>();
+defineProps<{
+  comment: Comment;
+  /// True on a version that is not the newest. An older version is history:
+  /// it is read, and written on from the newest one.
+  readOnly?: boolean;
+}>();
 const emit = defineEmits<{ edit: [id: string, body: string]; remove: [id: string] }>();
 
 const editing = ref(false);
@@ -39,7 +44,7 @@ function when(comment: Comment): string {
       <div v-else class="prose-comment" v-html="render(comment.body)"></div>
     </div>
 
-    <div v-if="!editing" class="talk-foot">
+    <div v-if="!editing && !readOnly" class="talk-foot">
       <span class="spacer"></span>
       <button type="button" class="action" @click="editing = true">Edit</button>
       <button type="button" class="action" @click="emit('remove', comment.id)">Delete</button>

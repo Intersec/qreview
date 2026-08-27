@@ -15,6 +15,8 @@ defineProps<{
   posted: PostedComment[];
   /// True when a box is open on this place.
   writing: boolean;
+  /// True on a version that is not the newest. History is read, not edited.
+  readOnly: boolean;
   /// Where the browser keeps what is typed and not saved.
   draft: string;
   label: string;
@@ -33,11 +35,12 @@ const emit = defineEmits<{
     v-for="comment in comments"
     :key="comment.id"
     :comment="comment"
+    :read-only="readOnly"
     @edit="(id, body) => emit('edit', id, body)"
     @remove="(id) => emit('remove', id)"
   />
   <CommentBox
-    v-if="writing"
+    v-if="writing && !readOnly"
     :draft="draft"
     :label="label"
     @save="(body) => emit('save', body)"

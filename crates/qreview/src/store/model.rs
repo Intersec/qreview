@@ -8,7 +8,11 @@ use serde::{Deserialize, Serialize};
 /// 2 added the character range of an anchor. A file of format 1 reads as one
 /// whose comments cover whole lines, and `Store::load` stamps it 2 so the
 /// next write says what it is.
-pub const VERSION: u32 = 2;
+///
+/// 3 added the commit a comment was written against, which is what lets a
+/// second round find the version that was reviewed. A comment of format 2
+/// names none, and takes no part in that.
+pub const VERSION: u32 = 3;
 
 /// Everything a review of one change holds.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -61,6 +65,13 @@ pub struct Comment {
     pub id: String,
     /// The patch set the comment was written against.
     pub patch_set: usize,
+    /// The commit it was written against.
+    ///
+    /// An amend gives the change a new sha, and this is how a later run
+    /// finds the version that was reviewed without being told. Empty on a
+    /// comment written by a qreview older than format 3.
+    #[serde(default)]
+    pub commit: String,
     pub created_at: String,
     pub updated_at: String,
     pub scope: Scope,

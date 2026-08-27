@@ -8,7 +8,11 @@ import { build, type Fixture } from './fixture.ts';
 export interface Running {
   url: string;
   fixture: Fixture;
+  /// Kill the server and throw the repository away.
   stop(): void;
+  /// Kill the server and keep it, so another one can start on it. This is
+  /// how a test reads the same repository a second time.
+  kill(): void;
 }
 
 const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qreview');
@@ -18,9 +22,16 @@ const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qrevi
 /// The token is read from that line rather than forced in: the test walks the
 /// same path a person does.
 export async function start(
-  options: { prev?: boolean; gerrit?: boolean; dirty?: boolean; config?: object } = {},
+  options: {
+    prev?: boolean;
+    gerrit?: boolean;
+    dirty?: boolean;
+    config?: object;
+    /// Start on a repository a previous run left behind, comments and all.
+    on?: Fixture;
+  } = {},
 ): Promise<Running> {
-  const fixture = build();
+  const fixture = options.on ?? build();
 
   // A working tree with work in it. Only the suite about that asks for it:
   // it puts one more change at the top of the series.
@@ -83,6 +94,7 @@ export async function start(
       child.kill('SIGTERM');
       fixture.remove();
     },
+    kill: () => child.kill('SIGTERM'),
   };
 }
 

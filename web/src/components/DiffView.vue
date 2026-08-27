@@ -27,6 +27,12 @@ const props = defineProps<{
   loadLines: (from: number, to: number) => Promise<Row[]>;
   /// The comments whose place in this patch set is gone.
   lost: Comment[];
+  /// The comments a later version has answered: the line they spoke of is
+  /// not there any more.
+  answered: Comment[];
+  /// True while the reader is on a version that is not the newest. An older
+  /// version is history: it is read, never written on.
+  readOnly: boolean;
   /// What Gerrit already holds for this change. Read only.
   posted: PostedComment[];
   /// Where a Gerrit remark lands in the patch set being read.
@@ -42,6 +48,7 @@ const emit = defineEmits<{
   add: [comment: NewComment];
   edit: [id: string, body: string];
   remove: [id: string];
+  dropAnswered: [];
 }>();
 
 /// Above this, the browser spends more time building the DOM than the reader
@@ -772,7 +779,14 @@ function toggle(row: Row | null, column: Side) {
     </header>
 
     <section
-      v-if="about || loose.length || loosePosted.length || lost.length || postedLost.length"
+      v-if="
+        about ||
+        loose.length ||
+        loosePosted.length ||
+        lost.length ||
+        postedLost.length ||
+        answered.length
+      "
       class="above-diff"
     >
       <CommentBox
@@ -791,6 +805,23 @@ function toggle(row: Row | null, column: Side) {
         @edit="(id, body) => emit('edit', id, body)"
         @remove="(id) => emit('remove', id)"
       />
+
+      <div v-if="answered.length" class="lost answered">
+        <p class="lost-title">
+          Answered · {{ answered.length }}
+          <button type="button" class="action" @click="emit('dropAnswered')">
+            Delete these {{ answered.length }}
+          </button>
+        </p>
+        <p class="quiet">
+          The line each of these spoke of is not in this version any more. The work they asked for
+          was done, so they are out of the way rather than gone.
+        </p>
+        <p v-for="comment in answered" :key="comment.id" class="lost-item">
+          <code>{{ comment.anchor?.file }}:{{ comment.anchor?.startLine }}</code>
+          <span class="quiet"> patch set {{ comment.patchSet }} · </span>{{ comment.body }}
+        </p>
+      </div>
 
       <div v-if="lost.length || postedLost.length" class="lost">
         <p class="lost-title">Could not be placed · {{ lost.length + postedLost.length }}</p>
@@ -848,6 +879,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'old')"
                     :posted="atPosted(row, 'old')"
                     :writing="opening(row, 'old')"
+                    :read-only="readOnly"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
                     @save="(body) => write(row, 'old', body)"
@@ -861,6 +893,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'new')"
                     :posted="atPosted(row, 'new')"
                     :writing="opening(row, 'new')"
+                    :read-only="readOnly"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
                     @save="(body) => write(row, 'new', body)"
@@ -902,6 +935,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'old')"
                     :posted="atPosted(row, 'old')"
                     :writing="opening(row, 'old')"
+                    :read-only="readOnly"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
                     @save="(body) => write(row, 'old', body)"
@@ -915,6 +949,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'new')"
                     :posted="atPosted(row, 'new')"
                     :writing="opening(row, 'new')"
+                    :read-only="readOnly"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
                     @save="(body) => write(row, 'new', body)"
@@ -952,6 +987,7 @@ function toggle(row: Row | null, column: Side) {
                   :comments="at(pair.left, 'old')"
                   :posted="atPosted(pair.left, 'old')"
                   :writing="opening(pair.left, 'old')"
+                  :read-only="readOnly"
                   :draft="draftAt(pair.left, 'old')"
                   :label="boxLabel(pair.left, 'old')"
                   @save="(body) => write(pair.left, 'old', body)"
@@ -965,6 +1001,7 @@ function toggle(row: Row | null, column: Side) {
                   :comments="at(pair.right, 'new')"
                   :posted="atPosted(pair.right, 'new')"
                   :writing="opening(pair.right, 'new')"
+                  :read-only="readOnly"
                   :draft="draftAt(pair.right, 'new')"
                   :label="boxLabel(pair.right, 'new')"
                   @save="(body) => write(pair.right, 'new', body)"
@@ -1015,6 +1052,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, column)"
                     :posted="atPosted(row, column)"
                     :writing="opening(row, column)"
+                    :read-only="readOnly"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
                     @save="(body) => write(row, column, body)"
@@ -1062,6 +1100,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, column)"
                     :posted="atPosted(row, column)"
                     :writing="opening(row, column)"
+                    :read-only="readOnly"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
                     @save="(body) => write(row, column, body)"
@@ -1103,6 +1142,7 @@ function toggle(row: Row | null, column: Side) {
                   :comments="at(row, column)"
                   :posted="atPosted(row, column)"
                   :writing="opening(row, column)"
+                  :read-only="readOnly"
                   :draft="draftAt(row, column)"
                   :label="boxLabel(row, column)"
                   @save="(body) => write(row, column, body)"

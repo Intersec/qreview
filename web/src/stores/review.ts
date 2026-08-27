@@ -358,12 +358,47 @@ export const useReview = defineStore('review', () => {
     return posted.value.comments.filter((c) => postedPlacement(c.id)?.lost);
   }
 
-  /// The comments whose place is gone. They are never dropped.
+  /// The comments whose place is gone, and that were written on this
+  /// version. They are never dropped.
   function lost(): Comment[] {
     const comments = review.value?.comments ?? [];
 
-    return comments.filter((c) => placement(c.id)?.lost);
+    return comments.filter((c) => placement(c.id)?.lost && !placement(c.id)?.answered);
   }
+
+  /// The comments a later version has answered: the line they spoke of is
+  /// not there any more. This is the second round, and these are the ones to
+  /// read past, or drop.
+  function answered(): Comment[] {
+    const comments = review.value?.comments ?? [];
+
+    return comments.filter((c) => placement(c.id)?.answered);
+  }
+
+  /// Drop every remark a later version has answered, in one action.
+  async function dropAnswered() {
+    const key = changeKey.value;
+    const gone = answered();
+    if (!key || gone.length === 0) {
+      return;
+    }
+    await guard(async () => {
+      for (const comment of gone) {
+        await api.deleteComment(key, comment.id);
+      }
+      await reload();
+    });
+  }
+
+  /// True while the reader is on a version that is not the newest.
+  ///
+  /// An older version is history. Reading it is the point of a second
+  /// round; writing on it is not, so the remarks are read only there.
+  const readingOlder = computed(() => {
+    const last = patchSets.value[patchSets.value.length - 1]?.number;
+
+    return patchSet.value !== undefined && last !== undefined && patchSet.value !== last;
+  });
 
   /// The comments of the change being read.
   function comments(): Comment[] {
@@ -471,6 +506,9 @@ export const useReview = defineStore('review', () => {
     openPatchSet,
     placement,
     lost,
+    answered,
+    dropAnswered,
+    readingOlder,
     posted,
     postedPlacement,
     postedLost,

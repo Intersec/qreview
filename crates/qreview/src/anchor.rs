@@ -27,6 +27,12 @@ pub struct Placed {
     pub moved: bool,
     /// True when the place is gone. The interface lists these apart.
     pub lost: bool,
+    /// True when the remark was written on another version and the line it
+    /// spoke of is not in this one: the work it asked for was done.
+    ///
+    /// This is the second round. You review, an agent corrects, you review
+    /// again, and forty remarks you have already dealt with are in the way.
+    pub answered: bool,
 }
 
 /// Place every comment of a review in the patch set being read.
@@ -42,8 +48,18 @@ pub async fn place_all(git: &Git, comments: &[Comment], rev: &str, base: &str) -
     out
 }
 
-/// Place one comment.
+/// Place one comment, and say whether it looks answered.
 pub async fn place(git: &Git, comment: &Comment, rev: &str, base: &str) -> Placed {
+    let mut placed = locate(git, comment, rev, base).await;
+
+    // The line is gone, and the remark was not written on this version. The
+    // only thing that can have taken the line away is the work in between.
+    placed.answered = placed.lost && !comment.commit.is_empty() && comment.commit != rev;
+
+    placed
+}
+
+async fn locate(git: &Git, comment: &Comment, rev: &str, base: &str) -> Placed {
     let id = comment.id.clone();
 
     // A comment about the change belongs to no line and cannot be lost.
@@ -108,6 +124,7 @@ fn nowhere(id: String) -> Placed {
         end_line: None,
         moved: false,
         lost: false,
+        answered: false,
     }
 }
 
@@ -119,6 +136,7 @@ fn gone(id: String) -> Placed {
         end_line: None,
         moved: false,
         lost: true,
+        answered: false,
     }
 }
 
@@ -129,6 +147,7 @@ fn found(id: String, line: usize, span: usize, moved: bool) -> Placed {
         end_line: Some(line + span),
         moved,
         lost: false,
+        answered: false,
     }
 }
 
@@ -313,6 +332,7 @@ mod tests {
         let comment = Comment {
             id: "c-1".to_owned(),
             patch_set: 1,
+            commit: String::new(),
             created_at: "t".to_owned(),
             updated_at: "t".to_owned(),
             scope: Scope::Change,
@@ -340,6 +360,7 @@ mod tests {
         let comment = Comment {
             id: "c-1".to_owned(),
             patch_set: 1,
+            commit: String::new(),
             created_at: "t".to_owned(),
             updated_at: "t".to_owned(),
             scope: Scope::Range,
@@ -383,6 +404,7 @@ mod tests {
         Comment {
             id: "c-1".to_owned(),
             patch_set: 1,
+            commit: String::new(),
             created_at: "t".to_owned(),
             updated_at: "t".to_owned(),
             scope: Scope::Line,
@@ -458,6 +480,7 @@ mod tests {
         let comment = Comment {
             id: "c-1".to_owned(),
             patch_set: 1,
+            commit: String::new(),
             created_at: "t".to_owned(),
             updated_at: "t".to_owned(),
             scope: Scope::Line,

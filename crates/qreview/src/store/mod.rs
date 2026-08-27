@@ -147,6 +147,7 @@ mod tests {
         Comment {
             id: id.to_owned(),
             patch_set: 1,
+            commit: String::new(),
             created_at: "2026-01-01T00:00:00Z".to_owned(),
             updated_at: "2026-01-01T00:00:00Z".to_owned(),
             scope: Scope::Line,

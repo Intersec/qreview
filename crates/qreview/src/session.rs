@@ -215,6 +215,31 @@ impl Session {
         Some(worktree::summary(&hash, &info.author))
     }
 
+    /// The versions of a change that carry a remark, and are not the one
+    /// under review.
+    ///
+    /// An amend gives the change a new sha. The remarks stay, keyed by the
+    /// `Change-Id`, and each names the commit it was written against. That
+    /// name is the version the reader reviewed last time, found without
+    /// being told. A commit git no longer has is dropped later, by
+    /// `patchset::of_change`.
+    pub fn reviewed_versions(&self, key: &str, current: &str) -> Vec<String> {
+        let Ok(file) = self.store.load(key, "") else {
+            return Vec::new();
+        };
+        let mut out: Vec<String> = Vec::new();
+
+        for comment in &file.comments {
+            if comment.commit.is_empty() || comment.commit == current {
+                continue;
+            }
+            if !out.contains(&comment.commit) {
+                out.push(comment.commit.clone());
+            }
+        }
+        out
+    }
+
     /// The remarks already posted on Gerrit for a change.
     ///
     /// Read only: qreview writes nothing to the server. Gerrit is optional,
@@ -635,7 +660,14 @@ impl Session {
         if self.is_worktree(&rev) {
             return patchset::of_change(&self.git, &info, &[]).await;
         }
-        let mut sets = patchset::of_change(&self.git, &info, &self.prevs).await?;
+
+        // The versions the reader named, and the ones the store remembers
+        // from the remarks written on them. The second is what makes a
+        // second round work without `--prev`.
+        let mut older = self.prevs.clone();
+        older.extend(self.reviewed_versions(key, &rev));
+
+        let mut sets = patchset::of_change(&self.git, &info, &older).await?;
 
         if let Some(change) = self.ask_gerrit(&info).await {
             sets = patchset::merge_gerrit(sets, &change.patch_sets);
@@ -772,13 +804,21 @@ impl Session {
     }
 
     async fn count_patch_sets(&mut self) {
-        if self.prevs.is_empty() {
-            return;
-        }
-
-        let keys: Vec<_> = self.series.changes.iter().map(|c| c.key.clone()).collect();
+        let keys: Vec<_> = self
+            .series
+            .changes
+            .iter()
+            .map(|c| (c.key.clone(), c.commit.clone()))
+            .collect();
         let mut counts = Vec::with_capacity(keys.len());
-        for key in &keys {
+
+        for (key, commit) in &keys {
+            // Asking costs a Gerrit query. A change that cannot have a
+            // second version is not worth one.
+            if self.prevs.is_empty() && self.reviewed_versions(key, commit).is_empty() {
+                counts.push(1);
+                continue;
+            }
             counts.push(self.patch_sets(key).await.map(|s| s.len()).unwrap_or(1));
         }
         for (change, count) in self.series.changes.iter_mut().zip(counts) {
