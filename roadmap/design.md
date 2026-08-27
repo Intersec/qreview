@@ -445,6 +445,11 @@ set must still see it.
 3. No candidate                           -> the comment is unanchored.
 ```
 
+The three branches read the tree the `side` of the anchor names: `new` reads
+the patch set, `old` reads what it is diffed against. Every line of the left
+column takes a remark, deleted or not, and it is anchored on the base. A
+rebase that moves that line moves the remark with it.
+
 A range is anchored by its first line, and keeps its length: the last line
 follows the first by however many lines it stood below it. The characters
 are kept as they were written. Anchoring reads lines, and a line that moved
@@ -619,6 +624,9 @@ Rules for the format:
 
 - The comment follows the code, never the opposite. The reader needs the
   context first.
+- A place on the old side reads `` `src/net.blk:42` (before the change) ``.
+  A deleted line has no number in the new file, and the excerpt above it
+  comes from the version before the change.
 - No author. One person wrote every line of it.
 - The comments are numbered, so the answer can name one.
 - The export names the commit and the patch set, so the session knows the

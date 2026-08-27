@@ -279,3 +279,22 @@ The diff of two messages comes from the `similar` crate, not from `git`. Two
 messages are not blobs. Diffing them with `git` needs them written somewhere,
 and the tool writes nothing. `similar` is already a dependency, for the
 intra-line spans.
+
+## 2026-08-27 — A comment on the left side, and what the export calls it
+
+GitHub issue #4 asks for a remark on a line the change deletes. Every line of
+the left column takes one, deleted or not: the column is the side, and a
+reader who wants to speak of the version before the change should not have to
+find a deleted line first. The store already held the side of an anchor, so
+nothing in the storage format moves. Two things did.
+
+`anchor.rs` short-circuited the old side: it kept the line the comment was
+written on, never moved and never lost. That reads the same number on every
+patch set, and a rebase that moves the line moves the comment under it in
+silence. The three branches of `design.md` section 5.3 now run against the
+tree the side names, so the old side is anchored on the base.
+
+The export names a place as `` `path:line` ``, and a line that only exists
+before the change reads as a line of the new file. An old side place now
+reads `` `src/net.blk:42` (before the change) ``. The suffix is added, so
+every export written until now says the same thing it said.

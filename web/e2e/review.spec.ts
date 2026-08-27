@@ -194,7 +194,7 @@ test('a comment sits under the side it was written on', async ({ page }) => {
   await useSplit(page);
   await openFile(page, 'net.blk');
 
-  await page.locator('td.gutter-comment').nth(2).click();
+  await page.locator('td.gutter-comment[data-column="new"]').nth(2).click();
   await page.getByRole('textbox').first().fill('On the new side.');
   await page.getByRole('button', { name: 'Save' }).click();
 

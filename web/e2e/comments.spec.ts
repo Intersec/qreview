@@ -17,7 +17,7 @@ test.afterEach(() => server?.stop());
 
 /// Write one remark on a line of the open file.
 async function remark(page: Page, nth: number, body: string) {
-  await page.locator('td.gutter-comment').nth(nth).click();
+  await page.locator('td.gutter-comment[data-column="new"]').nth(nth).click();
   const box = page.getByRole('textbox').first();
   await box.waitFor();
   await box.fill(body);

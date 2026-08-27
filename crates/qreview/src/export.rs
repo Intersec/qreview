@@ -150,7 +150,13 @@ async fn body(
     for (index, comment) in comments.iter().enumerate() {
         let _ = writeln!(out);
         let _ = match &comment.anchor {
-            Some(_) => writeln!(out, "{}. `{}`", index + 1, place_of(comment)),
+            Some(_) => writeln!(
+                out,
+                "{}. `{}`{}",
+                index + 1,
+                place_of(comment),
+                before_the_change(comment)
+            ),
             None => writeln!(out, "{}. The change as a whole", index + 1),
         };
 
@@ -183,6 +189,22 @@ fn place_of(comment: &Comment) -> String {
     match anchor.end_line {
         Some(end) if end > start => format!("{}:{start}-{end}", anchor.file),
         _ => format!("{}:{start}", anchor.file),
+    }
+}
+
+/// What follows the place, when the place is not in the new file.
+///
+/// A removed line only exists before the change, and the excerpt above it
+/// comes from there. Without this a session reads the number against the
+/// version it has, and lands on another line.
+fn before_the_change(comment: &Comment) -> &'static str {
+    let Some(anchor) = &comment.anchor else {
+        return "";
+    };
+
+    match anchor.side == Side::Old && anchor.start_line.is_some() {
+        true => " (before the change)",
+        false => "",
     }
 }
 
@@ -516,6 +538,42 @@ mod tests {
         for line in ["3 | three", "4 | four", "5 | five"] {
             assert!(text.contains(line), "{line} is missing from\n{text}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_comment_on_a_removed_line_says_it_is_before_the_change() {
+        let repo = build_repo(&[
+            commit("first").file("a.c", "one\ntwo\nthree\n"),
+            commit("work: drop a line")
+                .file("a.c", "one\nthree\n")
+                .change_id("Iremoved"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        session
+            .add_comment(
+                "Iremoved",
+                NewComment {
+                    scope: Scope::Line,
+                    file: Some("a.c".to_owned()),
+                    side: Some(Side::Old),
+                    start_line: Some(2),
+                    end_line: Some(2),
+                    start_char: None,
+                    end_char: None,
+                    body: "This line was doing something.".to_owned(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Iremoved").await.unwrap();
+
+        // Line 2 of the new file is `three`. Without the mark, a session
+        // would read the remark against that line.
+        assert!(text.contains("`a.c:2` (before the change)"), "{text}");
+        assert!(text.contains("2 | two"), "{text}");
     }
 
     #[tokio::test]

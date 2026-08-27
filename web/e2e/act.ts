@@ -23,6 +23,16 @@ export async function useSplit(page: Page) {
   await expect(page.getByRole('button', { name: 'Unified' })).toBeVisible();
 }
 
+/// Put the diff in the unified view, whatever it was in.
+export async function useUnified(page: Page) {
+  const toggle = page.getByRole('button', { name: /^(Unified|Side by side)$/ });
+  await toggle.waitFor();
+  if ((await toggle.textContent())?.trim() === 'Unified') {
+    await toggle.click();
+  }
+  await expect(page.getByRole('button', { name: 'Side by side' })).toBeVisible();
+}
+
 /// A saved comment, as the diff shows it.
 ///
 /// The text of a remark is on the screen twice: in its card, and in the list

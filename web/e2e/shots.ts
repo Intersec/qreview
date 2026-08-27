@@ -63,6 +63,18 @@ for (const scheme of ['light', 'dark'] as const) {
   await useSplit(page);
   await page.screenshot({ path: join(OUT, `${scheme}-split.png`) });
 
+  // A remark on the left side, on the line the change deletes. It sits under
+  // the left column, because that is the side it speaks of.
+  await page
+    .locator('tr', { has: page.locator('td.gutter[data-column="old"]:text-is("3")') })
+    .locator('td.gutter-comment[data-column="old"]')
+    .click();
+  const left = page.getByRole('textbox').first();
+  await left.waitFor();
+  await left.fill('This line was doing something.');
+  await page.screenshot({ path: join(OUT, `${scheme}-leftside.png`) });
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
   // The panel, which is where the settings live now.
   await page.getByRole('button', { name: '⚙' }).click();
   await page.screenshot({ path: join(OUT, `${scheme}-preferences.png`) });
@@ -87,7 +99,7 @@ for (const scheme of ['light', 'dark'] as const) {
   // A comment, open on its line.
   await openChange(page, /net: retry the read/);
   await openFile(page, 'net.blk');
-  await page.locator('td.gutter-comment').nth(2).click();
+  await page.locator('td.gutter-comment[data-column="new"]').nth(2).click();
   await page.getByRole('textbox').first().fill('This loop never ends when the socket closes.');
   await page.screenshot({ path: join(OUT, `${scheme}-comment.png`) });
 
@@ -99,7 +111,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
   await openChange(page, /long: touch two places/);
   await openFile(page, 'long.c');
-  await page.locator('td.gutter-comment').nth(3).click();
+  await page.locator('td.gutter-comment[data-column="new"]').nth(3).click();
   const box = page.getByRole('textbox').first();
   await box.waitFor();
   await box.fill('This line is the one to read twice.');

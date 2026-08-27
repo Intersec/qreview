@@ -30,17 +30,20 @@ pub struct Placed {
 }
 
 /// Place every comment of a review in the patch set being read.
-pub async fn place_all(git: &Git, comments: &[Comment], rev: &str) -> Vec<Placed> {
+///
+/// `rev` is the commit being read, and `base` what it is read against. A
+/// comment on a removed line lives on the base, so both are needed.
+pub async fn place_all(git: &Git, comments: &[Comment], rev: &str, base: &str) -> Vec<Placed> {
     let mut out = Vec::with_capacity(comments.len());
 
     for comment in comments {
-        out.push(place(git, comment, rev).await);
+        out.push(place(git, comment, rev, base).await);
     }
     out
 }
 
 /// Place one comment.
-pub async fn place(git: &Git, comment: &Comment, rev: &str) -> Placed {
+pub async fn place(git: &Git, comment: &Comment, rev: &str, base: &str) -> Placed {
     let id = comment.id.clone();
 
     // A comment about the change belongs to no line and cannot be lost.
@@ -57,17 +60,19 @@ pub async fn place(git: &Git, comment: &Comment, rev: &str) -> Placed {
     // The range keeps its length wherever its first line lands.
     let span = anchor.end_line.unwrap_or(line).saturating_sub(line);
 
-    // A comment on the old side is read against the old side, which the
-    // patch set being read does not own. It keeps the line it was written on.
-    if anchor.side == Side::Old {
-        return found(id, line, span, false);
-    }
+    // A comment on a removed line speaks of the version before the change,
+    // so it is anchored on the base. The three branches below are the same
+    // ones: only the tree they read differs.
+    let tree = match anchor.side {
+        Side::New => rev,
+        Side::Old => base,
+    };
 
     // The commit message is not a blob. It is read from the commit, and the
     // line hash is the only way back to it.
     let read = match crate::commitmsg::is(&anchor.file) {
-        true => crate::commitmsg::text(git, rev).await,
-        false => match blob_of(git, rev, &anchor.file).await {
+        true => crate::commitmsg::text(git, tree).await,
+        false => match blob_of(git, tree, &anchor.file).await {
             // One: the file did not change at all.
             Some(blob) if anchor.blob.as_deref() == Some(blob.as_str()) => {
                 return found(id, line, span, false);
@@ -315,7 +320,7 @@ mod tests {
             anchor: None,
         };
 
-        let placed = place(&git, &comment, "HEAD").await;
+        let placed = place(&git, &comment, "HEAD", crate::diff::EMPTY_TREE).await;
         assert_eq!(placed.line, None);
         assert!(!placed.lost);
     }
@@ -352,12 +357,95 @@ mod tests {
             }),
         };
 
-        let placed = place(&git, &comment, "HEAD").await;
+        let placed = place(&git, &comment, "HEAD", "HEAD~1").await;
 
         assert_eq!(placed.line, Some(4));
         assert_eq!(placed.end_line, Some(6));
         assert!(placed.moved);
         assert!(!placed.lost);
+    }
+
+    /// A change that adds two lines at the top, then deletes `two`.
+    ///
+    /// The base of the last commit still holds `two`, four lines down from
+    /// where the first version had it.
+    async fn a_deleted_line() -> crate::testutil::Repo {
+        crate::testutil::build_repo(&[
+            crate::testutil::commit("one").file("a.txt", "one\ntwo\nthree\nfour\n"),
+            crate::testutil::commit("two").file("a.txt", "extra\nlines\none\ntwo\nthree\nfour\n"),
+            crate::testutil::commit("three").file("a.txt", "extra\nlines\none\nthree\nfour\n"),
+        ])
+        .await
+    }
+
+    /// A comment on the old side, written on line `line` of `two`.
+    fn on_the_old_side(line: usize, blob: &str) -> Comment {
+        Comment {
+            id: "c-1".to_owned(),
+            patch_set: 1,
+            created_at: "t".to_owned(),
+            updated_at: "t".to_owned(),
+            scope: Scope::Line,
+            body: "b".to_owned(),
+            anchor: Some(Anchor {
+                file: "a.txt".to_owned(),
+                side: Side::Old,
+                start_line: Some(line),
+                end_line: Some(line),
+                start_char: None,
+                end_char: None,
+                blob: Some(blob.to_owned()),
+                line_hash: Some(hash_line("two")),
+                context: vec!["one".to_owned(), "two".to_owned(), "three".to_owned()],
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_comment_on_a_removed_line_is_read_against_the_base() {
+        let repo = a_deleted_line().await;
+        let git = Git::discover(repo.path()).await.unwrap();
+        let blob = git
+            .text(&["rev-parse", "HEAD~1:a.txt"])
+            .await
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        // The base of HEAD is HEAD~1, and its a.txt is the blob the comment
+        // was written against. The line does not move.
+        let placed = place(&git, &on_the_old_side(4, &blob), "HEAD", "HEAD~1").await;
+
+        assert_eq!(placed.line, Some(4));
+        assert!(!placed.moved);
+        assert!(!placed.lost);
+    }
+
+    #[tokio::test]
+    async fn a_removed_line_that_moved_in_the_base_is_followed() {
+        let repo = a_deleted_line().await;
+        let git = Git::discover(repo.path()).await.unwrap();
+
+        // Written against the first version, where `two` sat on line 2. The
+        // base of HEAD has two lines above it, so it sits on line 4 now.
+        let placed = place(&git, &on_the_old_side(2, "stale"), "HEAD", "HEAD~1").await;
+
+        assert_eq!(placed.line, Some(4));
+        assert!(placed.moved);
+        assert!(!placed.lost);
+    }
+
+    #[tokio::test]
+    async fn a_removed_line_the_base_no_longer_holds_is_lost() {
+        let repo = a_deleted_line().await;
+        let git = Git::discover(repo.path()).await.unwrap();
+
+        // Read against a base that already dropped the line. Nothing is
+        // invented: the comment goes to the panel of what could not be placed.
+        let placed = place(&git, &on_the_old_side(4, "stale"), "HEAD", "HEAD").await;
+
+        assert!(placed.lost);
+        assert_eq!(placed.line, None);
     }
 
     #[tokio::test]
@@ -387,7 +475,7 @@ mod tests {
             }),
         };
 
-        let placed = place(&git, &comment, "HEAD").await;
+        let placed = place(&git, &comment, "HEAD", crate::diff::EMPTY_TREE).await;
         assert!(placed.lost, "the file is not there any more");
         assert_eq!(placed.line, None);
     }

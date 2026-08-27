@@ -3,6 +3,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue';
 import CommentBox from './CommentBox.vue';
 import CommentCard from './CommentCard.vue';
 import ContextBar from './ContextBar.vue';
+import CommentCell from './CommentCell.vue';
 import DiffRow from './DiffRow.vue';
 import { gaps, type Gap } from '@/diff/gaps';
 import { label } from '@/diff/paths';
@@ -46,8 +47,8 @@ const MAX_ROWS = 2000;
 /// when the reader comes back to the file.
 const writing = ref(new Set<string>());
 
-function opening(row: Row | null): boolean {
-  return row !== null && writing.value.has(key(row));
+function opening(row: Row | null, column: Side): boolean {
+  return row !== null && writing.value.has(keyIn(row, column));
 }
 
 /// What an open box covers, when it was opened on a range.
@@ -136,7 +137,9 @@ watch(
 
     // The same file, read again. A box stays open while the line it sits on
     // is still there, so a setting the reader changes does not take it away.
-    const here = new Set(walkable.value.map(key));
+    const here = new Set(
+      walkable.value.flatMap((row) => columnsOf(row).map((column) => keyIn(row, column))),
+    );
     writing.value = new Set([...writing.value].filter((at) => here.has(at)));
     if (cursor.value !== null && !walkable.value.some((row) => key(row) === cursor.value)) {
       cursor.value = null;
@@ -253,22 +256,48 @@ function lineOf(row: Row): number | null {
   return row.kind === 'remove' ? row.oldLine : row.newLine;
 }
 
-function key(row: Row): string {
-  return `${sideOf(row)}:${lineOf(row)}`;
+/// The line a column holds on a row, and nothing else.
+///
+/// A column speaks for one version of the file, so it is the side. A context
+/// line stands in both, which is what lets a reader write about the left one.
+function lineIn(row: Row | null, column: Side): number | null {
+  if (!row) {
+    return null;
+  }
+  return column === 'old' ? row.oldLine : row.newLine;
 }
 
-function at(row: Row | null) {
-  if (!row) {
-    return [];
+/// The columns a row stands in, left to right.
+function columnsOf(row: Row): Side[] {
+  const out: Side[] = [];
+  if (row.oldLine !== null) {
+    out.push('old');
   }
-  const line = lineOf(row);
-  if (line === null) {
+  if (row.newLine !== null) {
+    out.push('new');
+  }
+  return out;
+}
+
+/// Where a box or a card sits, as `side:line`. An empty cell holds no place.
+function keyIn(row: Row | null, column: Side): string {
+  return row ? `${column}:${lineIn(row, column)}` : '';
+}
+
+/// The place the keyboard lands on: the side the row itself belongs to.
+function key(row: Row): string {
+  return keyIn(row, sideOf(row));
+}
+
+function at(row: Row | null, column: Side) {
+  const line = lineIn(row, column);
+  if (!row || line === null) {
     return [];
   }
   return props.comments.filter((comment) => {
     const found = span(comment);
 
-    return found?.side === sideOf(row) && found.end === line;
+    return found?.side === column && found.end === line;
   });
 }
 
@@ -316,14 +345,12 @@ const drawn = computed<Picked[]>(() => {
 /// columns of the side by side view, and only the column that owns the side
 /// of the range carries the mark.
 function markOf(row: Row | null, column: Side): Mark | undefined {
-  if (!row || sideOf(row) !== column) {
+  const line = lineIn(row, column);
+  if (!row || line === null) {
     return undefined;
   }
-  const line = lineOf(row);
-  const range = drawn.value.find(
-    (r) => r.side === column && line !== null && r.start <= line && line <= r.end,
-  );
-  if (!range || line === null) {
+  const range = drawn.value.find((r) => r.side === column && r.start <= line && line <= r.end);
+  if (!range) {
     return undefined;
   }
 
@@ -334,10 +361,21 @@ function markOf(row: Row | null, column: Side): Mark | undefined {
   return { start: from, end: Math.max(to, from) };
 }
 
+/// The unified view has one code cell per row. A range on either side of the
+/// file marks it, because both sides are drawn there.
+function markRow(row: Row | null): Mark | undefined {
+  return markOf(row, 'new') ?? markOf(row, 'old');
+}
+
 /// A row that carries a comment, or an open box, gets its own row underneath
 /// so the code above it stays aligned with the other side.
-function talkative(row: Row | null): boolean {
-  return row !== null && (at(row).length > 0 || opening(row));
+function talkative(row: Row | null, column: Side): boolean {
+  return row !== null && (at(row, column).length > 0 || opening(row, column));
+}
+
+/// The same, for the unified view, where one row carries both sides.
+function speaks(row: Row): boolean {
+  return columnsOf(row).some((column) => talkative(row, column));
 }
 
 /// The line the keyboard is on, as `side:line`.
@@ -478,7 +516,7 @@ function writeOnPicked() {
 /// Put the keyboard on one line and bring it into view. This is how the
 /// list of comments arrives at the place a remark speaks of.
 function revealLine(side: Side, line: number) {
-  const row = walkable.value.find((r) => sideOf(r) === side && lineOf(r) === line);
+  const row = walkable.value.find((r) => lineIn(r, side) === line);
   if (row) {
     clearPicked();
     place(row);
@@ -583,36 +621,29 @@ function clearPicked() {
   choosing.value = false;
 }
 
-/// The left column of a pair only speaks for a removed line.
-///
-/// A context line is the same row on both sides, so without this both cells
-/// would draw the comment, and the box would appear twice.
 function onCursor(row: Row | null): boolean {
   return row !== null && cursor.value === key(row);
 }
 
-function ownLeft(pair: { left: Row | null }): Row | null {
-  return pair.left?.kind === 'remove' ? pair.left : null;
-}
-
-function write(row: Row, body: string) {
-  const line = lineOf(row);
-  if (line === null) {
+function write(row: Row | null, column: Side, body: string) {
+  const line = lineIn(row, column);
+  if (!row || line === null) {
     return;
   }
-  const range = covered.get(key(row)) ?? null;
+  const at = keyIn(row, column);
+  const range = covered.get(at) ?? null;
 
   emit('add', {
     scope: range ? 'range' : 'line',
     file: props.diff.path,
-    side: sideOf(row),
+    side: column,
     startLine: range ? range.start : line,
     endLine: range ? range.end : line,
     startChar: range?.startChar,
     endChar: range?.endChar,
     body,
   });
-  closeBox(key(row));
+  closeBox(at);
   clearPicked();
 }
 
@@ -636,32 +667,36 @@ function writeAbout(scope: 'change' | 'file', body: string) {
   about.value = null;
 }
 
-/// Where an unfinished remark on this row is kept.
-function draftAt(row: Row): string {
-  return slot(props.changeKey, props.diff.path, key(row));
+/// Where an unfinished remark on this place is kept.
+function draftAt(row: Row | null, column: Side): string {
+  return slot(props.changeKey, props.diff.path, keyIn(row, column));
 }
 
-/// What the box says it is about.
-function boxLabel(row: Row): string {
-  const range = covered.get(key(row));
-  if (!range) {
-    return 'A remark about this line';
+/// What the box says it is about. The old side says which version it means,
+/// because a context line stands in both.
+function boxLabel(row: Row | null, column: Side): string {
+  const range = covered.get(keyIn(row, column));
+  const when = column === 'old' ? ', before the change' : '';
+
+  if (range && range.end > range.start) {
+    return `A remark about lines ${range.start} to ${range.end}${when}`;
   }
-  if (range.end > range.start) {
-    return `A remark about lines ${range.start} to ${range.end}`;
+  if (range && range.startChar !== undefined) {
+    return `A remark about a part of this line${when}`;
   }
-  return range.startChar === undefined
-    ? 'A remark about this line'
-    : 'A remark about a part of this line';
+  return `A remark about this line${when}`;
 }
 
-function toggle(row: Row | null) {
-  if (row) {
-    if (opening(row)) {
-      closeBox(key(row));
-    } else {
-      openBox(key(row));
-    }
+function toggle(row: Row | null, column: Side) {
+  if (!row || lineIn(row, column) === null) {
+    return;
+  }
+  const at = keyIn(row, column);
+
+  if (opening(row, column)) {
+    closeBox(at);
+  } else {
+    openBox(at);
   }
 }
 </script>
@@ -745,31 +780,44 @@ function toggle(row: Row | null) {
           <template v-if="block.kind === 'gap'">
             <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
               <tr>
-                <DiffRow :row="row" side="old" :mark="markOf(row, 'old')" />
+                <DiffRow
+                  :row="row"
+                  side="old"
+                  :mark="markOf(row, 'old')"
+                  commentable
+                  @comment="toggle(row, 'old')"
+                />
                 <DiffRow
                   :row="row"
                   side="new"
                   :mark="markOf(row, 'new')"
                   commentable
-                  @comment="toggle(row)"
+                  @comment="toggle(row, 'new')"
                 />
               </tr>
-              <tr v-if="talkative(row)" class="talk">
-                <td colspan="2"></td>
+              <tr v-if="talkative(row, 'old') || talkative(row, 'new')" class="talk">
                 <td colspan="2">
-                  <CommentCard
-                    v-for="comment in at(row)"
-                    :key="comment.id"
-                    :comment="comment"
+                  <CommentCell
+                    :comments="at(row, 'old')"
+                    :writing="opening(row, 'old')"
+                    :draft="draftAt(row, 'old')"
+                    :label="boxLabel(row, 'old')"
+                    @save="(body) => write(row, 'old', body)"
+                    @cancel="closeBox(keyIn(row, 'old'))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
                   />
-                  <CommentBox
-                    v-if="opening(row)"
-                    :draft="draftAt(row!)"
-                    :label="boxLabel(row)"
-                    @save="(body) => write(row, body)"
-                    @cancel="closeBox(key(row!))"
+                </td>
+                <td colspan="2">
+                  <CommentCell
+                    :comments="at(row, 'new')"
+                    :writing="opening(row, 'new')"
+                    :draft="draftAt(row, 'new')"
+                    :label="boxLabel(row, 'new')"
+                    @save="(body) => write(row, 'new', body)"
+                    @cancel="closeBox(keyIn(row, 'new'))"
+                    @edit="(id, body) => emit('edit', id, body)"
+                    @remove="(id) => emit('remove', id)"
                   />
                 </td>
               </tr>
@@ -784,31 +832,44 @@ function toggle(row: Row | null) {
             />
             <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
               <tr :class="onCursor(row) ? 'row-cursor' : ''">
-                <DiffRow :row="row" side="old" :mark="markOf(row, 'old')" />
+                <DiffRow
+                  :row="row"
+                  side="old"
+                  :mark="markOf(row, 'old')"
+                  commentable
+                  @comment="toggle(row, 'old')"
+                />
                 <DiffRow
                   :row="row"
                   side="new"
                   :mark="markOf(row, 'new')"
                   commentable
-                  @comment="toggle(row)"
+                  @comment="toggle(row, 'new')"
                 />
               </tr>
-              <tr v-if="talkative(row)" class="talk">
-                <td colspan="2"></td>
+              <tr v-if="talkative(row, 'old') || talkative(row, 'new')" class="talk">
                 <td colspan="2">
-                  <CommentCard
-                    v-for="comment in at(row)"
-                    :key="comment.id"
-                    :comment="comment"
+                  <CommentCell
+                    :comments="at(row, 'old')"
+                    :writing="opening(row, 'old')"
+                    :draft="draftAt(row, 'old')"
+                    :label="boxLabel(row, 'old')"
+                    @save="(body) => write(row, 'old', body)"
+                    @cancel="closeBox(keyIn(row, 'old'))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
                   />
-                  <CommentBox
-                    v-if="opening(row)"
-                    :draft="draftAt(row!)"
-                    :label="boxLabel(row)"
-                    @save="(body) => write(row, body)"
-                    @cancel="closeBox(key(row!))"
+                </td>
+                <td colspan="2">
+                  <CommentCell
+                    :comments="at(row, 'new')"
+                    :writing="opening(row, 'new')"
+                    :draft="draftAt(row, 'new')"
+                    :label="boxLabel(row, 'new')"
+                    @save="(body) => write(row, 'new', body)"
+                    @cancel="closeBox(keyIn(row, 'new'))"
+                    @edit="(id, body) => emit('edit', id, body)"
+                    @remove="(id) => emit('remove', id)"
                   />
                 </td>
               </tr>
@@ -816,54 +877,47 @@ function toggle(row: Row | null) {
           </template>
 
           <template v-for="(pair, p) in pairs(block.hunk?.rows ?? [])" v-else :key="p">
-            <tr :class="onCursor(pair.right) || onCursor(ownLeft(pair)) ? 'row-cursor' : ''">
+            <!-- A comment sits under the side it was written on, not across
+               both, so the two columns keep meaning what they mean. -->
+            <tr :class="onCursor(pair.left) || onCursor(pair.right) ? 'row-cursor' : ''">
               <DiffRow
                 :row="pair.left"
                 side="old"
                 :mark="markOf(pair.left, 'old')"
-                @comment="toggle(pair.left)"
+                commentable
+                @comment="toggle(pair.left, 'old')"
               />
               <DiffRow
                 :row="pair.right"
                 side="new"
                 :mark="markOf(pair.right, 'new')"
                 commentable
-                @comment="toggle(pair.right)"
+                @comment="toggle(pair.right, 'new')"
               />
             </tr>
-            <!-- A comment sits under the side it was written on, not across
-               both, so the two columns keep meaning what they mean. -->
-            <tr v-if="talkative(ownLeft(pair)) || talkative(pair.right)" class="talk">
+            <tr v-if="talkative(pair.left, 'old') || talkative(pair.right, 'new')" class="talk">
               <td colspan="2">
-                <CommentCard
-                  v-for="comment in at(ownLeft(pair))"
-                  :key="comment.id"
-                  :comment="comment"
+                <CommentCell
+                  :comments="at(pair.left, 'old')"
+                  :writing="opening(pair.left, 'old')"
+                  :draft="draftAt(pair.left, 'old')"
+                  :label="boxLabel(pair.left, 'old')"
+                  @save="(body) => write(pair.left, 'old', body)"
+                  @cancel="closeBox(keyIn(pair.left, 'old'))"
                   @edit="(id, body) => emit('edit', id, body)"
                   @remove="(id) => emit('remove', id)"
-                />
-                <CommentBox
-                  v-if="opening(ownLeft(pair))"
-                  :draft="draftAt(ownLeft(pair)!)"
-                  :label="boxLabel(ownLeft(pair)!)"
-                  @save="(body) => write(ownLeft(pair)!, body)"
-                  @cancel="closeBox(key(ownLeft(pair)!))"
                 />
               </td>
               <td colspan="2">
-                <CommentCard
-                  v-for="comment in at(pair.right)"
-                  :key="comment.id"
-                  :comment="comment"
+                <CommentCell
+                  :comments="at(pair.right, 'new')"
+                  :writing="opening(pair.right, 'new')"
+                  :draft="draftAt(pair.right, 'new')"
+                  :label="boxLabel(pair.right, 'new')"
+                  @save="(body) => write(pair.right, 'new', body)"
+                  @cancel="closeBox(keyIn(pair.right, 'new'))"
                   @edit="(id, body) => emit('edit', id, body)"
                   @remove="(id) => emit('remove', id)"
-                />
-                <CommentBox
-                  v-if="opening(pair.right)"
-                  :draft="draftAt(pair.right!)"
-                  :label="boxLabel(pair.right!)"
-                  @save="(body) => write(pair.right!, body)"
-                  @cancel="closeBox(key(pair.right!))"
                 />
               </td>
             </tr>
@@ -881,30 +935,38 @@ function toggle(row: Row | null) {
           <template v-if="block.kind === 'gap'">
             <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
               <tr>
-                <td class="gutter">{{ row.oldLine ?? '' }}</td>
+                <td
+                  class="gutter"
+                  :class="[`gutter-${row.kind}`, row.oldLine !== null ? 'gutter-comment' : '']"
+                  :title="
+                    row.oldLine !== null ? 'Comment on this line, before the change' : undefined
+                  "
+                  data-column="old"
+                  @click="toggle(row, 'old')"
+                >
+                  {{ row.oldLine ?? '' }}
+                </td>
                 <DiffRow
                   :row="row"
                   side="new"
-                  :mark="markOf(row, sideOf(row))"
+                  :mark="markRow(row)"
                   commentable
-                  @comment="toggle(row)"
+                  @comment="toggle(row, 'new')"
                 />
               </tr>
-              <tr v-if="talkative(row)" class="talk">
+              <tr v-if="speaks(row)" class="talk">
                 <td colspan="3">
-                  <CommentCard
-                    v-for="comment in at(row)"
-                    :key="comment.id"
-                    :comment="comment"
+                  <CommentCell
+                    v-for="column in columnsOf(row)"
+                    :key="column"
+                    :comments="at(row, column)"
+                    :writing="opening(row, column)"
+                    :draft="draftAt(row, column)"
+                    :label="boxLabel(row, column)"
+                    @save="(body) => write(row, column, body)"
+                    @cancel="closeBox(keyIn(row, column))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
-                  />
-                  <CommentBox
-                    v-if="opening(row)"
-                    :draft="draftAt(row!)"
-                    :label="boxLabel(row)"
-                    @save="(body) => write(row, body)"
-                    @cancel="closeBox(key(row!))"
                   />
                 </td>
               </tr>
@@ -919,30 +981,38 @@ function toggle(row: Row | null) {
             />
             <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
               <tr :class="onCursor(row) ? 'row-cursor' : ''">
-                <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
+                <td
+                  class="gutter"
+                  :class="[`gutter-${row.kind}`, row.oldLine !== null ? 'gutter-comment' : '']"
+                  :title="
+                    row.oldLine !== null ? 'Comment on this line, before the change' : undefined
+                  "
+                  data-column="old"
+                  @click="toggle(row, 'old')"
+                >
+                  {{ row.oldLine ?? '' }}
+                </td>
                 <DiffRow
                   :row="row"
                   side="new"
-                  :mark="markOf(row, sideOf(row))"
+                  :mark="markRow(row)"
                   commentable
-                  @comment="toggle(row)"
+                  @comment="toggle(row, 'new')"
                 />
               </tr>
-              <tr v-if="talkative(row)" class="talk">
+              <tr v-if="speaks(row)" class="talk">
                 <td colspan="3">
-                  <CommentCard
-                    v-for="comment in at(row)"
-                    :key="comment.id"
-                    :comment="comment"
+                  <CommentCell
+                    v-for="column in columnsOf(row)"
+                    :key="column"
+                    :comments="at(row, column)"
+                    :writing="opening(row, column)"
+                    :draft="draftAt(row, column)"
+                    :label="boxLabel(row, column)"
+                    @save="(body) => write(row, column, body)"
+                    @cancel="closeBox(keyIn(row, column))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
-                  />
-                  <CommentBox
-                    v-if="opening(row)"
-                    :draft="draftAt(row!)"
-                    :label="boxLabel(row)"
-                    @save="(body) => write(row, body)"
-                    @cancel="closeBox(key(row!))"
                   />
                 </td>
               </tr>
@@ -951,30 +1021,38 @@ function toggle(row: Row | null) {
 
           <template v-for="(row, r) in block.hunk?.rows ?? []" v-else :key="r">
             <tr :class="onCursor(row) ? 'row-cursor' : ''">
-              <td class="gutter" :class="`gutter-${row.kind}`">{{ row.oldLine ?? '' }}</td>
+              <td
+                class="gutter"
+                :class="[`gutter-${row.kind}`, row.oldLine !== null ? 'gutter-comment' : '']"
+                :title="
+                  row.oldLine !== null ? 'Comment on this line, before the change' : undefined
+                "
+                data-column="old"
+                @click="toggle(row, 'old')"
+              >
+                {{ row.oldLine ?? '' }}
+              </td>
               <DiffRow
                 :row="row"
                 side="new"
-                :mark="markOf(row, sideOf(row))"
+                :mark="markRow(row)"
                 commentable
-                @comment="toggle(row)"
+                @comment="toggle(row, 'new')"
               />
             </tr>
-            <tr v-if="talkative(row)" class="talk">
+            <tr v-if="speaks(row)" class="talk">
               <td colspan="3">
-                <CommentCard
-                  v-for="comment in at(row)"
-                  :key="comment.id"
-                  :comment="comment"
+                <CommentCell
+                  v-for="column in columnsOf(row)"
+                  :key="column"
+                  :comments="at(row, column)"
+                  :writing="opening(row, column)"
+                  :draft="draftAt(row, column)"
+                  :label="boxLabel(row, column)"
+                  @save="(body) => write(row, column, body)"
+                  @cancel="closeBox(keyIn(row, column))"
                   @edit="(id, body) => emit('edit', id, body)"
                   @remove="(id) => emit('remove', id)"
-                />
-                <CommentBox
-                  v-if="opening(row)"
-                  :draft="draftAt(row!)"
-                  :label="boxLabel(row)"
-                  @save="(body) => write(row, body)"
-                  @cancel="closeBox(key(row!))"
                 />
               </td>
             </tr>

@@ -506,7 +506,10 @@ async fn comments(
 
     let file = session.comments(&key, &subject)?;
     let rev = target(&session, &key, view.ps).await?;
-    let placed = anchor::place_all(&session.git, &file.comments, &rev).await;
+    // A comment on a removed line is anchored on the base, so the placement
+    // needs both trees, not only the one being read.
+    let base = session.base_of(&rev, &Against::Parent).await?;
+    let placed = anchor::place_all(&session.git, &file.comments, &rev, &base).await;
 
     Ok(Json(Review { file, placed }))
 }
@@ -1290,6 +1293,67 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         let placed = &body["placed"][0];
         assert_eq!(placed["line"], 4, "the comment follows the line it was on");
+        assert_eq!(placed["moved"], true);
+        assert_eq!(placed["lost"], false);
+    }
+
+    #[tokio::test]
+    async fn a_comment_on_a_removed_line_follows_the_base_of_the_patch_set() {
+        // The remark speaks of a line the change deletes, so it lives on the
+        // base. A rebase moves that line, and the remark must follow it
+        // there, not stay on the number it was written on.
+        let repo = build_repo(&[
+            commit("base one").file("a.txt", "alpha\nbeta\ngamma\n"),
+            commit("work: drop beta")
+                .file("a.txt", "alpha\ngamma\n")
+                .change_id("Iremove"),
+        ])
+        .await;
+        let first = repo.sha("HEAD").await;
+
+        let server = app(AppState::new(
+            session_of(&repo, Options::new()).await,
+            TOKEN.to_owned(),
+        ));
+        let (status, comment) = json(
+            server,
+            post(
+                "/api/changes/Iremove/comments",
+                r#"{"scope":"line","file":"a.txt","side":"old","startLine":2,"body":"beta mattered"}"#,
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(comment["anchor"]["side"], "old");
+
+        // The same change on a base that put two lines above beta.
+        repo.git(&["switch", "--quiet", "--detach", "HEAD~1"]).await;
+        std::fs::write(
+            repo.path().join("a.txt"),
+            "extra\nlines\nalpha\nbeta\ngamma\n",
+        )
+        .unwrap();
+        repo.git(&["add", "-A"]).await;
+        repo.git(&["commit", "-m", "base two: two lines above"])
+            .await;
+        repo.git(&["cherry-pick", &first]).await;
+
+        let mut opts = Options::new();
+        opts.prevs = vec![first];
+        let fresh = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
+        let (status, body) = json(
+            fresh,
+            get_with_cookie("/api/changes/Iremove/comments?ps=2", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let placed = &body["placed"][0];
+        assert_eq!(placed["line"], 4, "beta sits two lines lower on this base");
         assert_eq!(placed["moved"], true);
         assert_eq!(placed["lost"], false);
     }

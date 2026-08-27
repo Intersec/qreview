@@ -15,6 +15,12 @@ const props = defineProps<{
 const emit = defineEmits<{ comment: [] }>();
 
 const kind = computed(() => props.row?.kind ?? 'empty');
+
+// The old column speaks of the version before the change. A context line
+// stands in both, so the hint says which one the click writes about.
+const hint = computed(() =>
+  props.side === 'old' ? 'Comment on this line, before the change' : 'Comment on this line',
+);
 const number = computed(() => {
   if (!props.row) {
     return '';
@@ -22,18 +28,24 @@ const number = computed(() => {
   return (props.side === 'old' ? props.row.oldLine : props.row.newLine) ?? '';
 });
 
-// Which line the text of this cell belongs to. A removed line is read on the
-// old side, everything else on the new one. The column is not the answer: in
-// the side by side view the left column of a context line still shows the
-// new side of it.
+// Which line the text of this cell belongs to.
+//
+// A column speaks for its own version of the file, so the left column of a
+// context line is the old side of it. The unified view has one column and
+// draws a removed line in it, so a cell with no new number falls back to the
+// old side rather than belonging to nothing.
 const owner = computed(() => {
   if (!props.row) {
     return null;
   }
-  const side = props.row.kind === 'remove' ? 'old' : 'new';
-  const line = props.row.kind === 'remove' ? props.row.oldLine : props.row.newLine;
-
-  return line === null ? null : { side, line };
+  const line = props.side === 'old' ? props.row.oldLine : props.row.newLine;
+  if (line !== null) {
+    return { side: props.side, line };
+  }
+  if (props.side === 'new' && props.row.oldLine !== null) {
+    return { side: 'old' as const, line: props.row.oldLine };
+  }
+  return null;
 });
 </script>
 
@@ -41,7 +53,8 @@ const owner = computed(() => {
   <td
     class="gutter"
     :class="[`gutter-${kind}`, commentable && number !== '' ? 'gutter-comment' : '']"
-    :title="commentable && number !== '' ? 'Comment on this line' : undefined"
+    :title="commentable && number !== '' ? hint : undefined"
+    :data-column="side"
     @click="commentable && number !== '' ? emit('comment') : undefined"
   >
     {{ number }}
