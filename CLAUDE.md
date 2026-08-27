@@ -128,7 +128,19 @@ Two rules that no tool enforces:
 This section fills as the code grows. Add a line when a pattern becomes the
 way the project does a thing. Keep each line short.
 
-- Nothing yet.
+- **A place in a diff is `side:line`.** A column is a side, so `old:12` and
+  `new:12` are two places. Cards, boxes and unfinished remarks are keyed by
+  that string.
+- **`data-column` says which column a cell stands in. `data-side` says which
+  version its text belongs to.** They differ in the unified view.
+- **A synthetic commit rather than a special case.** The working tree becomes
+  a commit in the object database, so every reader below stays the way it was.
+- **A new field on a stored type carries `#[serde(default)]`,** and the format
+  number goes up. An older file must still read.
+- **Nothing is tested against a network.** Gerrit answers come from recorded
+  files, and the browser tests from a fake `ssh` on the PATH.
+- **Look at `make shots` before saying a visual change works.** Add a shot when
+  a view has no picture yet.
 
 ## Git workflow
 
