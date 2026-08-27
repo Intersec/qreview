@@ -32,6 +32,34 @@ async function drag(page: Page, from: number, to: number) {
   await page.mouse.up();
 }
 
+/// The point on the screen where character `char` of `line` starts, or
+/// where the text ends when `char` is its length.
+async function pointAt(page: Page, line: number, char: number) {
+  return page.evaluate(
+    ([line, char]) => {
+      const cell = document.querySelector(`td.code-cell[data-line="${line}"]`)!;
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      let count = 0;
+      let node = walker.nextNode() as Text | null;
+      while (node) {
+        const length = node.textContent?.length ?? 0;
+        if (char < count + length || (char === count + length && length > 0)) {
+          const range = document.createRange();
+          const inside = char < count + length;
+          range.setStart(node, inside ? char - count : char - count - 1);
+          range.setEnd(node, inside ? char - count + 1 : char - count);
+          const box = range.getBoundingClientRect();
+          return { x: inside ? box.left : box.right, y: box.top + box.height / 2 };
+        }
+        count += length;
+        node = walker.nextNode() as Text | null;
+      }
+      throw new Error(`no character ${char} on line ${line}`);
+    },
+    [line, char] as const,
+  );
+}
+
 test('a selection over several lines offers to become a comment', async ({ page }) => {
   await drag(page, 5, 8);
 
@@ -77,6 +105,22 @@ test('a part of one line can carry a comment of its own', async ({ page }) => {
   const cell = page.locator('td.code-cell[data-line="6"]').first();
   await expect(cell.locator('.in-range')).toHaveCount(1);
   expect(await cell.locator('.in-range').textContent()).not.toBe(await cell.textContent());
+});
+
+test('the selection stays what the reader picked once the offer appears', async ({ page }) => {
+  // From inside line 6 to the end of line 7. The rows under a selection
+  // must not be repainted while it stands: the browser anchors it on text
+  // nodes, and an end whose node is replaced falls back to the start of
+  // the line.
+  const from = await pointAt(page, 6, 5);
+  const to = await pointAt(page, 7, 6);
+  await page.mouse.move(from.x + 1, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 2, to.y, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.getByRole('button', { name: 'Comment on part of 2 lines' })).toBeVisible();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('6\nline 7');
 });
 
 test('the keyboard picks a range with v, and c writes on it', async ({ page }) => {
