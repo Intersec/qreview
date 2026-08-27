@@ -30,10 +30,10 @@ pub struct Config {
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Update {
-    /// A URL that answers with JSON holding a `tagName`. The releases API
-    /// of GitHub and of GitLab both do.
+    /// A URL that answers with JSON holding `tag_name`, the way the
+    /// releases API of GitHub does.
     pub url: Option<String>,
-    /// Sent as `PRIVATE-TOKEN`, for a fork that is not public.
+    /// Sent as `Authorization: Bearer`, for a fork that is not public.
     pub token: Option<String>,
 }
 

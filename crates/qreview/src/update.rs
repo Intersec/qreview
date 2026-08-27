@@ -1,17 +1,17 @@
 //! Is a newer qreview out?
 //!
-//! The tool asks the address the configuration names, and nothing else. No
-//! address, no request: it does not know where it is published, and a check
-//! that phones a place the reader did not name is not one they asked for.
+//! The tool asks the address the configuration names, which is the home of
+//! the project unless a reader says otherwise. An empty address asks
+//! nobody, and that is how the check is turned off.
 //!
 //! Every failure is silence. A machine with no network, a server that is
-//! down, a project that wants a token, curl that is not installed: none of
+//! down, an address that wants a token, curl that is not installed: none of
 //! them is a reason to say anything to a reader who came to read a diff.
 //!
 //! `curl` and not a crate: the tool already runs `git` and `ssh` as child
-//! processes, curl is on every machine that has git, and it brings the
-//! certificates of the system with it, which is what an internal server
-//! behind its own authority needs.
+//! processes, curl is on every machine that has git, it costs no dependency
+//! and no bytes in the binary, and it brings the certificates of the system
+//! with it.
 
 use serde::Serialize;
 use tokio::process::Command;
@@ -59,7 +59,8 @@ async fn fetch(url: &str, token: Option<&str>) -> Option<String> {
     call.args(["--fail", "--silent", "--show-error", "--max-time", SECONDS]);
 
     if let Some(token) = token.filter(|token| !token.is_empty()) {
-        call.arg("--header").arg(format!("PRIVATE-TOKEN: {token}"));
+        call.arg("--header")
+            .arg(format!("Authorization: Bearer {token}"));
     }
     let out = call.arg(url).output().await.ok()?;
 
@@ -71,8 +72,8 @@ async fn fetch(url: &str, token: Option<&str>) -> Option<String> {
 
 /// The tag and the page of the release, out of the answer.
 ///
-/// `tagName` is what the releases API of GitLab and of GitHub both call it.
-/// The page is `_links.self` on one and `htmlUrl` on the other.
+/// `tag_name` and `html_url` are what the releases API of GitHub answers
+/// with. Any address that says the same two things works.
 fn read(body: &str) -> Option<(String, Option<String>)> {
     let json: serde_json::Value = serde_json::from_str(body).ok()?;
     let tag = json.get("tag_name")?.as_str()?.trim().to_owned();
@@ -81,8 +82,7 @@ fn read(body: &str) -> Option<(String, Option<String>)> {
         return None;
     }
     let page = json
-        .pointer("/_links/self")
-        .or_else(|| json.get("html_url"))
+        .get("html_url")
         .and_then(|value| value.as_str())
         .map(str::to_owned);
 
@@ -145,23 +145,14 @@ mod tests {
 
     #[test]
     fn the_tag_and_the_page_are_read_from_the_answer() {
-        let gitlab = r#"{"tag_name":"v0.6.0","name":"qreview v0.6.0",
-            "_links":{"self":"https://git.example.com/p/q/-/releases/v0.6.0"}}"#;
+        let answer = r#"{"tag_name":"v0.6.0","name":"qreview v0.6.0",
+            "html_url":"https://example.com/Intersec/qreview/releases/tag/v0.6.0"}"#;
 
         assert_eq!(
-            read(gitlab),
+            read(answer),
             Some((
                 "v0.6.0".to_owned(),
-                Some("https://git.example.com/p/q/-/releases/v0.6.0".to_owned())
-            ))
-        );
-
-        let github = r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r"}"#;
-        assert_eq!(
-            read(github),
-            Some((
-                "v1.2.3".to_owned(),
-                Some("https://example.com/r".to_owned())
+                Some("https://example.com/Intersec/qreview/releases/tag/v0.6.0".to_owned())
             ))
         );
     }

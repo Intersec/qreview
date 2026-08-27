@@ -685,10 +685,10 @@ defaults to the releases API of the project on GitHub, which is where the
 tool is published. An empty address asks nobody, and that is how the check
 is turned off. A fork writes its own.
 
-The address must answer with JSON holding `tag_name`. The releases API of
-GitHub and of GitLab both do, and `html_url` or `_links.self` gives the page
-to link to. `update.token` is sent as `PRIVATE-TOKEN`, for a fork that is
-not public.
+The address must answer with JSON holding `tag_name`, and `html_url` for
+the page to link to. That is what the releases API of GitHub answers with.
+`update.token` is sent as `Authorization: Bearer`, for a fork that is not
+public.
 
 `curl` asks, with a three second cap, once for the life of the run and only
 after the interface has painted. Every failure is silence: no network, a

@@ -136,9 +136,9 @@ nowhere:
 { "update": { "url": "" } }
 ```
 
-An address must answer with JSON holding `tag_name`; the releases API of
-GitHub and of GitLab both do. `token` is sent as `PRIVATE-TOKEN`, for a
-fork that is not public.
+An address must answer with JSON holding `tag_name`, the way the releases
+API of GitHub does. `token` is sent as `Authorization: Bearer`, for a fork
+that is not public.
 
 Personal settings go in `~/.config/qreview/config.json`. The preferences
 panel behind `,` writes that same file, so the next run starts the way you

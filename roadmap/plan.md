@@ -28,8 +28,7 @@ in place.*
 - [x] The `Makefile`: `setup`, `dev`, `build`, `check`, `test`, `fmt`,
       `install`, `dist`
 - [x] `make check`, one line per step, quiet until a step fails
-- [x] A pipeline that runs `make check` on every push (GitLab first,
-      GitHub Actions since the project was opened)
+- [x] A pipeline that runs `make check` on every push
 - [x] `.gitignore`, `.editorconfig`
 - [x] The first commit
 
@@ -225,7 +224,7 @@ surprised by anything.*
 - [x] Say at start when a newer release is out, and say nothing at all when
       the question cannot be asked
 
-- [x] The move to GitHub: the workflows, the install, and the address the
+- [x] GitHub Actions, the install from the releases, and the address the
       version check asks
 
 ## After that

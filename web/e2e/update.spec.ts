@@ -42,7 +42,7 @@ test('a newer release is named, and links to its page', async ({ page }) => {
     answer,
     JSON.stringify({
       tag_name: 'v99.0.0',
-      _links: { self: 'https://git.example.com/p/qreview/-/releases/v99.0.0' },
+      html_url: 'https://example.com/Intersec/qreview/releases/tag/v99.0.0',
     }),
   );
 
@@ -53,7 +53,7 @@ test('a newer release is named, and links to its page', async ({ page }) => {
   await expect(chip).toHaveText('v99.0.0 available');
   await expect(chip).toHaveAttribute(
     'href',
-    'https://git.example.com/p/qreview/-/releases/v99.0.0',
+    'https://example.com/Intersec/qreview/releases/tag/v99.0.0',
   );
 });
 
