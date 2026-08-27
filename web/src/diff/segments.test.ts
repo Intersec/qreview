@@ -20,7 +20,7 @@ function row(
 describe('segments', () => {
   it('gives one plain piece when nothing claims the row', () => {
     expect(segments(row('plain text'))).toEqual([
-      { text: 'plain text', cls: '', changed: false, marked: false },
+      { text: 'plain text', cls: '', changed: false, marked: false, same: false },
     ]);
   });
 
@@ -35,7 +35,13 @@ describe('segments', () => {
 
   it('carries the syntax class of the piece', () => {
     const out = segments(row('int x;', [[0, 3, 'storage type']]));
-    expect(out[0]).toEqual({ text: 'int', cls: 'storage type', changed: false, marked: false });
+    expect(out[0]).toEqual({
+      text: 'int',
+      cls: 'storage type',
+      changed: false,
+      marked: false,
+      same: false,
+    });
     expect(out[1].cls).toBe('');
   });
 
@@ -55,7 +61,7 @@ describe('segments', () => {
     expect(out.map((s) => s.text).join('')).toBe('x = "abcdef"');
   });
 
-  it('joins neighbours that carry the same two facts', () => {
+  it('joins neighbours that carry the same facts', () => {
     // Two touching spans of one class are one piece in the DOM.
     const out = segments(
       row('abcdef', [
@@ -80,7 +86,7 @@ describe('segments', () => {
         [3, 2, 'y'],
       ]),
     );
-    expect(out).toEqual([{ text: 'abc', cls: '', changed: false, marked: false }]);
+    expect(out).toEqual([{ text: 'abc', cls: '', changed: false, marked: false, same: false }]);
   });
 
   it('slices a line with an accent where the server said', () => {
@@ -98,5 +104,43 @@ describe('segments', () => {
 
   it('marks nothing when no range is given', () => {
     expect(segments(row('one two')).every((s) => !s.marked)).toBe(true);
+  });
+
+  it('cuts the row at the ends of the word the pointer is on', () => {
+    const found = segments(row('fd = open(fd);'), undefined, [
+      { start: 0, end: 2 },
+      { start: 10, end: 12 },
+    ]);
+
+    expect(found.map((s) => s.text)).toEqual(['fd', ' = open(', 'fd', ');']);
+    expect(found.map((s) => s.same)).toEqual([true, false, true, false]);
+  });
+
+  it('carries the word and the syntax class on the same piece', () => {
+    const out = segments(row('int fd;', [[0, 3, 'storage type']]), undefined, [
+      { start: 4, end: 6 },
+    ]);
+    const same = out.filter((s) => s.same);
+
+    expect(same.map((s) => s.text)).toEqual(['fd']);
+    expect(out[0].cls).toBe('storage type');
+    expect(out.map((s) => s.text).join('')).toBe('int fd;');
+  });
+
+  it('keeps the word apart from what changed inside the line', () => {
+    // The change covers `open(fd)`, the pointer only `fd`.
+    const out = segments(row('x = open(fd);', [], [[4, 12]]), undefined, [{ start: 9, end: 11 }]);
+
+    expect(out.filter((s) => s.same).map((s) => s.text)).toEqual(['fd']);
+    expect(
+      out
+        .filter((s) => s.changed)
+        .map((s) => s.text)
+        .join(''),
+    ).toBe('open(fd)');
+  });
+
+  it('marks nothing when the pointer is on no word', () => {
+    expect(segments(row('one two')).every((s) => !s.same)).toBe(true);
   });
 });

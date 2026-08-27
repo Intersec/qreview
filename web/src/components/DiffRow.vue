@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, inject, ref } from 'vue';
+import { HOVERED, occurrences, type Run } from '@/diff/hover';
 import { segments, type Mark } from '@/diff/segments';
 import type { Row } from '@/api/types';
+
+/// The same empty array every time, so a row that does not carry the word
+/// keeps the pieces it already has and is not painted again.
+const NONE: Run[] = [];
+
+/// A row outside a diff pane is on no word.
+const NOTHING = ref<string | null>(null);
 
 const props = defineProps<{
   row: Row | null;
@@ -13,6 +21,23 @@ const props = defineProps<{
   mark?: Mark;
 }>();
 const emit = defineEmits<{ comment: [] }>();
+
+const hovered = inject(HOVERED, NOTHING);
+
+/// Where the word the pointer is on stands in this row.
+const same = computed<Run[]>(() => {
+  const word = hovered.value;
+  if (word === null || !props.row) {
+    return NONE;
+  }
+  const found = occurrences(props.row.text, word);
+
+  return found.length > 0 ? found : NONE;
+});
+
+/// The pieces to paint. A computed rather than a call in the template: it
+/// is what keeps a row still when the pointer moves over another one.
+const parts = computed(() => (props.row ? segments(props.row, props.mark, same.value) : []));
 
 const kind = computed(() => props.row?.kind ?? 'empty');
 
@@ -69,9 +94,14 @@ const owner = computed(() => {
   >
     <template v-if="row">
       <span
-        v-for="(seg, s) in segments(row, mark)"
+        v-for="(seg, s) in parts"
         :key="s"
-        :class="[seg.cls, seg.changed ? 'word' : '', seg.marked ? 'in-range' : '']"
+        :class="[
+          seg.cls,
+          seg.changed ? 'word' : '',
+          seg.marked ? 'in-range' : '',
+          seg.same ? 'same-word' : '',
+        ]"
         >{{ seg.text }}</span
       >
       <span v-if="row.text === ''">&#8203;</span>

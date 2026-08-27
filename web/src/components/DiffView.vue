@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, provide, reactive, ref, watch } from 'vue';
 import CommentBox from './CommentBox.vue';
 import CommentCard from './CommentCard.vue';
 import ContextBar from './ContextBar.vue';
@@ -7,6 +7,7 @@ import CommentCell from './CommentCell.vue';
 import DiffRow from './DiffRow.vue';
 import PostedCard from './PostedCard.vue';
 import { gaps, type Gap } from '@/diff/gaps';
+import { HOVERED, wordAt } from '@/diff/hover';
 import { COMMIT_MSG, label } from '@/diff/paths';
 import { pairs } from '@/diff/pairs';
 import { places, slot } from '@/diff/drafts';
@@ -135,6 +136,11 @@ function onDown(event: MouseEvent) {
   selecting.value = column === 'old' || column === 'new' ? column : null;
 }
 
+/// The word the pointer is on. Every row of the file lights it wherever it
+/// stands, so a reader follows a name without a click and without a search.
+const hovered = ref<string | null>(null);
+provide(HOVERED, hovered);
+
 /// True while a remark about the file as a whole is being written.
 const aboutFile = ref(false);
 
@@ -189,6 +195,8 @@ watch(
     // The context a reader opened belongs to the rows that were there.
     opened.clear();
     left.clear();
+    // The rows under the pointer are not the ones it was read from.
+    hovered.value = null;
 
     if (fresh.path !== before?.path) {
       // A box left open would come back on whatever line of the new file
@@ -682,6 +690,56 @@ function charOffset(cell: HTMLElement, node: Node, offset: number): number {
   return node === cell && offset === 0 ? 0 : count;
 }
 
+/// Follow the pointer over the code, and light the word it stands on.
+function onMove(event: MouseEvent) {
+  // Not while a button is down: the reader is dragging a selection, and a
+  // word that lights under the drag fights what is being picked.
+  if (event.buttons !== 0) {
+    return;
+  }
+
+  // On the text and nothing else. A piece of a line is a span that hugs its
+  // text, so the room left at the end of a row is the cell around them.
+  const on = event.target as HTMLElement | null;
+  const onCode =
+    on?.tagName === 'SPAN' &&
+    !on.classList.contains('no-newline') &&
+    on.closest('td.code-cell[data-line]') !== null;
+
+  hovered.value = onCode ? wordUnder(event.clientX, event.clientY) : null;
+}
+
+/// The word at a point of the window, or null when the point is on none.
+///
+/// The line comes from the row rather than from the cell: a cell carries the
+/// marker of a missing newline too, and that is not code.
+function wordUnder(x: number, y: number): string | null {
+  const caret = caretAt(x, y);
+  const found = caret ? cellOf(caret.node) : null;
+  if (!caret || !found) {
+    return null;
+  }
+  // The cell says which version its number belongs to, so the row is the one
+  // that holds that number in that version. A context line stands in both,
+  // and the left column of it says the old side.
+  const row = walkable.value.find((r) => lineIn(r, found.side) === found.line);
+
+  return row ? wordAt(row.text, charOffset(found.cell, caret.node, caret.offset)) : null;
+}
+
+/// Where a point of the window falls in the text. Two names for one thing:
+/// the standard one, and the one WebKit shipped before it.
+function caretAt(x: number, y: number): { node: Node; offset: number } | null {
+  if (document.caretPositionFromPoint) {
+    const found = document.caretPositionFromPoint(x, y);
+
+    return found ? { node: found.offsetNode, offset: found.offset } : null;
+  }
+  const range = document.caretRangeFromPoint?.(x, y);
+
+  return range ? { node: range.startContainer, offset: range.startOffset } : null;
+}
+
 /// A selection in the code offers to become a comment.
 function onSelect(event: MouseEvent) {
   // A click inside a comment row is not a click on the code. Saving a box
@@ -913,7 +971,14 @@ function toggle(row: Row | null, column: Side) {
 
     <p v-else-if="diff.hunks.length === 0" class="note">Nothing changed inside this file.</p>
 
-    <div v-else class="diff-scroll" @mousedown="onDown" @mouseup="onSelect">
+    <div
+      v-else
+      class="diff-scroll"
+      @mousedown="onDown"
+      @mouseup="onSelect"
+      @mousemove="onMove"
+      @mouseleave="hovered = null"
+    >
       <table v-if="split" class="code" :class="[wrap ? '' : 'nowrap', only]">
         <colgroup>
           <col class="gut" />
