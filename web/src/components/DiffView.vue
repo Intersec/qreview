@@ -291,10 +291,15 @@ function span(comment: Comment): { side: Side; start: number; end: number } | nu
   return { side: anchor.side, start, end: Math.max(start, end) };
 }
 
-/// Every range drawn on the code: the one being picked, and the ones the
-/// comments of this file cover.
+/// Every range drawn on the code: the one the keyboard is picking, and the
+/// ones the comments of this file cover.
+///
+/// A range picked with the mouse is not drawn. The browser draws it already,
+/// as the selection, and repainting the rows under a selection replaces the
+/// text nodes it is anchored on: an end that loses its node falls back to
+/// the start of the line, and the selection spreads to the whole lines.
 const drawn = computed<Picked[]>(() => {
-  const out: Picked[] = picked.value ? [picked.value] : [];
+  const out: Picked[] = picked.value && choosing.value ? [picked.value] : [];
   out.push(...covered.values());
 
   for (const comment of props.comments) {
@@ -559,6 +564,8 @@ function onSelect(event: MouseEvent) {
   if (found) {
     picked.value = found;
     origin.value = found.start;
+    // The mouse took over from `v`, and its pick must not be drawn either.
+    choosing.value = false;
     // At the right edge of the pane, on the line the reader stopped on.
     // Under the pointer it would take the right click that was meant for
     // the selection, and the menu of a button carries no Copy.
