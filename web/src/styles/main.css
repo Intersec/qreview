@@ -22,6 +22,7 @@
   --add-word: #aaf2aa;
   --remove-line: #ffebee;
   --remove-word: #ffcdd2;
+  --same-word: #ffd97d;
   --context-bar: #fff7d4;
   --context-ink: #6b5900;
   --draft: #fff9d6;
@@ -67,6 +68,7 @@
     --add-word: #35603f;
     --remove-line: #320f10;
     --remove-word: #6b2d2f;
+    --same-word: #8a6a1e;
     --context-bar: #2a2410;
     --context-ink: #d6bf6a;
     --draft: #2c2712;
@@ -98,6 +100,7 @@
   --add-word: #35603f;
   --remove-line: #320f10;
   --remove-word: #6b2d2f;
+  --same-word: #8a6a1e;
   --context-bar: #2a2410;
   --context-ink: #d6bf6a;
   --draft: #2c2712;
@@ -992,6 +995,24 @@ a.change-id:hover {
  */
 .in-range {
   background: color-mix(in srgb, var(--pick-edge) 22%, transparent);
+  border-radius: 2px;
+}
+
+/* ------------------------------------------ the word the pointer is on */
+
+/*
+ * The word under the pointer, wherever else it stands in the file.
+ *
+ * It has to be read at a glance over four grounds: the page, a line that
+ * was added, a line that was removed, and a range a comment covers. So it
+ * fills rather than washes, and it names the word marks of a changed line
+ * to win over them: while the pointer rests on a name, which name it is
+ * matters more than which part of the line moved.
+ */
+.same-word,
+.row-add .same-word,
+.row-remove .same-word {
+  background: var(--same-word);
   border-radius: 2px;
 }
 

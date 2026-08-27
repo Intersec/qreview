@@ -1,9 +1,11 @@
 // One row, cut into the pieces a template can paint.
 //
-// A row carries two sets of spans: the syntax classes and the intra-line
-// marks. They overlap freely, so the row is cut at every boundary of either
-// set and each piece knows both facts.
+// A row carries three sets of spans: the syntax classes, the intra-line
+// marks, and the places the word under the pointer stands. They overlap
+// freely, so the row is cut at every boundary of any of them and each piece
+// knows all three facts.
 
+import type { Run } from '@/diff/hover';
 import type { Row, Span, WordSpan } from '@/api/types';
 
 export interface Segment {
@@ -14,6 +16,8 @@ export interface Segment {
   changed: boolean;
   /** True when the piece is inside the range a comment covers. */
   marked: boolean;
+  /** True when the piece is the word the pointer is on. */
+  same: boolean;
 }
 
 /** A range of the row, in UTF-16 units, that a comment covers. */
@@ -22,7 +26,7 @@ export interface Mark {
   end: number;
 }
 
-export function segments(row: Row, mark?: Mark): Segment[] {
+export function segments(row: Row, mark?: Mark, hovered: Run[] = []): Segment[] {
   const text = row.text;
   if (text === '') {
     return [];
@@ -31,13 +35,14 @@ export function segments(row: Row, mark?: Mark): Segment[] {
   const tokens = clamp(row.tokens ?? [], text.length);
   const words = clamp(row.words ?? [], text.length);
   const marks = mark ? clamp([mark], text.length) : [];
+  const same = clamp(hovered, text.length);
 
-  if (tokens.length === 0 && words.length === 0 && marks.length === 0) {
-    return [{ text, cls: '', changed: false, marked: false }];
+  if (tokens.length === 0 && words.length === 0 && marks.length === 0 && same.length === 0) {
+    return [{ text, cls: '', changed: false, marked: false, same: false }];
   }
 
   const cuts = new Set<number>([0, text.length]);
-  for (const span of [...tokens, ...words, ...marks]) {
+  for (const span of [...tokens, ...words, ...marks, ...same]) {
     cuts.add(span.start);
     cuts.add(span.end);
   }
@@ -56,22 +61,23 @@ export function segments(row: Row, mark?: Mark): Segment[] {
       cls: covering(tokens, start)?.cls ?? '',
       changed: covering(words, start) !== undefined,
       marked: covering(marks, start) !== undefined,
+      same: covering(same, start) !== undefined,
     });
   }
   return merge(out);
 }
 
-function clamp<T extends Span | WordSpan | Mark>(spans: T[], length: number): T[] {
+function clamp<T extends Span | WordSpan | Mark | Run>(spans: T[], length: number): T[] {
   return spans
     .filter((s) => s.start < s.end && s.start < length)
     .map((s) => ({ ...s, end: Math.min(s.end, length) }));
 }
 
-function covering<T extends Span | WordSpan | Mark>(spans: T[], at: number): T | undefined {
+function covering<T extends Span | WordSpan | Mark | Run>(spans: T[], at: number): T | undefined {
   return spans.find((s) => s.start <= at && at < s.end);
 }
 
-/** Join neighbours that carry the same two facts, so the DOM stays small. */
+/** Join neighbours that carry the same facts, so the DOM stays small. */
 function merge(segments: Segment[]): Segment[] {
   const out: Segment[] = [];
 
@@ -81,7 +87,8 @@ function merge(segments: Segment[]): Segment[] {
       last &&
       last.cls === segment.cls &&
       last.changed === segment.changed &&
-      last.marked === segment.marked
+      last.marked === segment.marked &&
+      last.same === segment.same
     ) {
       last.text += segment.text;
       continue;
