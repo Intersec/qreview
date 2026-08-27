@@ -831,6 +831,21 @@ a.change-id:hover {
   text-decoration: underline;
 }
 
+/*
+ * What a copy must not carry.
+ *
+ * The bar between two hunks is a control, not code. And a row of the side
+ * by side view is one row of a table, so without this a selection in one
+ * column takes the other one with it and every line lands twice.
+ */
+.context-bar {
+  user-select: none;
+}
+.code.only-new td.code-cell[data-column='old'],
+.code.only-old td.code-cell[data-column='new'] {
+  user-select: none;
+}
+
 /* ------------------------------------------------- the bar between panes */
 
 .split {
@@ -934,10 +949,18 @@ a.change-id:hover {
   border-radius: 2px;
 }
 
-/* What a selection offers to become. It follows the mouse, so it is fixed
-   to the window and not to the table under it. */
+/*
+ * What a selection offers to become.
+ *
+ * It hangs from the right edge of the pane, on the line the reader stopped
+ * on. Under the pointer it would take the right click that was meant for
+ * the selection, and the menu of a button carries no Copy.
+ */
 .offer {
   position: fixed;
+  transform: translate(-100%, -50%);
+  user-select: none;
+  white-space: nowrap;
   z-index: 6;
   padding: 2px 8px;
   border: 1px solid var(--pick-edge);

@@ -45,6 +45,24 @@ Never push to `main` with a red `make check`.
   on `main`.
 - No `Change-Id` trailer. The remote is GitHub, not Gerrit.
 
+### The issue a commit answers
+
+Name it in the body, on a line of its own:
+
+```
+Closes #12      the issue is done, and closes when the commit reaches main
+Refs #12        the commit is part of the answer, the issue stays open
+```
+
+`Closes`, `Fixes` and `Resolves` all close, and each issue needs its own
+keyword: `Closes #12, closes #13`. GitHub closes an issue when the commit
+lands on the default branch, so pushing is what closes it. Nothing else to
+do, and no token to hold.
+
+`Refs` when the fix is not the whole of it, or when the reporter has to say
+whether their case is answered. An issue closed too early is one nobody
+reads again.
+
 ## Changelog
 
 Do not edit `CHANGELOG.md`. It holds released versions, and

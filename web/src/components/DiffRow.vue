@@ -52,6 +52,7 @@ const owner = computed(() => {
     :data-kind="kind"
     :data-side="owner?.side"
     :data-line="owner?.line"
+    :data-column="side"
   >
     <template v-if="row">
       <span

@@ -89,6 +89,24 @@ const picked = ref<Picked | null>(null);
 /// Where the floating button sits, in the coordinates of the window.
 const offer = ref<{ x: number; y: number } | null>(null);
 
+/// Which column the reader started a selection in.
+///
+/// A row of the side by side view is one row of a table, so a selection in
+/// one column takes the other one with it, and the clipboard holds every
+/// line twice. The other column is made unselectable while the drag lasts.
+const selecting = ref<Side | null>(null);
+
+/// The class that leaves one column of the table selectable.
+const only = computed(() => (selecting.value ? `only-${selecting.value}` : ''));
+
+function onDown(event: MouseEvent) {
+  const from = event.target as HTMLElement | null;
+  const cell = from?.closest<HTMLElement>('td.code-cell[data-column]');
+  const column = cell?.dataset.column;
+
+  selecting.value = column === 'old' || column === 'new' ? column : null;
+}
+
 /// Which of the two "write about" boxes is open.
 const about = ref<'change' | 'file' | null>(null);
 
@@ -541,7 +559,11 @@ function onSelect(event: MouseEvent) {
   if (found) {
     picked.value = found;
     origin.value = found.start;
-    offer.value = { x: event.clientX, y: event.clientY };
+    // At the right edge of the pane, on the line the reader stopped on.
+    // Under the pointer it would take the right click that was meant for
+    // the selection, and the menu of a button carries no Copy.
+    const pane = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    offer.value = { x: pane.right - 10, y: event.clientY };
     return;
   }
 
@@ -711,8 +733,8 @@ function toggle(row: Row | null) {
 
     <p v-else-if="diff.hunks.length === 0" class="note">Nothing changed inside this file.</p>
 
-    <div v-else class="diff-scroll" @mouseup="onSelect">
-      <table v-if="split" class="code" :class="wrap ? '' : 'nowrap'">
+    <div v-else class="diff-scroll" @mousedown="onDown" @mouseup="onSelect">
+      <table v-if="split" class="code" :class="[wrap ? '' : 'nowrap', only]">
         <colgroup>
           <col class="gut" />
           <col />
@@ -849,7 +871,7 @@ function toggle(row: Row | null) {
         </tbody>
       </table>
 
-      <table v-else class="code" :class="wrap ? '' : 'nowrap'">
+      <table v-else class="code" :class="[wrap ? '' : 'nowrap', only]">
         <colgroup>
           <col class="gut" />
           <col class="gut" />
