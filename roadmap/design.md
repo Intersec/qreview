@@ -768,6 +768,12 @@ Rules for the format:
 - A place on the old side reads `` `src/net.blk:42` (before the change) ``.
   A deleted line has no number in the new file, and the excerpt above it
   comes from the version before the change.
+- A range that opens or closes inside a line quotes the text it covers,
+  after the place: `` `src/net.blk:42`, on `for (;;)` `` on one line, and
+  `` `src/net.blk:42-43`, from `for (;;) {` to `rc = read(fd);` `` over
+  several. The text, not the columns: the reader can act on the text, and a
+  column is a count in units it does not know. Bounds that fall on the ends
+  of the lines quote nothing, because the lines say it already.
 - No author. One person wrote every line of it.
 - The comments are numbered, so the answer can name one.
 - The export names the commit and the patch set, so the session knows the
