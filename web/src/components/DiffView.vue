@@ -826,9 +826,7 @@ function toggle(row: Row | null, column: Side) {
       <div v-if="answered.length" class="lost answered">
         <p class="lost-title">
           Answered · {{ answered.length }}
-          <button type="button" class="action" @click="emit('dropAnswered')">
-            Delete these {{ answered.length }}
-          </button>
+          <button type="button" class="action" @click="emit('dropAnswered')">Delete all</button>
         </p>
         <p class="quiet">
           The line each of these spoke of is not in this version any more. The work they asked for
@@ -852,8 +850,11 @@ function toggle(row: Row | null, column: Side) {
         </p>
         <p v-for="remark in postedLost" :key="remark.id" class="lost-item">
           <code>{{ remark.file }}:{{ remark.line }}</code>
-          <span class="quiet">
-            {{ remark.author }} on Gerrit · patch set {{ remark.patchSet }} · </span
+          <!-- The spaces are inside the expression. A text node of nothing
+             but a space is whitespace, and the compiler drops it. -->
+          <span class="quiet">{{
+            ` ${remark.author} on Gerrit · patch set ${remark.patchSet} · `
+          }}</span
           >{{ remark.body }}
         </p>
       </div>

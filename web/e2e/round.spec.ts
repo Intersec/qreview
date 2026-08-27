@@ -84,7 +84,7 @@ test('the answered remarks are dropped in one action', async ({ page }) => {
   await openChange(page, /docs: rename the document/);
   await openFile(page, 'new-name.md');
 
-  await page.getByRole('button', { name: 'Delete these 1' }).click();
+  await page.getByRole('button', { name: 'Delete all' }).click();
   await expect(page.locator('.answered')).toHaveCount(0);
 });
 

@@ -122,7 +122,9 @@ defineExpose({ focusFilter: () => boxes.value[0]?.focus() });
                 >
                   same Change-Id
                 </span>
-                <span v-if="change.patchSetCount > 1">· {{ change.patchSetCount }} patch sets</span>
+                <span v-if="change.patchSetCount > 1">
+                  · {{ change.patchSetCount }} patch sets
+                </span>
                 <span v-if="counts.get(change.key)" class="count"
                   >· {{ counts.get(change.key) }} ✎</span
                 >

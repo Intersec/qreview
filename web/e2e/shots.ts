@@ -18,6 +18,9 @@ async function openLongFile(page: Page) {
 }
 
 const server = await start();
+// A second repository, with work that is not committed and a Gerrit that
+// already holds remarks. Both put things on the screen the first one cannot.
+const other = await start({ dirty: true, gerrit: true });
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
@@ -123,8 +126,33 @@ for (const scheme of ['light', 'dark'] as const) {
     console.log(`${scheme}: the page complained\n  ${complaints.join('\n  ')}`);
   }
   await page.close();
+
+  const second = await browser.newPage({
+    viewport: { width: 1600, height: 1000 },
+    colorScheme: scheme,
+  });
+
+  // The work that is not committed, at the top of the series.
+  await second.goto(other.url);
+  await openChange(second, /Uncommitted changes/);
+  await openFile(second, 'long.c');
+  await second.screenshot({ path: join(OUT, `${scheme}-worktree.png`) });
+
+  // The remarks Gerrit already holds, read only, beside one of your own.
+  await openChange(second, /net: retry the read/);
+  await openFile(second, 'net.blk');
+  await second.locator('td.gutter-comment[data-column="new"]').first().click();
+  const mine = second.getByRole('textbox').first();
+  await mine.waitFor();
+  await mine.fill('And the name of this function says nothing.');
+  await second.getByRole('button', { name: 'Save' }).click();
+  await second.locator('.talk-box:not(.posted-box)').first().waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-posted.png`) });
+
+  await second.close();
 }
 
 await browser.close();
+other.stop();
 server.stop();
 console.log(`screenshots in ${OUT}`);
