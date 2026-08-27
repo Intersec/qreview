@@ -120,4 +120,13 @@ test('an older version is read, not written on', async ({ page }) => {
   await expect(
     card(page, 'The title says nothing.').getByRole('button', { name: 'Edit' }),
   ).toHaveCount(0);
+
+  // And nothing invites a new one there. A remark written on an older
+  // version would be anchored on the newest, at the line numbers of this
+  // one, which is a remark on a line nobody chose.
+  await expect(page.locator('.file-bar')).toContainText('reading an older version');
+  await expect(page.locator('td.gutter-comment')).toHaveCount(0);
+  await page.keyboard.press('j');
+  await page.keyboard.press('c');
+  await expect(page.getByRole('textbox')).toHaveCount(0);
 });

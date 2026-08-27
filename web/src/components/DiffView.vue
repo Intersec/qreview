@@ -528,6 +528,9 @@ function moveHunk(by: number) {
 
 /// Write on what is picked, or on the line the keyboard is on.
 function commentHere() {
+  if (props.readOnly) {
+    return;
+  }
   if (picked.value) {
     writeOnPicked();
     return;
@@ -731,7 +734,7 @@ function boxLabel(row: Row | null, column: Side): string {
 }
 
 function toggle(row: Row | null, column: Side) {
-  if (!row || lineIn(row, column) === null) {
+  if (!row || props.readOnly || lineIn(row, column) === null) {
     return;
   }
   const at = keyIn(row, column);
@@ -761,10 +764,24 @@ function toggle(row: Row | null, column: Side) {
       </div>
 
       <span class="bar-actions">
-        <button type="button" class="chip" @click="about = about === 'file' ? null : 'file'">
+        <!-- A version that is not the newest is history. A remark written
+           here would be anchored on the newest one, at the line numbers of
+           this one, which is a remark on a line nobody chose. -->
+        <span v-if="readOnly" class="tag">reading an older version</span>
+        <button
+          v-if="!readOnly"
+          type="button"
+          class="chip"
+          @click="about = about === 'file' ? null : 'file'"
+        >
           Comment on the file
         </button>
-        <button type="button" class="chip" @click="about = about === 'change' ? null : 'change'">
+        <button
+          v-if="!readOnly"
+          type="button"
+          class="chip"
+          @click="about = about === 'change' ? null : 'change'"
+        >
           Comment on the change
         </button>
         <button
@@ -862,14 +879,14 @@ function toggle(row: Row | null, column: Side) {
                   :row="row"
                   side="old"
                   :mark="markOf(row, 'old')"
-                  commentable
+                  :commentable="!readOnly"
                   @comment="toggle(row, 'old')"
                 />
                 <DiffRow
                   :row="row"
                   side="new"
                   :mark="markOf(row, 'new')"
-                  commentable
+                  :commentable="!readOnly"
                   @comment="toggle(row, 'new')"
                 />
               </tr>
@@ -918,14 +935,14 @@ function toggle(row: Row | null, column: Side) {
                   :row="row"
                   side="old"
                   :mark="markOf(row, 'old')"
-                  commentable
+                  :commentable="!readOnly"
                   @comment="toggle(row, 'old')"
                 />
                 <DiffRow
                   :row="row"
                   side="new"
                   :mark="markOf(row, 'new')"
-                  commentable
+                  :commentable="!readOnly"
                   @comment="toggle(row, 'new')"
                 />
               </tr>
@@ -970,14 +987,14 @@ function toggle(row: Row | null, column: Side) {
                 :row="pair.left"
                 side="old"
                 :mark="markOf(pair.left, 'old')"
-                commentable
+                :commentable="!readOnly"
                 @comment="toggle(pair.left, 'old')"
               />
               <DiffRow
                 :row="pair.right"
                 side="new"
                 :mark="markOf(pair.right, 'new')"
-                commentable
+                :commentable="!readOnly"
                 @comment="toggle(pair.right, 'new')"
               />
             </tr>
@@ -1027,9 +1044,14 @@ function toggle(row: Row | null, column: Side) {
               <tr>
                 <td
                   class="gutter"
-                  :class="[`gutter-${row.kind}`, row.oldLine !== null ? 'gutter-comment' : '']"
+                  :class="[
+                    `gutter-${row.kind}`,
+                    row.oldLine !== null && !readOnly ? 'gutter-comment' : '',
+                  ]"
                   :title="
-                    row.oldLine !== null ? 'Comment on this line, before the change' : undefined
+                    row.oldLine !== null && !readOnly
+                      ? 'Comment on this line, before the change'
+                      : undefined
                   "
                   data-column="old"
                   @click="toggle(row, 'old')"
@@ -1040,7 +1062,7 @@ function toggle(row: Row | null, column: Side) {
                   :row="row"
                   side="new"
                   :mark="markRow(row)"
-                  commentable
+                  :commentable="!readOnly"
                   @comment="toggle(row, 'new')"
                 />
               </tr>
@@ -1075,9 +1097,14 @@ function toggle(row: Row | null, column: Side) {
               <tr :class="onCursor(row) ? 'row-cursor' : ''">
                 <td
                   class="gutter"
-                  :class="[`gutter-${row.kind}`, row.oldLine !== null ? 'gutter-comment' : '']"
+                  :class="[
+                    `gutter-${row.kind}`,
+                    row.oldLine !== null && !readOnly ? 'gutter-comment' : '',
+                  ]"
                   :title="
-                    row.oldLine !== null ? 'Comment on this line, before the change' : undefined
+                    row.oldLine !== null && !readOnly
+                      ? 'Comment on this line, before the change'
+                      : undefined
                   "
                   data-column="old"
                   @click="toggle(row, 'old')"
@@ -1088,7 +1115,7 @@ function toggle(row: Row | null, column: Side) {
                   :row="row"
                   side="new"
                   :mark="markRow(row)"
-                  commentable
+                  :commentable="!readOnly"
                   @comment="toggle(row, 'new')"
                 />
               </tr>
@@ -1117,9 +1144,14 @@ function toggle(row: Row | null, column: Side) {
             <tr :class="onCursor(row) ? 'row-cursor' : ''">
               <td
                 class="gutter"
-                :class="[`gutter-${row.kind}`, row.oldLine !== null ? 'gutter-comment' : '']"
+                :class="[
+                  `gutter-${row.kind}`,
+                  row.oldLine !== null && !readOnly ? 'gutter-comment' : '',
+                ]"
                 :title="
-                  row.oldLine !== null ? 'Comment on this line, before the change' : undefined
+                  row.oldLine !== null && !readOnly
+                    ? 'Comment on this line, before the change'
+                    : undefined
                 "
                 data-column="old"
                 @click="toggle(row, 'old')"
@@ -1130,7 +1162,7 @@ function toggle(row: Row | null, column: Side) {
                 :row="row"
                 side="new"
                 :mark="markRow(row)"
-                commentable
+                :commentable="!readOnly"
                 @comment="toggle(row, 'new')"
               />
             </tr>
@@ -1158,7 +1190,7 @@ function toggle(row: Row | null, column: Side) {
     </div>
 
     <button
-      v-if="offer && picked"
+      v-if="offer && picked && !readOnly"
       type="button"
       class="offer"
       :style="{ left: `${offer.x}px`, top: `${offer.y + 12}px` }"
