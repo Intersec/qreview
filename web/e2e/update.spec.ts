@@ -68,3 +68,17 @@ test('the version that is running is not announced as newer', async ({ page }) =
   await expect(page.locator('.file-bar')).toBeVisible();
   await expect(page.locator('.newer')).toHaveCount(0);
 });
+
+test('the version carries the commit it was built from', async ({ page }) => {
+  server = await start({ config: { update: { url: '' } } });
+  await page.goto(server.url);
+
+  // The chip shows the release. Hovering it says which commit under that
+  // release is running, because one release names a hundred of them.
+  const chip = page.locator('.top-bar .version');
+  const shown = (await chip.textContent())!.trim();
+  const title = (await chip.getAttribute('title'))!;
+
+  expect(title).toMatch(/^qreview \d+\.\d+\.\d+ \([0-9a-f]{7,}\)$/);
+  expect(title).toContain(shown);
+});

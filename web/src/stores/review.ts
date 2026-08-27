@@ -35,6 +35,8 @@ function touchesTheDiff(patch: object): boolean {
 
 export const useReview = defineStore('review', () => {
   const version = ref('');
+  /// The release and the commit under it, for the tooltip on the version.
+  const build = ref('');
   const series = ref<Series | null>(null);
   const changeKey = ref<string | null>(null);
   const files = ref<FileEntry[]>([]);
@@ -138,6 +140,7 @@ export const useReview = defineStore('review', () => {
     await guard(async () => {
       const body = await api.session();
       version.value = body.version;
+      build.value = body.build;
       series.value = body.series;
       config.value = body.config;
 
@@ -447,6 +450,7 @@ export const useReview = defineStore('review', () => {
     ignoreWs,
     wrap,
     version,
+    build,
     series,
     changeKey,
     files,

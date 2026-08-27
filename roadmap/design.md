@@ -540,7 +540,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 
 | Method and route | What it does |
 |---|---|
-| `GET /api/session` | The repository, the first batch of the series, the tool version |
+| `GET /api/session` | The repository, the first batch of the series, the tool version and the commit it was built from |
 | `POST /api/series/extend` | Load the next batch. Body: `{ "count": 5, "parent": 1 }` |
 | `GET /api/changes/:key` | The change, its patch sets, its comment count |
 | `PATCH /api/changes/:key` | Mark the change read, or unread |

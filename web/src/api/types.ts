@@ -130,6 +130,8 @@ export interface Config {
 
 export interface SessionBody {
   version: string;
+  /// The release and the commit under it, `0.5.4 (1a2b3c4de)`.
+  build: string;
   series: Series;
   config: Config;
 }

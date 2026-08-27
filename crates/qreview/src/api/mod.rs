@@ -116,6 +116,8 @@ async fn interface(uri: axum::http::Uri) -> Response {
 #[serde(rename_all = "camelCase")]
 struct SessionBody {
     version: &'static str,
+    /// The release and the commit under it, for the tooltip.
+    build: &'static str,
     series: Series,
     config: crate::config::Config,
 }
@@ -124,7 +126,8 @@ async fn session(State(state): State<AppState>) -> Json<SessionBody> {
     let session = state.session.read().await;
 
     Json(SessionBody {
-        version: env!("CARGO_PKG_VERSION"),
+        version: crate::version::VERSION,
+        build: crate::version::LONG,
         series: session.series.clone(),
         config: state.config(),
     })
@@ -527,7 +530,7 @@ async fn update(State(state): State<AppState>) -> Json<crate::update::Release> {
 
     let found = state
         .release
-        .get_or_init(|| crate::update::check(&where_to, env!("CARGO_PKG_VERSION")))
+        .get_or_init(|| crate::update::check(&where_to, crate::version::VERSION))
         .await;
 
     Json(found.clone())
@@ -798,6 +801,15 @@ mod tests {
         assert_eq!(body["series"]["changes"][0]["key"], "I8f3ac21");
         assert_eq!(body["series"]["changes"][0]["isMerge"], false);
         assert!(body["series"]["boundary"]["kind"].is_string());
+        // The tooltip on the version needs the commit under it. A build
+        // outside a checkout has none, so only the release is promised.
+        assert_eq!(body["version"], crate::version::VERSION);
+        assert!(
+            body["build"]
+                .as_str()
+                .unwrap()
+                .starts_with(crate::version::VERSION)
+        );
     }
 
     #[tokio::test]

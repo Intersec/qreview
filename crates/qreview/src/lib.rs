@@ -25,6 +25,7 @@ pub mod series;
 pub mod session;
 pub mod store;
 pub mod update;
+pub mod version;
 
 #[cfg(test)]
 mod testutil;

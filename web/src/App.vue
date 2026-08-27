@@ -30,6 +30,7 @@ const {
   inFile,
   release,
   version,
+  build,
   onMerge,
   mergeBase,
   mergeList,
@@ -255,7 +256,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           ⚙
         </button>
         <span v-if="copied" role="status" class="copied">copied</span>
-        <span class="quiet">{{ version }}</span>
+        <span class="quiet version" :title="`qreview ${build}`">{{ version }}</span>
         <a
           v-if="release?.newer"
           class="newer"
