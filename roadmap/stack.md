@@ -279,3 +279,22 @@ The diff of two messages comes from the `similar` crate, not from `git`. Two
 messages are not blobs. Diffing them with `git` needs them written somewhere,
 and the tool writes nothing. `similar` is already a dependency, for the
 intra-line spans.
+
+## 2026-08-27 — The export quotes a cut inside a line, not its columns
+
+A comment can open or close inside a line, and the store keeps the two
+offsets in UTF-16 units. The export printed the lines alone, so a remark on
+`for (;;)` read as a remark on the whole line, and one on the last sentence
+of a paragraph read as one on its last two lines (#8).
+
+The heading now quotes the text the bounds cover: `` on `for (;;)` `` on one
+line, `` from `…` to `…` `` over several. Two other shapes were weighed.
+Columns, `42:9-17`, ask the reader to count in units it does not know, and
+the count changes with the encoding. A caret line under the code, the way a
+compiler points, breaks on a tab or a wide character, because the caret line
+has neither. A quote is right whatever the line holds, and the reader can act
+on it as it stands.
+
+Bounds that fall on the ends of the lines quote nothing. A mouse selection of
+whole lines arrives as `0` to the length of the last line, and quoting two
+full lines there would repeat the excerpt.

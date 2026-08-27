@@ -623,6 +623,12 @@ Rules for the format:
 - The comments are numbered, so the answer can name one.
 - The export names the commit and the patch set, so the session knows the
   state the remarks were written against.
+- A range that opens or closes inside a line quotes the text it covers,
+  after the place: `` `src/net.blk:42`, on `for (;;)` `` on one line, and
+  `` `src/net.blk:42-43`, from `for (;;) {` to `rc = read(fd);` `` over
+  several. The text, not the columns: the reader can act on the text, and a
+  column is a count in units it does not know. Bounds that fall on the ends
+  of the lines quote nothing, because the lines say it already.
 
 The comments are ordered the way a reader walks the code:
 

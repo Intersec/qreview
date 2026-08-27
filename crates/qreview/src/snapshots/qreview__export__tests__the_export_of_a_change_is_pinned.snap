@@ -1,5 +1,6 @@
 ---
 source: crates/qreview/src/export.rs
+assertion_line: 454
 expression: stable
 ---
 ## Review: <repo>@main, commit <hash>
@@ -7,7 +8,7 @@ expression: stable
 I reviewed this commit and left the comments below. Please address them.
 
 Change: net: fix the retry loop
-Patch set 1 · 2 comments
+Patch set 1 · 3 comments
 
 1. The change as a whole
 
@@ -24,3 +25,15 @@ Patch set 1 · 2 comments
    ```
 
    This loop never ends when the socket closes.
+
+3. `src/net.blk:3`, on `for (;;)`
+
+   ```c
+   1 | int connect_once(int fd)
+   2 | {
+   3 |     for (;;) {
+   4 |         read(fd);
+   5 |     }
+   ```
+
+   Only the head of the loop.
