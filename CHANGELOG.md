@@ -12,6 +12,13 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.5.2]
+
+### Changed
+
+- qreview lives on GitHub now, at `Intersec/qreview`. One command installs
+  the newest build, with no account and no token, and the version check asks
+  the same place by default. `{ "update": { "url": "" } }` turns it off.
 ## [0.5.1]
 
 ### Added
