@@ -773,7 +773,8 @@ Rules for the format:
   `` `src/net.blk:42-43`, from `for (;;) {` to `rc = read(fd);` `` over
   several. The text, not the columns: the reader can act on the text, and a
   column is a count in units it does not know. Bounds that fall on the ends
-  of the lines quote nothing, because the lines say it already.
+  of the lines quote nothing, because the lines say it already. A text that
+  occurs more than once on its line says which one: `` on the second `%d` ``.
 - No author. One person wrote every line of it.
 - The comments are numbered, so the answer can name one.
 - The export names the commit and the patch set, so the session knows the
