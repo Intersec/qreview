@@ -628,7 +628,8 @@ Rules for the format:
   `` `src/net.blk:42-43`, from `for (;;) {` to `rc = read(fd);` `` over
   several. The text, not the columns: the reader can act on the text, and a
   column is a count in units it does not know. Bounds that fall on the ends
-  of the lines quote nothing, because the lines say it already.
+  of the lines quote nothing, because the lines say it already. A text that
+  occurs more than once on its line says which one: `` on the second `%d` ``.
 
 The comments are ordered the way a reader walks the code:
 

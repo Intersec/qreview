@@ -278,25 +278,46 @@ fn cut_of(comment: &Comment, lines: Option<&[&str]>) -> String {
     }
 
     if start == end {
-        return match quote(&first[from..to.max(from)]) {
+        return match quote(&first, from, to.max(from)) {
             Some(text) => format!(", on {text}"),
             None => String::new(),
         };
     }
-    match (quote(&first[from..]), quote(&last[..to])) {
+    match (quote(&first, from, first.len()), quote(&last, 0, to)) {
         (Some(head), Some(tail)) => format!(", from {head} to {tail}"),
         (Some(text), None) | (None, Some(text)) => format!(", on {text}"),
         (None, None) => String::new(),
     }
 }
 
-/// The text as a Markdown code span, or nothing when it is only spaces.
-fn quote(units: &[u16]) -> Option<String> {
-    let text = String::from_utf16_lossy(units);
-    let text = text.trim();
+/// The text between two offsets of a line, as a Markdown code span, or
+/// nothing when it is only spaces.
+///
+/// A text that occurs more than once on its line says which one it is:
+/// `on the second `%d``, because `on `%d`` alone names both.
+fn quote(line: &[u16], from: usize, to: usize) -> Option<String> {
+    let head = String::from_utf16_lossy(&line[..from]);
+    let picked = String::from_utf16_lossy(&line[from..to]);
+    let text = picked.trim();
     if text.is_empty() {
         return None;
     }
+    let span = code_span(text);
+
+    let full = format!("{head}{picked}{}", String::from_utf16_lossy(&line[to..]));
+    let at = head.len() + picked.len() - picked.trim_start().len();
+    let starts: Vec<usize> = (0..=full.len())
+        .filter(|&i| full.is_char_boundary(i) && full[i..].starts_with(text))
+        .collect();
+    if starts.len() < 2 {
+        return Some(span);
+    }
+    let before = starts.iter().filter(|&&i| i < at).count();
+    Some(format!("the {} {span}", ordinal(before + 1)))
+}
+
+/// A Markdown code span around the text.
+fn code_span(text: &str) -> String {
     // A backtick inside needs a longer fence, and a space keeps one at an
     // end from joining the fence.
     let longest = text.split(|c| c != '`').map(str::len).max().unwrap_or(0);
@@ -306,7 +327,25 @@ fn quote(units: &[u16]) -> Option<String> {
     } else {
         ""
     };
-    Some(format!("{fence}{pad}{text}{pad}{fence}"))
+    format!("{fence}{pad}{text}{pad}{fence}")
+}
+
+/// `first` to `ninth` in words, then `10th`, `21st`, `112th`.
+fn ordinal(n: usize) -> String {
+    const WORDS: [&str; 9] = [
+        "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth",
+    ];
+    if let Some(word) = WORDS.get(n.wrapping_sub(1)) {
+        return (*word).to_owned();
+    }
+    let suffix = match (n % 10, n % 100) {
+        (_, 11..=13) => "th",
+        (1, _) => "st",
+        (2, _) => "nd",
+        (3, _) => "rd",
+        _ => "th",
+    };
+    format!("{n}{suffix}")
 }
 
 /// A comment body on one line, so the export stays scannable.
@@ -690,13 +729,75 @@ mod tests {
         assert!(text.contains("`a.c:3-5`\n"), "{text}");
     }
 
+    #[tokio::test]
+    async fn a_text_that_occurs_twice_on_its_line_says_which_one() {
+        let line = "    log(\"flushing %d buffered update(s) of row %d\", n, row);";
+        let repo = build_repo(&[
+            commit("first").file("a.c", "one\n"),
+            commit("log: count the updates")
+                .file("a.c", &format!("void f(void)\n{{\n{line}\n}}\n"))
+                .change_id("Itwice"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        let at = line.rfind("%d").unwrap();
+        session
+            .add_comment(
+                "Itwice",
+                range_comment("a.c", (3, 3), Some((at, at + 2)), "Use %'d here."),
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Itwice").await.unwrap();
+        assert!(text.contains("`a.c:3`, on the second `%d`"), "{text}");
+    }
+
+    #[test]
+    fn a_quote_counts_itself_only_when_the_line_repeats_it() {
+        let units = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
+        let twice = "\"flushing %d of row %d\"";
+        let (first, second) = (twice.find("%d").unwrap(), twice.rfind("%d").unwrap());
+
+        assert_eq!(
+            quote(&units("    for (;;) {"), 4, 12).unwrap(),
+            "`for (;;)`"
+        );
+        assert_eq!(
+            quote(&units(twice), first, first + 2).unwrap(),
+            "the first `%d`"
+        );
+        assert_eq!(
+            quote(&units(twice), second, second + 2).unwrap(),
+            "the second `%d`"
+        );
+        // The spaces around a pick are not part of it, and not counted.
+        assert_eq!(quote(&units("x x"), 1, 3).unwrap(), "the second `x`");
+        assert_eq!(quote(&units("a  x  a"), 1, 6).unwrap(), "`x`");
+        assert_eq!(quote(&units("   "), 0, 3), None);
+    }
+
     #[test]
     fn a_quote_with_a_backtick_gets_a_longer_fence() {
-        let units = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
+        assert_eq!(code_span("a `b` c"), "``a `b` c``");
+        assert_eq!(code_span("`x"), "`` `x ``");
+    }
 
-        assert_eq!(quote(&units("a `b` c")).unwrap(), "``a `b` c``");
-        assert_eq!(quote(&units("`x")).unwrap(), "`` `x ``");
-        assert_eq!(quote(&units("   ")), None);
+    #[test]
+    fn ordinals_are_words_first_and_numbers_after() {
+        let got: Vec<String> = [1, 2, 3, 9, 10, 11, 12, 13, 21, 22, 23, 112]
+            .into_iter()
+            .map(ordinal)
+            .collect();
+
+        assert_eq!(
+            got,
+            [
+                "first", "second", "third", "ninth", "10th", "11th", "12th", "13th", "21st",
+                "22nd", "23rd", "112th"
+            ]
+        );
     }
 
     #[tokio::test]

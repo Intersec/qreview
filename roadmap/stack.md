@@ -298,3 +298,9 @@ on it as it stands.
 Bounds that fall on the ends of the lines quote nothing. A mouse selection of
 whole lines arrives as `0` to the length of the last line, and quoting two
 full lines there would repeat the excerpt.
+
+A quote alone is not enough when the text occurs more than once on its line:
+`` on `%d` `` names both `%d` of a format string. The heading then counts,
+`` on the second `%d` ``, in words rather than columns for the reason above.
+The count is over the occurrences of the quoted text on that line, the
+spaces around the selection left out.
