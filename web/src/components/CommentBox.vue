@@ -51,6 +51,7 @@ function forget() {
 
     <div class="talk-body">
       <label class="sr-only" :for="`box-${label}`">{{ label }}</label>
+      <!-- Ctrl+S is the browser's own save, so this one is prevented. -->
       <textarea
         :id="`box-${label}`"
         ref="area"
@@ -58,11 +59,12 @@ function forget() {
         class="talk-text"
         :placeholder="label"
         @keydown.ctrl.enter="save"
+        @keydown.ctrl.s.prevent="save"
       ></textarea>
     </div>
 
     <div class="talk-foot">
-      <span class="talk-hint">Markdown. Ctrl+Enter saves.</span>
+      <span class="talk-hint">Markdown. Ctrl+Enter or Ctrl+S saves.</span>
       <span class="spacer"></span>
       <button
         type="button"

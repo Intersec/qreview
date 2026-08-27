@@ -331,3 +331,16 @@ test('a file opened while the change loads keeps the pane', async ({ page }) => 
   await expect(page.locator('.file-bar h2')).toContainText('new-name.md');
   await page.unroute(/\/files/);
 });
+
+test('Ctrl+S saves the comment, the way Gerrit does', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+
+  await page.keyboard.press('j');
+  await page.keyboard.press('c');
+  await expect(page.getByRole('textbox')).toHaveCount(1);
+  await page.getByRole('textbox').fill('Saved without the mouse.');
+  await page.keyboard.press('Control+s');
+
+  await expect(card(page, 'Saved without the mouse.')).toBeVisible();
+});
