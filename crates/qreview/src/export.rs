@@ -195,18 +195,21 @@ async fn body(
 
     for (index, comment) in comments.iter().enumerate() {
         let _ = writeln!(out);
+        let text = source_of(session, commit, comment).await;
+        let lines: Option<Vec<&str>> = text.as_deref().map(|t| t.lines().collect());
         let _ = match &comment.anchor {
             Some(_) => writeln!(
                 out,
-                "{}. `{}`{}",
+                "{}. `{}`{}{}",
                 index + 1,
                 place_of(comment),
-                before_the_change(comment)
+                before_the_change(comment),
+                cut_of(comment, lines.as_deref())
             ),
             None => writeln!(out, "{}. The change as a whole", index + 1),
         };
 
-        if let Some(excerpt) = excerpt(session, commit, comment).await {
+        if let Some(excerpt) = excerpt(comment, lines.as_deref()) {
             let _ = writeln!(out);
             let _ = writeln!(out, "   ```{}", language_of(session, comment));
             for line in excerpt.lines() {
@@ -263,11 +266,10 @@ fn language_of(session: &Session, comment: &Comment) -> String {
         .to_owned()
 }
 
-/// The lines around the comment, with their real numbers.
-async fn excerpt(session: &Session, commit: &str, comment: &Comment) -> Option<String> {
+/// The text the comment was written on, from the object database.
+async fn source_of(session: &Session, commit: &str, comment: &Comment) -> Option<String> {
     let anchor = comment.anchor.as_ref()?;
-    let line = anchor.start_line?;
-    let last = anchor.end_line.unwrap_or(line).max(line);
+    anchor.start_line?;
     let rev = match anchor.side {
         Side::New => commit.to_owned(),
         Side::Old => session
@@ -276,15 +278,22 @@ async fn excerpt(session: &Session, commit: &str, comment: &Comment) -> Option<S
             .ok()?,
     };
 
-    let text = match crate::commitmsg::is(&anchor.file) {
-        true => crate::commitmsg::text(&session.git, &rev).await?,
+    match crate::commitmsg::is(&anchor.file) {
+        true => crate::commitmsg::text(&session.git, &rev).await,
         false => session
             .git
             .text(&["show", &format!("{rev}:{}", anchor.file)])
             .await
-            .ok()?,
-    };
-    let lines: Vec<&str> = text.lines().collect();
+            .ok(),
+    }
+}
+
+/// The lines around the comment, with their real numbers.
+fn excerpt(comment: &Comment, lines: Option<&[&str]>) -> Option<String> {
+    let anchor = comment.anchor.as_ref()?;
+    let lines = lines?;
+    let line = anchor.start_line?;
+    let last = anchor.end_line.unwrap_or(line).max(line);
 
     let from = line.saturating_sub(CONTEXT).max(1);
     let to = (last + CONTEXT).min(lines.len());
@@ -298,6 +307,69 @@ async fn excerpt(session: &Session, commit: &str, comment: &Comment) -> Option<S
         let _ = writeln!(out, "{number:>width$} | {}", lines[number - 1]);
     }
     Some(out)
+}
+
+/// What the heading adds when the range opens or closes inside a line.
+///
+/// The text is quoted, not the columns: the reader can act on `for (;;)`,
+/// and a column is a count in units it does not know. Bounds that fall on
+/// the ends of the lines say nothing more than the lines do.
+fn cut_of(comment: &Comment, lines: Option<&[&str]>) -> String {
+    let (Some(anchor), Some(lines)) = (&comment.anchor, lines) else {
+        return String::new();
+    };
+    let (Some(start), Some(from), Some(to)) =
+        (anchor.start_line, anchor.start_char, anchor.end_char)
+    else {
+        return String::new();
+    };
+    let end = anchor.end_line.unwrap_or(start).max(start);
+    let (Some(first), Some(last)) = (
+        lines.get(start.saturating_sub(1)),
+        lines.get(end.saturating_sub(1)),
+    ) else {
+        return String::new();
+    };
+
+    // The offsets count UTF-16 units, the units the browser measured in.
+    let first: Vec<u16> = first.encode_utf16().collect();
+    let last: Vec<u16> = last.encode_utf16().collect();
+    let from = from.min(first.len());
+    let to = to.min(last.len());
+    if from == 0 && to == last.len() {
+        return String::new();
+    }
+
+    if start == end {
+        return match quote(&first[from..to.max(from)]) {
+            Some(text) => format!(", on {text}"),
+            None => String::new(),
+        };
+    }
+    match (quote(&first[from..]), quote(&last[..to])) {
+        (Some(head), Some(tail)) => format!(", from {head} to {tail}"),
+        (Some(text), None) | (None, Some(text)) => format!(", on {text}"),
+        (None, None) => String::new(),
+    }
+}
+
+/// The text as a Markdown code span, or nothing when it is only spaces.
+fn quote(units: &[u16]) -> Option<String> {
+    let text = String::from_utf16_lossy(units);
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    // A backtick inside needs a longer fence, and a space keeps one at an
+    // end from joining the fence.
+    let longest = text.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    let fence = "`".repeat(longest + 1);
+    let pad = if text.starts_with('`') || text.ends_with('`') {
+        " "
+    } else {
+        ""
+    };
+    Some(format!("{fence}{pad}{text}{pad}{fence}"))
 }
 
 /// A comment body on one line, so the export stays scannable.
@@ -353,6 +425,24 @@ mod tests {
         }
     }
 
+    fn range_comment(
+        file: &str,
+        lines: (usize, usize),
+        chars: Option<(usize, usize)>,
+        body: &str,
+    ) -> NewComment {
+        NewComment {
+            scope: Scope::Range,
+            file: Some(file.to_owned()),
+            side: Some(Side::New),
+            start_line: Some(lines.0),
+            end_line: Some(lines.1),
+            start_char: chars.map(|c| c.0),
+            end_char: chars.map(|c| c.1),
+            body: body.to_owned(),
+        }
+    }
+
     async fn reviewed() -> Repo {
         build_repo(&[
             commit("base").file("src/net.blk", "int old(void);\n"),
@@ -393,6 +483,18 @@ mod tests {
                     end_char: None,
                     body: "The whole change needs a test.".to_owned(),
                 },
+            )
+            .await
+            .unwrap();
+        session
+            .add_comment(
+                "Iretry",
+                range_comment(
+                    "src/net.blk",
+                    (3, 3),
+                    Some((4, 12)),
+                    "Only the head of the loop.",
+                ),
             )
             .await
             .unwrap();
@@ -564,23 +666,14 @@ mod tests {
         session
             .add_comment(
                 "Irange",
-                NewComment {
-                    scope: Scope::Range,
-                    file: Some("a.c".to_owned()),
-                    side: Some(Side::New),
-                    start_line: Some(3),
-                    end_line: Some(5),
-                    start_char: Some(1),
-                    end_char: Some(3),
-                    body: "These three lines say one thing.".to_owned(),
-                },
+                range_comment("a.c", (3, 5), None, "These three lines say one thing."),
             )
             .await
             .unwrap();
 
         let text = change(&session, "Irange").await.unwrap();
 
-        assert!(text.contains("`a.c:3-5`"), "{text}");
+        assert!(text.contains("`a.c:3-5`\n"), "{text}");
         for line in ["3 | three", "4 | four", "5 | five"] {
             assert!(text.contains(line), "{line} is missing from\n{text}");
         }
@@ -659,6 +752,89 @@ mod tests {
             text.contains("1 more was written on an earlier version, and left out here."),
             "the export says what it left out:\n{text}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_comment_on_a_part_of_a_line_quotes_it() {
+        let repo = reviewed().await;
+        let session = session_of(&repo).await;
+
+        // Line 3 is `    for (;;) {`, and the reader picked the loop head.
+        session
+            .add_comment(
+                "Iretry",
+                range_comment("src/net.blk", (3, 3), Some((4, 12)), "Not forever."),
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Iretry").await.unwrap();
+        assert!(text.contains("`src/net.blk:3`, on `for (;;)`"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_range_cut_inside_its_lines_quotes_the_two_ends() {
+        // The shape of issue #8: the last sentence of a message, which
+        // starts inside one line and ends with the next.
+        let first = "own object so that the invariant above still holds. Coalescing is only";
+        let second = "lost for that one row, within that one commit.";
+        let repo = build_repo(&[
+            commit("base").file("a.c", "one\n"),
+            commit("rows: coalesce them")
+                .body(first)
+                .body(second)
+                .file("a.c", "two\n")
+                .change_id("Icut"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        let start = first.find("Coalescing").unwrap();
+        let end = second.encode_utf16().count();
+        session
+            .add_comment(
+                "Icut",
+                range_comment("/COMMIT_MSG", (3, 4), Some((start, end)), "Say why."),
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Icut").await.unwrap();
+        let expected = format!("`/COMMIT_MSG:3-4`, from `Coalescing is only` to `{second}`");
+        assert!(text.contains(&expected), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_range_whose_bounds_fall_on_the_line_ends_quotes_nothing() {
+        let repo = build_repo(&[
+            commit("first").file("a.c", "one\n"),
+            commit("work: several lines")
+                .file("a.c", "one\ntwo\nthree\nfour\nfive\n")
+                .change_id("Iwhole"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        // The mouse measures whole lines as 0 to the length of the last one.
+        session
+            .add_comment(
+                "Iwhole",
+                range_comment("a.c", (3, 5), Some((0, "five".len())), "Whole lines."),
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Iwhole").await.unwrap();
+        assert!(text.contains("`a.c:3-5`\n"), "{text}");
+    }
+
+    #[test]
+    fn a_quote_with_a_backtick_gets_a_longer_fence() {
+        let units = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
+
+        assert_eq!(quote(&units("a `b` c")).unwrap(), "``a `b` c``");
+        assert_eq!(quote(&units("`x")).unwrap(), "`` `x ``");
+        assert_eq!(quote(&units("   ")), None);
     }
 
     #[tokio::test]
