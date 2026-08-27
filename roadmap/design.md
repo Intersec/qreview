@@ -537,6 +537,11 @@ before the user selects one.
 version. qreview shows them, read only, beside your own. It never posts,
 never replies and never votes.
 
+A server that does not know an option answers nothing at all, and the patch
+sets would go with the remarks. So a query the server *refused* is asked again
+without `--comments`. One that was never answered is not: nothing came back
+the first time, and the reader is already waiting.
+
 The ssh answer gives a file, a line, an author and a text, and nothing else:
 
 | Missing | What qreview does |

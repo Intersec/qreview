@@ -11,7 +11,7 @@ pub mod posted;
 use std::process::Stdio;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, anyhow};
 use tokio::process::Command;
 
 pub use answer::{Change, InlineComment, PatchSet, Person};
@@ -32,27 +32,48 @@ pub async fn query(coords: &Coordinates, change_id: &str) -> Result<Option<Chang
     if let Some(branch) = &coords.branch {
         terms.push(format!("branch:{branch}"));
     }
+    let terms = terms.join(" ");
 
-    let text = ssh(
-        coords,
-        &[
-            "gerrit",
-            "query",
-            "--format=JSON",
-            "--patch-sets",
-            // The remarks already posted on each version. A server that does
-            // not know the option answers without them, and the review goes
-            // on with the patch sets alone.
-            "--comments",
-            &terms.join(" "),
-        ],
-    )
-    .await?;
+    // A server that does not know an option answers nothing at all, and the
+    // patch sets would go with the remarks. So the question is asked again
+    // without them. Only when the server refused: a server that did not
+    // answer at all will not answer a second time either, and the reader is
+    // already waiting.
+    let text = match ask(coords, &terms, true).await {
+        Ok(text) => text,
+        Err(Refusal::Unreachable(error)) => return Err(error),
+        Err(Refusal::Refused(_)) => {
+            ask(coords, &terms, false)
+                .await
+                .map_err(|refusal| match refusal {
+                    Refusal::Unreachable(error) | Refusal::Refused(error) => error,
+                })?
+        }
+    };
 
     Ok(answer::parse(&text).into_iter().next())
 }
 
-async fn ssh(coords: &Coordinates, args: &[&str]) -> Result<String> {
+/// Why a query gave nothing.
+enum Refusal {
+    /// The server answered, and said no.
+    Refused(anyhow::Error),
+    /// Nothing answered: no route, no host key, no time left.
+    Unreachable(anyhow::Error),
+}
+
+/// One query, with or without the remarks.
+async fn ask(coords: &Coordinates, terms: &str, comments: bool) -> Result<String, Refusal> {
+    let mut args = vec!["gerrit", "query", "--format=JSON", "--patch-sets"];
+    if comments {
+        args.push("--comments");
+    }
+    args.push(terms);
+
+    ssh(coords, &args).await
+}
+
+async fn ssh(coords: &Coordinates, args: &[&str]) -> Result<String, Refusal> {
     let mut command = Command::new("ssh");
     command
         .arg("-oBatchMode=yes")
@@ -72,13 +93,26 @@ async fn ssh(coords: &Coordinates, args: &[&str]) -> Result<String> {
     let run = command.output();
     let out = match tokio::time::timeout(TIMEOUT, run).await {
         Ok(Ok(out)) => out,
-        Ok(Err(error)) => return Err(error).context("cannot run ssh"),
-        Err(_) => bail!("{} did not answer in {}s", coords.host, TIMEOUT.as_secs()),
+        Ok(Err(error)) => {
+            return Err(Refusal::Unreachable(
+                anyhow::Error::new(error).context("cannot run ssh"),
+            ));
+        }
+        Err(_) => {
+            return Err(Refusal::Unreachable(anyhow!(
+                "{} did not answer in {}s",
+                coords.host,
+                TIMEOUT.as_secs()
+            )));
+        }
     };
 
     if !out.status.success() {
         let error = String::from_utf8_lossy(&out.stderr);
-        bail!("the Gerrit query failed: {}", error.trim());
+        return Err(Refusal::Refused(anyhow!(
+            "the Gerrit query failed: {}",
+            error.trim()
+        )));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
