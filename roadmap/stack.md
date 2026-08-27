@@ -353,3 +353,22 @@ A quote alone is not enough when the text occurs more than once on its line:
 `` on the second `%d` ``, in words rather than columns for the reason above.
 The count is over the occurrences of the quoted text on that line, the
 spaces around the selection left out.
+
+## 2026-08-27 — The export marks the lines a comment covers
+
+An excerpt showed the commented line with two lines of context above and
+below, all with the same weight, and the number in the heading was the only
+thing that said which line the remark was about. A Claude session reading a
+comment on line 37 of a commit message applied it to line 38, whose text the
+remark fitted better, and rewrote the wrong bullet (#12).
+
+The lines a comment covers now carry a `>` at the left edge of the excerpt,
+the way pytest marks the failing line, and the opening of the export says
+once what the marker means. A reader that is told the convention does not
+have to infer it.
+
+Three other answers were weighed. Less context would make the excerpt
+harder to find once the line numbers have drifted. An underline under the
+text breaks on a tab or a wide character. The `grep` convention, `:` after
+the number of a match and `-` after a context line, is a marker that a
+reader has to know to see.
