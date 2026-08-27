@@ -14,6 +14,12 @@ use crate::store::model::{Comment, Scope, Side};
 /// Lines of code shown around a comment.
 const CONTEXT: usize = 2;
 
+/// Said once at the top. A reader that does not count gives every line of
+/// an excerpt the same weight, and a remark then lands on the line it fits
+/// best rather than on the one it was written on.
+const RULE: &str = "Each comment is about the lines marked `>`; the lines around them are\n\
+context only.";
+
 /// The review of one change.
 pub async fn change(session: &Session, key: &str) -> Result<String> {
     let mut out = String::new();
@@ -30,6 +36,9 @@ pub async fn change(session: &Session, key: &str) -> Result<String> {
         out,
         "I reviewed this commit and left the comments below. Please address them."
     );
+    if !head.comments.is_empty() {
+        let _ = writeln!(out, "{RULE}");
+    }
     let _ = writeln!(out);
     out.push_str(&head.about);
 
@@ -79,6 +88,7 @@ pub async fn series(session: &Session) -> Result<String> {
         out,
         "I reviewed this series and left the comments below. Please address them."
     );
+    let _ = writeln!(out, "{RULE}");
 
     for (key, _) in &reviewed {
         let head = header(session, key).await?;
@@ -225,7 +235,8 @@ async fn source_of(session: &Session, commit: &str, comment: &Comment) -> Option
     }
 }
 
-/// The lines around the comment, with their real numbers.
+/// The lines around the comment, with their real numbers. The lines the
+/// comment covers carry a `>` at the left edge, the others two spaces.
 fn excerpt(comment: &Comment, lines: Option<&[&str]>) -> Option<String> {
     let anchor = comment.anchor.as_ref()?;
     let lines = lines?;
@@ -241,7 +252,12 @@ fn excerpt(comment: &Comment, lines: Option<&[&str]>) -> Option<String> {
     let width = to.to_string().len();
     let mut out = String::new();
     for number in from..=to {
-        let _ = writeln!(out, "{number:>width$} | {}", lines[number - 1]);
+        let mark = if (line..=last).contains(&number) {
+            '>'
+        } else {
+            ' '
+        };
+        let _ = writeln!(out, "{mark} {number:>width$} | {}", lines[number - 1]);
     }
     Some(out)
 }
@@ -653,6 +669,50 @@ mod tests {
         for line in ["3 | three", "4 | four", "5 | five"] {
             assert!(text.contains(line), "{line} is missing from\n{text}");
         }
+    }
+
+    #[tokio::test]
+    async fn the_lines_a_comment_covers_are_marked_and_the_context_is_not() {
+        let repo = build_repo(&[
+            commit("first").file("a.c", "one\n"),
+            commit("work: several lines")
+                .file("a.c", "one\ntwo\nthree\nfour\nfive\nsix\nseven\n")
+                .change_id("Imarked"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        session
+            .add_comment(
+                "Imarked",
+                range_comment("a.c", (3, 5), None, "These three."),
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Imarked").await.unwrap();
+        for line in [
+            "  1 | one",
+            "  2 | two",
+            "> 3 | three",
+            "> 4 | four",
+            "> 5 | five",
+            "  6 | six",
+            "  7 | seven",
+        ] {
+            assert!(text.contains(line), "{line:?} is missing from\n{text}");
+        }
+        assert!(text.contains("marked `>`"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_change_with_nothing_to_report_states_no_rule() {
+        let repo = reviewed().await;
+        let session = session_of(&repo).await;
+
+        let text = change(&session, "Iretry").await.unwrap();
+        assert!(text.contains("Nothing to report."), "{text}");
+        assert!(!text.contains("marked `>`"), "{text}");
     }
 
     #[tokio::test]

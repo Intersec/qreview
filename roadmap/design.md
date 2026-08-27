@@ -590,6 +590,8 @@ reads it has no other context:
 ## Review: myproject@main, commit af448g1500
 
 I reviewed this commit and left the comments below. Please address them.
+Each comment is about the lines marked `>`; the lines around them are
+context only.
 
 Change: net: fix the retry loop
 Patch set 2 · 2 comments
@@ -597,11 +599,11 @@ Patch set 2 · 2 comments
 1. `src/net.blk:42`
 
    ```c
-   40 |     rc = connect(fd, addr);
-   41 |     if (rc < 0) {
-   42 |         for (;;) {
-   43 |             rc = read(fd);
-   44 |         }
+     40 |     rc = connect(fd, addr);
+     41 |     if (rc < 0) {
+   > 42 |         for (;;) {
+     43 |             rc = read(fd);
+     44 |         }
    ```
 
    This loop retries forever when the socket is closed.
@@ -619,6 +621,10 @@ Rules for the format:
 
 - The comment follows the code, never the opposite. The reader needs the
   context first.
+- The lines a comment covers carry a `>` at the left edge of the excerpt,
+  and the opening says so once. A reader that does not count gives every
+  line the same weight, and a remark then lands on the line it fits best
+  rather than on the one it was written on.
 - No author. One person wrote every line of it.
 - The comments are numbered, so the answer can name one.
 - The export names the commit and the patch set, so the session knows the
