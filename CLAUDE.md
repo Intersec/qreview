@@ -5,8 +5,7 @@ interface and the Gerrit model: one change at a time, with patch sets. Rust
 for the binary, Vue 3 for the interface, embedded in that binary. It ships as
 one file and needs no runtime.
 
-The project is in **development**. No code exists yet.
-[README.md](./README.md) says what the tool is.
+The project ships releases. [README.md](./README.md) says what the tool is.
 [CONTRIBUTING.md](./CONTRIBUTING.md) holds the branch model, the commits, and
 the release. This file holds what a session must do.
 
@@ -98,9 +97,11 @@ Two rules that no tool enforces:
 
 ## Rules that hold from the first line
 
-- **The server never writes to the working tree.** It reads with `git`. The
-  only write is `git fetch`, and only when the user asks for a Gerrit patch
-  set. A task that needs a write is a stop-and-report.
+- **The server never writes to the working tree.** It reads with `git`. It
+  writes two things and nothing else: a `git fetch`, when the user asks for a
+  Gerrit patch set, and the objects that hold the work which is not committed.
+  No ref, no file of the tree, ever. A task that needs more is a
+  stop-and-report.
 - **The server binds `127.0.0.1` only**, with a session token. No other
   interface, ever.
 - **Gerrit is optional at every point.** A query that fails, times out, or
@@ -117,8 +118,10 @@ Two rules that no tool enforces:
   the word spans, highlights with `syntect`, and merges the spans. The browser
   paints. Do not move that work into the interface.
 - **Nothing reads the working tree.** Every commit, tree, and blob comes from
-  the object database. This is what lets a reader review a series that is not
-  the checkout, and it is why a dirty worktree changes no diff.
+  the object database. `git stash create` puts the uncommitted work in there
+  first, so even that is read from the database. This is what lets a reader
+  review a series that is not the checkout, and it is why a dirty worktree
+  changes no diff of a commit.
 - **The binary carries the interface.** A release build embeds `web/dist`.
   Nothing at run time reads a file that the binary does not hold, except the
   repository, the configuration, and the comment store.
