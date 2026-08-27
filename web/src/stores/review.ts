@@ -17,6 +17,8 @@ import type {
   NewComment,
   PatchSet,
   Placed,
+  Posted,
+  PostedComment,
   Release,
   Review,
   Series,
@@ -35,6 +37,9 @@ function touchesTheDiff(patch: object): boolean {
 
 export const useReview = defineStore('review', () => {
   const version = ref('');
+  /// What Gerrit already holds for the change being read. Read only, and
+  /// best effort: a server that says nothing leaves the list empty.
+  const posted = ref<Posted>({ comments: [], placed: [] });
   /// The release and the commit under it, for the tooltip on the version.
   const build = ref('');
   const series = ref<Series | null>(null);
@@ -177,8 +182,11 @@ export const useReview = defineStore('review', () => {
       patchSets.value = [];
       gerrit.value = null;
 
+      posted.value = { comments: [], placed: [] };
+
       // The patch sets are asked for on their own. That call reaches Gerrit
-      // over ssh, and the file list must not wait a second for it.
+      // over ssh, and the file list must not wait a second for it. The
+      // remarks already on the server ride the same answer.
       void api
         .patchSets(key)
         .then((versions) => {
@@ -188,6 +196,7 @@ export const useReview = defineStore('review', () => {
           }
         })
         .catch(() => undefined);
+      void loadPosted(key, undefined);
 
       const [comments, list] = await track(
         filesLoading,
@@ -256,6 +265,7 @@ export const useReview = defineStore('review', () => {
       patchSet.value = number;
       against.value = base;
       review.value = await api.comments(key, number);
+      void loadPosted(key, number);
       files.value = await track(filesLoading, api.files(key, number, base));
 
       const stays = files.value.find((f) => f.path === was && !f.binary);
@@ -325,6 +335,27 @@ export const useReview = defineStore('review', () => {
   /// Where a comment lands in the patch set being read.
   function placement(id: string): Placed | undefined {
     return review.value?.placed.find((p) => p.id === id);
+  }
+
+  /// Read what Gerrit already holds, and never let it stop anything.
+  async function loadPosted(key: string, ps: number | undefined) {
+    try {
+      const found = await api.posted(key, ps);
+      if (changeKey.value === key) {
+        posted.value = found;
+      }
+    } catch {
+      posted.value = { comments: [], placed: [] };
+    }
+  }
+
+  function postedPlacement(id: string): Placed | undefined {
+    return posted.value.placed.find((p) => p.id === id);
+  }
+
+  /// The remarks Gerrit holds whose place this version no longer has.
+  function postedLost(): PostedComment[] {
+    return posted.value.comments.filter((c) => postedPlacement(c.id)?.lost);
   }
 
   /// The comments whose place is gone. They are never dropped.
@@ -440,6 +471,9 @@ export const useReview = defineStore('review', () => {
     openPatchSet,
     placement,
     lost,
+    posted,
+    postedPlacement,
+    postedLost,
     addComment,
     editComment,
     deleteComment,

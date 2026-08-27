@@ -13,6 +13,7 @@ import type {
   NewComment,
   PatchSet,
   PatchSets,
+  Posted,
   Release,
   Review,
   Row,
@@ -131,6 +132,8 @@ export const api = {
   /// Every comment of the session, in the order a review reads them.
   allComments: () => call<ChangeComments[]>('/api/comments'),
 
+  posted: (key: string, ps?: number) =>
+    call<Posted>(`/api/changes/${encodeURIComponent(key)}/posted${query({ ps: num(ps) })}`),
   comments: (key: string, ps?: number) =>
     call<Review>(`/api/changes/${encodeURIComponent(key)}/comments${query({ ps: num(ps) })}`),
 

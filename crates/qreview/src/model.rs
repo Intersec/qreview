@@ -205,3 +205,21 @@ pub struct WordSpan {
     pub start: usize,
     pub end: usize,
 }
+
+/// A remark already posted on Gerrit.
+///
+/// Read only, always: qreview never writes to the server. The ssh answer
+/// carries no id, so this one is made from the patch set and the place, and
+/// it is stable as long as the server answers the same thing.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostedComment {
+    pub id: String,
+    pub patch_set: usize,
+    /// The name the server gave, or the next best thing it gave.
+    pub author: String,
+    pub body: String,
+    pub file: String,
+    /// Absent on a remark about the whole file.
+    pub line: Option<usize>,
+}

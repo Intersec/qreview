@@ -199,7 +199,12 @@ fn line_of(comment: &Comment) -> Option<usize> {
 
 /// Where the comment sits, with enough of the file around it to find the
 /// place again in another patch set.
-async fn anchor_of(git: &Git, rev: &str, base: &str, new: &NewComment) -> Result<Anchor> {
+pub(crate) async fn anchor_of(
+    git: &Git,
+    rev: &str,
+    base: &str,
+    new: &NewComment,
+) -> Result<Anchor> {
     let file = new
         .file
         .clone()

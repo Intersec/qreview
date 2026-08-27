@@ -215,6 +215,25 @@ impl Session {
         Some(worktree::summary(&hash, &info.author))
     }
 
+    /// The remarks already posted on Gerrit for a change.
+    ///
+    /// Read only: qreview writes nothing to the server. Gerrit is optional,
+    /// so a change the server does not know, a query that failed, or a
+    /// server with no such option all answer with nothing at all.
+    pub async fn posted_comments(&self, key: &str) -> Vec<gerrit::posted::Posted> {
+        let Some(rev) = self.commit_of(key) else {
+            return Vec::new();
+        };
+        let Ok(info) = commit::info(&self.git, &rev).await else {
+            return Vec::new();
+        };
+        let Some(change) = self.ask_gerrit(&info).await else {
+            return Vec::new();
+        };
+
+        gerrit::posted::of_change(&self.git, &change).await
+    }
+
     /// True when the revision is the work that is not committed.
     pub fn is_worktree(&self, rev: &str) -> bool {
         self.series

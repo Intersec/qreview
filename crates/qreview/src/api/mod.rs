@@ -82,6 +82,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/config", get(config).put(save_config))
         .route("/api/changes/{key}/lines", get(lines))
         .route("/api/changes/{key}/patchsets", get(patchsets))
+        .route("/api/changes/{key}/posted", get(posted))
         .route(
             "/api/changes/{key}/patchsets/{number}/fetch",
             post(fetch_patch_set),
@@ -518,6 +519,45 @@ async fn comments(
     let placed = anchor::place_all(&session.git, &file.comments, &rev, &base).await;
 
     Ok(Json(Review { file, placed }))
+}
+
+/// What the interface reads for the remarks already on the server.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Posted {
+    comments: Vec<crate::model::PostedComment>,
+    /// Where each of them lands in the patch set being read.
+    placed: Vec<Placed>,
+}
+
+/// The remarks already posted on Gerrit, placed in the patch set being read.
+///
+/// Read only. A change the server does not know answers with an empty list,
+/// never an error: the local review must go on without Gerrit.
+async fn posted(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Query(view): Query<ViewQuery>,
+) -> Result<Json<Posted>, ApiError> {
+    let session = state.session.read().await;
+    let found = session.posted_comments(&key).await;
+
+    if found.is_empty() {
+        return Ok(Json(Posted {
+            comments: Vec::new(),
+            placed: Vec::new(),
+        }));
+    }
+
+    let rev = target(&session, &key, view.ps).await?;
+    let base = session.base_of(&rev, &Against::Parent).await?;
+    let placeable: Vec<_> = found.iter().map(|p| p.placeable.clone()).collect();
+    let placed = anchor::place_all(&session.git, &placeable, &rev, &base).await;
+
+    Ok(Json(Posted {
+        comments: found.into_iter().map(|p| p.wire).collect(),
+        placed,
+    }))
 }
 
 /// Is a newer qreview out?

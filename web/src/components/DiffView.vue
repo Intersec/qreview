@@ -5,12 +5,13 @@ import CommentCard from './CommentCard.vue';
 import ContextBar from './ContextBar.vue';
 import CommentCell from './CommentCell.vue';
 import DiffRow from './DiffRow.vue';
+import PostedCard from './PostedCard.vue';
 import { gaps, type Gap } from '@/diff/gaps';
 import { label } from '@/diff/paths';
 import { pairs } from '@/diff/pairs';
 import { places, slot } from '@/diff/drafts';
 import type { Mark } from '@/diff/segments';
-import type { Comment, FileDiff, Hunk, NewComment, Row, Side } from '@/api/types';
+import type { Comment, FileDiff, Hunk, NewComment, PostedComment, Row, Side } from '@/api/types';
 
 const props = defineProps<{
   /// The change being read. An unfinished remark is kept under it.
@@ -26,6 +27,12 @@ const props = defineProps<{
   loadLines: (from: number, to: number) => Promise<Row[]>;
   /// The comments whose place in this patch set is gone.
   lost: Comment[];
+  /// What Gerrit already holds for this change. Read only.
+  posted: PostedComment[];
+  /// Where a Gerrit remark lands in the patch set being read.
+  postedPlacement: (id: string) => { line: number | null; lost: boolean } | undefined;
+  /// The Gerrit remarks whose place in this patch set is gone.
+  postedLost: PostedComment[];
   /// True when the diff leaves out what differs only by whitespace.
   /// True when a long line is folded rather than scrolled to.
   wrap: boolean;
@@ -301,6 +308,27 @@ function at(row: Row | null, column: Side) {
   });
 }
 
+/// What Gerrit holds on one place of the code.
+///
+/// Every Gerrit remark is on the new side: the ssh answer says no more than
+/// a file and a line. See `roadmap/design.md` section 6.3.
+function atPosted(row: Row | null, column: Side): PostedComment[] {
+  const line = lineIn(row, column);
+  if (!row || line === null || column !== 'new') {
+    return [];
+  }
+  return props.posted.filter((remark) => {
+    if (remark.file !== props.diff.path || remark.line === null) {
+      return false;
+    }
+    const placed = props.postedPlacement(remark.id);
+    if (placed?.lost) {
+      return false;
+    }
+    return (placed?.line ?? remark.line) === line;
+  });
+}
+
 /// The lines a comment covers in the patch set being read.
 ///
 /// The card sits under the last of them, the way it reads: the remark comes
@@ -370,7 +398,10 @@ function markRow(row: Row | null): Mark | undefined {
 /// A row that carries a comment, or an open box, gets its own row underneath
 /// so the code above it stays aligned with the other side.
 function talkative(row: Row | null, column: Side): boolean {
-  return row !== null && (at(row, column).length > 0 || opening(row, column));
+  return (
+    row !== null &&
+    (at(row, column).length > 0 || atPosted(row, column).length > 0 || opening(row, column))
+  );
 }
 
 /// The same, for the unified view, where one row carries both sides.
@@ -657,6 +688,11 @@ const loose = computed(() =>
   ),
 );
 
+/// What Gerrit holds about this file rather than about a line of it.
+const loosePosted = computed(() =>
+  props.posted.filter((remark) => remark.line === null && remark.file === props.diff.path),
+);
+
 function writeAbout(scope: 'change' | 'file', body: string) {
   emit('add', {
     scope,
@@ -735,13 +771,18 @@ function toggle(row: Row | null, column: Side) {
       </span>
     </header>
 
-    <section v-if="about || loose.length || lost.length" class="above-diff">
+    <section
+      v-if="about || loose.length || loosePosted.length || lost.length || postedLost.length"
+      class="above-diff"
+    >
       <CommentBox
         v-if="about"
         :label="about === 'change' ? 'A remark about the change' : 'A remark about the file'"
         @save="(body) => writeAbout(about!, body)"
         @cancel="about = null"
       />
+
+      <PostedCard v-for="remark in loosePosted" :key="remark.id" :comment="remark" />
 
       <CommentCard
         v-for="comment in loose"
@@ -751,8 +792,8 @@ function toggle(row: Row | null, column: Side) {
         @remove="(id) => emit('remove', id)"
       />
 
-      <div v-if="lost.length" class="lost">
-        <p class="lost-title">Could not be placed · {{ lost.length }}</p>
+      <div v-if="lost.length || postedLost.length" class="lost">
+        <p class="lost-title">Could not be placed · {{ lost.length + postedLost.length }}</p>
         <p class="quiet">
           The line these were written on is not in this patch set. They are kept here rather than
           moved to a line nobody chose.
@@ -760,6 +801,12 @@ function toggle(row: Row | null, column: Side) {
         <p v-for="comment in lost" :key="comment.id" class="lost-item">
           <code>{{ comment.anchor?.file }}:{{ comment.anchor?.startLine }}</code>
           <span class="quiet"> patch set {{ comment.patchSet }} · </span>{{ comment.body }}
+        </p>
+        <p v-for="remark in postedLost" :key="remark.id" class="lost-item">
+          <code>{{ remark.file }}:{{ remark.line }}</code>
+          <span class="quiet">
+            {{ remark.author }} on Gerrit · patch set {{ remark.patchSet }} · </span
+          >{{ remark.body }}
         </p>
       </div>
     </section>
@@ -799,6 +846,7 @@ function toggle(row: Row | null, column: Side) {
                 <td colspan="2">
                   <CommentCell
                     :comments="at(row, 'old')"
+                    :posted="atPosted(row, 'old')"
                     :writing="opening(row, 'old')"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
@@ -811,6 +859,7 @@ function toggle(row: Row | null, column: Side) {
                 <td colspan="2">
                   <CommentCell
                     :comments="at(row, 'new')"
+                    :posted="atPosted(row, 'new')"
                     :writing="opening(row, 'new')"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
@@ -851,6 +900,7 @@ function toggle(row: Row | null, column: Side) {
                 <td colspan="2">
                   <CommentCell
                     :comments="at(row, 'old')"
+                    :posted="atPosted(row, 'old')"
                     :writing="opening(row, 'old')"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
@@ -863,6 +913,7 @@ function toggle(row: Row | null, column: Side) {
                 <td colspan="2">
                   <CommentCell
                     :comments="at(row, 'new')"
+                    :posted="atPosted(row, 'new')"
                     :writing="opening(row, 'new')"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
@@ -899,6 +950,7 @@ function toggle(row: Row | null, column: Side) {
               <td colspan="2">
                 <CommentCell
                   :comments="at(pair.left, 'old')"
+                  :posted="atPosted(pair.left, 'old')"
                   :writing="opening(pair.left, 'old')"
                   :draft="draftAt(pair.left, 'old')"
                   :label="boxLabel(pair.left, 'old')"
@@ -911,6 +963,7 @@ function toggle(row: Row | null, column: Side) {
               <td colspan="2">
                 <CommentCell
                   :comments="at(pair.right, 'new')"
+                  :posted="atPosted(pair.right, 'new')"
                   :writing="opening(pair.right, 'new')"
                   :draft="draftAt(pair.right, 'new')"
                   :label="boxLabel(pair.right, 'new')"
@@ -960,6 +1013,7 @@ function toggle(row: Row | null, column: Side) {
                     v-for="column in columnsOf(row)"
                     :key="column"
                     :comments="at(row, column)"
+                    :posted="atPosted(row, column)"
                     :writing="opening(row, column)"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
@@ -1006,6 +1060,7 @@ function toggle(row: Row | null, column: Side) {
                     v-for="column in columnsOf(row)"
                     :key="column"
                     :comments="at(row, column)"
+                    :posted="atPosted(row, column)"
                     :writing="opening(row, column)"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
@@ -1046,6 +1101,7 @@ function toggle(row: Row | null, column: Side) {
                   v-for="column in columnsOf(row)"
                   :key="column"
                   :comments="at(row, column)"
+                  :posted="atPosted(row, column)"
                   :writing="opening(row, column)"
                   :draft="draftAt(row, column)"
                   :label="boxLabel(row, column)"

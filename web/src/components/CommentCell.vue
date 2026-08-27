@@ -5,10 +5,14 @@
 
 import CommentBox from './CommentBox.vue';
 import CommentCard from './CommentCard.vue';
-import type { Comment } from '@/api/types';
+import PostedCard from './PostedCard.vue';
+import type { Comment, PostedComment } from '@/api/types';
 
 defineProps<{
   comments: Comment[];
+  /// What Gerrit already holds here. Read only, and first: it was written
+  /// before the remarks of this session.
+  posted: PostedComment[];
   /// True when a box is open on this place.
   writing: boolean;
   /// Where the browser keeps what is typed and not saved.
@@ -24,6 +28,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
+  <PostedCard v-for="remark in posted" :key="remark.id" :comment="remark" />
   <CommentCard
     v-for="comment in comments"
     :key="comment.id"

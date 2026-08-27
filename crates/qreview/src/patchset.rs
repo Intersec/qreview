@@ -176,6 +176,7 @@ mod tests {
             git_ref: format!("refs/changes/21/12321/{number}"),
             created_on: 0,
             kind: "REWORK".to_owned(),
+            comments: Vec::new(),
         }
     }
 

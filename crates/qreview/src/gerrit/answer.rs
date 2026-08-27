@@ -22,6 +22,51 @@ pub struct Change {
     pub patch_sets: Vec<PatchSet>,
 }
 
+/// Whoever wrote a comment on the server.
+///
+/// Every field is optional: a robot account often has no name, and a server
+/// hides the address of a user who asked it to.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Person {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub username: String,
+}
+
+impl Person {
+    /// What to show. The name, or the next best thing the server gave.
+    pub fn label(&self) -> String {
+        for field in [&self.name, &self.username, &self.email] {
+            if !field.trim().is_empty() {
+                return field.trim().to_owned();
+            }
+        }
+        "someone".to_owned()
+    }
+}
+
+/// One remark posted on a line of a patch set.
+///
+/// The ssh query gives no id, no side and no reply link. Two remarks on one
+/// line are a thread, in the order the server lists them, and every line
+/// number is a line of the new side. See `roadmap/design.md` section 6.3.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InlineComment {
+    pub file: String,
+    /// Absent on a remark about the whole file.
+    #[serde(default)]
+    pub line: Option<usize>,
+    #[serde(default)]
+    pub reviewer: Person,
+    #[serde(default)]
+    pub message: String,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PatchSet {
@@ -35,6 +80,9 @@ pub struct PatchSet {
     pub created_on: i64,
     #[serde(default)]
     pub kind: String,
+    /// The remarks posted on this version, with `--comments`.
+    #[serde(default)]
+    pub comments: Vec<InlineComment>,
 }
 
 /// Parse the answer of `gerrit query --format=JSON`.
@@ -72,6 +120,38 @@ mod tests {
         assert_eq!(change.patch_sets.len(), 3);
         assert_eq!(change.patch_sets[2].number, 3);
         assert_eq!(change.patch_sets[2].git_ref, "refs/changes/21/12321/3");
+    }
+
+    #[test]
+    fn the_remarks_of_a_patch_set_are_read_with_their_author() {
+        let changes = parse(&recorded("with-comments.json"));
+        let sets = &changes[0].patch_sets;
+
+        assert_eq!(sets[0].comments.len(), 3);
+        let first = &sets[0].comments[0];
+        assert_eq!(first.file, "src/net.blk");
+        assert_eq!(first.line, Some(3));
+        assert_eq!(first.reviewer.label(), "Jane Reviewer");
+        assert!(first.message.starts_with("This loop retries"));
+
+        // Two remarks on one line are a thread, in the order the server
+        // lists them. The ssh answer carries no reply link.
+        assert_eq!(sets[0].comments[1].line, Some(3));
+        assert_eq!(sets[0].comments[1].reviewer.label(), "A Developer");
+
+        // No line: a remark about the whole file.
+        assert_eq!(sets[0].comments[2].line, None);
+        assert_eq!(sets[0].comments[2].reviewer.label(), "buildbot");
+
+        assert_eq!(sets[1].comments.len(), 1);
+        assert_eq!(sets[1].comments[0].reviewer.label(), "nameless@example.com");
+    }
+
+    #[test]
+    fn an_answer_with_no_comments_reads_as_none() {
+        let changes = parse(&recorded("one-change.json"));
+
+        assert!(changes[0].patch_sets.iter().all(|s| s.comments.is_empty()));
     }
 
     #[test]

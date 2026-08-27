@@ -462,6 +462,18 @@ tr.talk td {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* A remark that came from the server, not from this session. Grey rather
+   than the draft yellow, because nothing here can be edited. */
+.posted-box {
+  border-color: var(--edge);
+  background: var(--pane);
+}
+.posted-box .talk-head {
+  border-bottom-color: var(--edge);
+}
+.posted-box .talk-tag {
+  background: var(--edge);
+}
 .talk-body {
   padding: 6px 10px;
 }

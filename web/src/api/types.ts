@@ -233,6 +233,25 @@ export interface Placed {
   lost: boolean;
 }
 
+/**
+ * A remark already posted on Gerrit. Read only: qreview never writes to the
+ * server, so it has no edit and no delete.
+ */
+export interface PostedComment {
+  id: string;
+  patchSet: number;
+  author: string;
+  body: string;
+  file: string;
+  line: number | null;
+}
+
+/** What Gerrit already holds, placed in the patch set being read. */
+export interface Posted {
+  comments: PostedComment[];
+  placed: Placed[];
+}
+
 /** The comments of one change, in the order a review reads them. */
 export interface ChangeComments {
   key: string;

@@ -91,8 +91,47 @@ function fakeGerrit(base: string, repo: string): { bin: string; served: string }
     url: 'https://review.example.com/c/myproject/+/12321',
     status: 'NEW',
     patchSets: [
-      { number: 1, revision: served, ref: 'refs/changes/21/12321/1', createdOn: 1750000000 },
-      { number: 2, revision: local, ref: 'refs/changes/21/12321/2', createdOn: 1750001000 },
+      {
+        number: 1,
+        revision: served,
+        ref: 'refs/changes/21/12321/1',
+        createdOn: 1750000000,
+        // This version is on the server and not in the clone, so there is
+        // no line to anchor this remark on until it is fetched.
+        comments: [
+          {
+            file: 'src/net.blk',
+            line: 3,
+            reviewer: { name: 'Jane Reviewer', email: 'jane@example.com' },
+            message: 'Where does this loop stop?',
+          },
+        ],
+      },
+      {
+        number: 2,
+        revision: local,
+        ref: 'refs/changes/21/12321/2',
+        createdOn: 1750001000,
+        comments: [
+          {
+            file: 'src/net.blk',
+            line: 3,
+            reviewer: { name: 'Jane Reviewer', email: 'jane@example.com' },
+            message: 'It still never stops.',
+          },
+          {
+            file: 'src/net.blk',
+            line: 3,
+            reviewer: { name: 'A Developer', email: 'author@example.com' },
+            message: 'A cap is coming in the next patch set.',
+          },
+          {
+            file: 'src/net.blk',
+            reviewer: { username: 'buildbot' },
+            message: 'This file has no test.',
+          },
+        ],
+      },
     ],
   };
   writeFileSync(

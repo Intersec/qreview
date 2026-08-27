@@ -31,6 +31,7 @@ const {
   release,
   version,
   build,
+  posted,
   onMerge,
   mergeBase,
   mergeList,
@@ -79,6 +80,9 @@ function stepFile(by: number) {
   }
 }
 const lost = computed(() => review.lost());
+/// What Gerrit already holds for the change being read, and the part of it
+/// this version has no line for.
+const postedLost = computed(() => review.postedLost());
 const copied = ref(false);
 const prefs = ref(false);
 const helping = ref(false);
@@ -341,6 +345,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
             :comments="comments"
             :lost="lost"
             :placement="review.placement"
+            :posted="posted.comments"
+            :posted-placement="review.postedPlacement"
+            :posted-lost="postedLost"
             :load-lines="review.loadLines"
             @update:split="review.setSplit"
             @add="review.addComment"

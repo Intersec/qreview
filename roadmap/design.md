@@ -493,11 +493,11 @@ written against and the text of the line it pointed to.
 
 ```sh
 ssh -p 29418 review.example.com gerrit query --format=JSON --patch-sets \
-    "change:I8f3a...c21 project:myproject branch:rel-3.0"
+    --comments "change:I8f3a...c21 project:myproject branch:rel-3.0"
 ```
 
-The answer gives the change number and one entry per patch set, with the ref.
-Then, for each patch set the user opens:
+The answer gives the change number and one entry per patch set, with the ref
+and the remarks already posted on it. Then, for each patch set the user opens:
 
 ```sh
 git fetch origin refs/changes/21/12321/1
@@ -506,7 +506,32 @@ git fetch origin refs/changes/21/12321/1
 The fetch is lazy. The query alone lists the patch sets. Nothing is downloaded
 before the user selects one.
 
-### 6.3 Failure
+### 6.3 The remarks already posted
+
+`--comments` adds to the query what reviewers have already written on each
+version. qreview shows them, read only, beside your own. It never posts,
+never replies and never votes.
+
+The ssh answer gives a file, a line, an author and a text, and nothing else:
+
+| Missing | What qreview does |
+|---|---|
+| An id | Makes one from the patch set and the place |
+| A side | Reads every line as a line of the new side |
+| A reply link | Two remarks on one line are a thread, in the order given |
+| A timestamp | Shows the patch set instead |
+
+A remark is anchored on the version it was posted on, by the rules of
+section 5.3, and follows its line into the version being read. A version that
+was never fetched holds no line to hash, so its remarks are unplaced, and the
+panel beside the file says so.
+
+Gerrit shows the commit message as `/COMMIT_MSG` with a header of its own.
+qreview drops that header, so the two do not count lines the same way. A
+remark on the message is read as a remark about the message, not about a line
+of it.
+
+### 6.4 Failure
 
 Gerrit is optional at every point. A query that fails, times out, or finds
 nothing produces a warning line in the interface and leaves the local review
@@ -566,6 +591,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/changes/:key/files?ps=2&base=parent` | The file list with the statistics, the commit message first |
 | `GET /api/changes/:key/diff?ps=2&base=parent&file=...` | The hunks of one file |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
+| `GET /api/changes/:key/posted` | The remarks already on Gerrit, placed |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
 | `GET /api/comments` | Every comment of the session, in reading order |
 | `GET /api/update` | Whether a newer qreview is out. Empty when nothing answers |

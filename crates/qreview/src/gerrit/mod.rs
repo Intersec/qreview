@@ -6,6 +6,7 @@
 
 pub mod answer;
 pub mod coords;
+pub mod posted;
 
 use std::process::Stdio;
 use std::time::Duration;
@@ -13,7 +14,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use tokio::process::Command;
 
-pub use answer::{Change, PatchSet};
+pub use answer::{Change, InlineComment, PatchSet, Person};
 pub use coords::Coordinates;
 
 /// How long the query may take before the local review goes on without it.
@@ -39,6 +40,10 @@ pub async fn query(coords: &Coordinates, change_id: &str) -> Result<Option<Chang
             "query",
             "--format=JSON",
             "--patch-sets",
+            // The remarks already posted on each version. A server that does
+            // not know the option answers without them, and the review goes
+            // on with the patch sets alone.
+            "--comments",
             &terms.join(" "),
         ],
     )
