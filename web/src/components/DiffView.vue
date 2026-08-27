@@ -790,15 +790,38 @@ function draftAt(row: Row | null, column: Side): string {
 function boxLabel(row: Row | null, column: Side): string {
   const range = covered.get(keyIn(row, column));
   const when = column === 'old' ? ', before the change' : '';
+  const part = range && cuts(range) ? 'a part of ' : '';
 
   if (range && range.end > range.start) {
-    return `A remark about lines ${range.start} to ${range.end}${when}`;
+    return `A remark about ${part}lines ${range.start} to ${range.end}${when}`;
   }
-  if (range && range.startChar !== undefined) {
-    return `A remark about a part of this line${when}`;
-  }
-  return `A remark about this line${when}`;
+  return `A remark about ${part}this line${when}`;
 }
+
+/// Whether the range opens or closes inside a line rather than on its ends.
+///
+/// A mouse selection of whole lines still carries characters, 0 to the
+/// length of the last line, and that is not a part of anything.
+function cuts(range: Picked): boolean {
+  if (range.startChar === undefined && range.endChar === undefined) {
+    return false;
+  }
+  // The side is the column the reader selected in, so a context line is
+  // found by the line that column holds.
+  const last = walkable.value.find((r) => lineIn(r, range.side) === range.end);
+  const length = last?.text.length ?? 0;
+  return (range.startChar ?? 0) > 0 || (range.endChar ?? length) < length;
+}
+
+/// What the floating button offers to write on.
+const offerLabel = computed(() => {
+  const range = picked.value;
+  if (!range || range.end === range.start) {
+    return 'Comment on this';
+  }
+  const count = range.end - range.start + 1;
+  return cuts(range) ? `Comment on part of ${count} lines` : `Comment on ${count} lines`;
+});
 
 function toggle(row: Row | null, column: Side) {
   if (!row || props.readOnly || lineIn(row, column) === null) {
@@ -1298,11 +1321,7 @@ function toggle(row: Row | null, column: Side) {
       :style="{ left: `${offer.x}px`, top: `${offer.y + 12}px` }"
       @click="writeOnPicked"
     >
-      {{
-        picked.end > picked.start
-          ? `Comment on ${picked.end - picked.start + 1} lines`
-          : 'Comment on this'
-      }}
+      {{ offerLabel }}
     </button>
 
     <p v-if="capped" role="status" class="note warn">

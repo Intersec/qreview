@@ -35,7 +35,7 @@ async function drag(page: Page, from: number, to: number) {
 test('a selection over several lines offers to become a comment', async ({ page }) => {
   await drag(page, 5, 8);
 
-  const offer = page.getByRole('button', { name: /Comment on 4 lines/ });
+  const offer = page.getByRole('button', { name: /Comment on (part of )?4 lines/ });
   await expect(offer).toBeVisible();
 
   await offer.click();
@@ -50,7 +50,7 @@ test('a selection over several lines offers to become a comment', async ({ page 
 
 test('the range comes back after a reload, over the same lines', async ({ page }) => {
   await drag(page, 5, 7);
-  await page.getByRole('button', { name: /Comment on 3 lines/ }).click();
+  await page.getByRole('button', { name: /Comment on (part of )?3 lines/ }).click();
   await page.getByRole('textbox').first().fill('Three lines.');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(card(page, 'Three lines.')).toBeVisible();
@@ -111,7 +111,7 @@ test('a click puts the keyboard on the line, and c writes there', async ({ page 
 
 test('a click while a box is open leaves the range of that box alone', async ({ page }) => {
   await drag(page, 5, 8);
-  await page.getByRole('button', { name: /Comment on 4 lines/ }).click();
+  await page.getByRole('button', { name: /Comment on (part of )?4 lines/ }).click();
 
   // The reader looks at another line before finishing the remark.
   await page.locator('td.code-cell[data-line="12"]').click();
