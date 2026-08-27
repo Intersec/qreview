@@ -722,6 +722,10 @@ tr.talk td {
   border-bottom: 1px solid var(--edge);
   background: var(--pane);
 }
+.top-bar .logo {
+  flex: none;
+  display: block;
+}
 .top-bar h1 {
   font-size: 14px;
   font-weight: 600;

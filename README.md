@@ -1,4 +1,4 @@
-# qreview
+# <img src="web/public/logo.svg" alt="" width="48" height="48" align="absmiddle" /> qreview
 
 Local code review for a Git series, in your browser, with the Gerrit model:
 one change at a time, with patch sets.

@@ -293,3 +293,16 @@ test('a comment box does not follow you to the next file', async ({ page }) => {
   await openFile(page, 'added.py');
   await expect(page.getByRole('textbox')).toHaveCount(0);
 });
+
+test('the tab carries the logo, and the binary serves it', async ({ page }) => {
+  // The mark is one file, in `web/public`. Vite copies it into `dist` and the
+  // binary embeds that, so a missing icon means a build that lost an asset.
+  const icon = page.locator('link[rel="icon"]');
+  await expect(icon).toHaveAttribute('href', '/logo.svg');
+
+  const answer = await page.request.get(new URL('/logo.svg', server.url).toString());
+  expect(answer.status()).toBe(200);
+  expect(answer.headers()['content-type']).toContain('image/svg+xml');
+
+  await expect(page.locator('.top-bar .logo')).toBeVisible();
+});

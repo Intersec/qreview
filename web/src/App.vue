@@ -227,6 +227,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       >
         {{ side ? '«' : '»' }}
       </button>
+      <img class="logo" src="/logo.svg" alt="" width="18" height="18" />
       <h1>qreview</h1>
       <p v-if="series" class="repo">{{ series.repo.remote ?? series.repo.root }}</p>
 
