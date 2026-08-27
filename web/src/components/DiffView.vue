@@ -647,13 +647,35 @@ function boxLabel(row: Row): string {
   if (!range) {
     return 'A remark about this line';
   }
+  const part = cuts(range) ? 'a part of ' : '';
   if (range.end > range.start) {
-    return `A remark about lines ${range.start} to ${range.end}`;
+    return `A remark about ${part}lines ${range.start} to ${range.end}`;
   }
-  return range.startChar === undefined
-    ? 'A remark about this line'
-    : 'A remark about a part of this line';
+  return `A remark about ${part}this line`;
 }
+
+/// Whether the range opens or closes inside a line rather than on its ends.
+///
+/// A mouse selection of whole lines still carries characters, 0 to the
+/// length of the last line, and that is not a part of anything.
+function cuts(range: Picked): boolean {
+  if (range.startChar === undefined && range.endChar === undefined) {
+    return false;
+  }
+  const last = walkable.value.find((r) => sideOf(r) === range.side && lineOf(r) === range.end);
+  const length = last?.text.length ?? 0;
+  return (range.startChar ?? 0) > 0 || (range.endChar ?? length) < length;
+}
+
+/// What the floating button offers to write on.
+const offerLabel = computed(() => {
+  const range = picked.value;
+  if (!range || range.end === range.start) {
+    return 'Comment on this';
+  }
+  const count = range.end - range.start + 1;
+  return cuts(range) ? `Comment on part of ${count} lines` : `Comment on ${count} lines`;
+});
 
 function toggle(row: Row | null) {
   if (row) {
@@ -990,11 +1012,7 @@ function toggle(row: Row | null) {
       :style="{ left: `${offer.x}px`, top: `${offer.y + 12}px` }"
       @click="writeOnPicked"
     >
-      {{
-        picked.end > picked.start
-          ? `Comment on ${picked.end - picked.start + 1} lines`
-          : 'Comment on this'
-      }}
+      {{ offerLabel }}
     </button>
 
     <p v-if="capped" role="status" class="note warn">
