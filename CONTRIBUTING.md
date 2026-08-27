@@ -78,12 +78,16 @@ shape.
 make check
 cargo xtask release   # collects the changelog fragments, writes CHANGELOG.md,
                       # bumps the version in Cargo.toml, tags
-git push --follow-tags
+git push origin main v1.2.3
 ```
 
-`cargo xtask release` writes an annotated tag, which is the kind
-`--follow-tags` pushes. A lightweight tag would stay on your machine and no
-release workflow would start.
+Push the tag by name. `cargo xtask release` prints the line to run, with the
+tag it just wrote.
+
+Not `--follow-tags`: it carries annotated tags only beside refs it is
+already pushing, so it sends nothing at all when the branch is up to date,
+and the release workflow never starts. A tag that reaches nobody publishes
+nothing.
 
 The tag starts the `release` workflow: it runs the gate again on the tagged
 commit, builds the static Linux x86-64 binary, and creates the GitHub

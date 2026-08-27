@@ -30,7 +30,13 @@ pub fn run(root: &Path, version: &str) -> Result<()> {
     )?;
     tag(root, version, &collected.text)?;
 
-    println!("v{version} is cut and tagged. Nothing is pushed: that is yours to do.");
+    let name = format!("v{version}");
+    println!("{name} is cut and tagged. Nothing is pushed: that is yours to do.");
+    println!();
+    // The tag by name, not `--follow-tags`: that one carries tags only
+    // beside refs it is already pushing, so it sends nothing at all when the
+    // branch is up to date, and no release pipeline ever starts.
+    println!("    git push origin {} {name}", branch(root));
     Ok(())
 }
 
@@ -47,6 +53,23 @@ fn tag(root: &Path, version: &str, entries: &str) -> Result<()> {
         root,
         &["tag", "-a", "-m", &subject, "-m", entries.trim(), &name],
     )
+}
+
+/// The branch to push, for the line that says how to push.
+fn branch(root: &Path) -> String {
+    let out = Command::new("git")
+        .current_dir(root)
+        .args(["branch", "--show-current"])
+        .output();
+    let name = out
+        .ok()
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .unwrap_or_default();
+
+    match name.trim().is_empty() {
+        true => "HEAD".to_owned(),
+        false => name.trim().to_owned(),
+    }
 }
 
 fn check_version(version: &str) -> Result<()> {
@@ -171,6 +194,13 @@ mod tests {
             .unwrap();
 
         String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    }
+
+    #[test]
+    fn the_line_to_push_names_the_branch_that_is_out() {
+        let dir = repo();
+
+        assert_eq!(branch(dir.path()), "main");
     }
 
     #[test]
