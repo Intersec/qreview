@@ -28,7 +28,8 @@ jobs:
       # `.tool-versions` is the one place the versions are written. It is
       # read here rather than named again, so asdf and the pipeline cannot
       # drift apart.
-      - id: tools
+      - name: Read the pinned versions
+        id: tools
         run: |
           {
             echo "node=$(awk '/^nodejs /{print $2}' .tool-versions)"
@@ -56,9 +57,11 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
-      - run: make setup
+      - name: Install the interface dependencies
+        run: make setup
 
-      - run: make check
+      - name: The gate
+        run: make check
 
       # No C toolchain: Rust links musl with its own bundled linker.
       - name: Build the static binary
