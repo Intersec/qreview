@@ -43,7 +43,7 @@ Never push to `main` with a red `make check`.
   `perf`, `chore`, `ci`, `style`.
 - Amend while the commit is only on your branch. Add a new commit once it is
   on `main`.
-- No `Change-Id` trailer. The remote is GitLab, not Gerrit.
+- No `Change-Id` trailer. The remote is GitHub, not Gerrit.
 
 ## Changelog
 
@@ -83,35 +83,18 @@ git push --follow-tags
 
 `cargo xtask release` writes an annotated tag, which is the kind
 `--follow-tags` pushes. A lightweight tag would stay on your machine and no
-release pipeline would start.
+release workflow would start.
 
-The tag starts a pipeline that runs the gate again, builds the static Linux
-x86-64 binary, uploads it to the package registry of the project, and creates
-the release that links to it. A tag whose gate is red publishes nothing.
+The tag starts the `release` workflow: it runs the gate again on the tagged
+commit, builds the static Linux x86-64 binary, and creates the GitHub
+release with the notes of that version and the binary attached. A tag whose
+gate is red publishes nothing. There is nothing to configure: the token that
+publishes is the one Actions hands to the job.
 
-One pipeline runs, not two. The push carries the release commit and its tag,
-and GitLab would start a pipeline for each. The branch one stands down on a
-commit named `chore(release): v…`, because the tag one runs the same gate on
-the same commit and is the one that publishes.
-
-The pipeline talks to its own GitLab server and to nothing else. It pulls no
-image from another registry, and `scripts/gitlab-release.sh` calls the API of
-the project it runs in.
-
-A server behind a private certificate authority needs that CA in the job.
-The release job takes it from either of two places, and installs it before it
-calls the API:
-
-- `CI_SERVER_TLS_CA_FILE`, which the runner sets on its own when it is
-  configured with `tls-ca-file`. Nothing to do in the project.
-- `ADDITIONAL_CA_CERT_BUNDLE`, a CI/CD variable of the project or of its
-  group, holding the CA. The name is GitLab's own. A File variable and a
-  plain one both work.
-
-Without either, `curl` stops with `SSL certificate problem: unable to get
-local issuer certificate`. A variable marked **Protect variable** reaches a
-tag only when the tag is protected, so protect the tag pattern too, or leave
-the variable unprotected.
+One run of the gate, not two. The push carries the release commit and its
+tag, and GitHub starts a workflow for each ref. The `check` workflow stands
+down on a commit named `chore(release): v…`, because the `release` workflow
+runs the same gate on the same commit and is the one that publishes.
 
 `make dist` packs the same file on your machine, under `dist/`, beside the
 binary itself. Use it to release locally: to hand a colleague a build before

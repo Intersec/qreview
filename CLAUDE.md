@@ -146,7 +146,7 @@ way the project does a thing. Keep each line short.
 - English, imperative. Subject 72 characters or less, body wrapped at 72.
 - A Conventional Commits prefix in the subject: `feat`, `fix`, `docs`, `test`,
   `refactor`, `perf`, `chore`, `ci`, `style`.
-- No `Change-Id` trailer. The remote is GitLab, not Gerrit.
+- No `Change-Id` trailer. The remote is GitHub, not Gerrit.
 - End with a `Co-Authored-By: Claude …` trailer.
 
 ## Documentation

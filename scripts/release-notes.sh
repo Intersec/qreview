@@ -2,7 +2,7 @@
 # Print the CHANGELOG section of one version.
 #
 # The release job attaches this text to the tag, so a reader sees the same
-# notes on GitLab and in the file.
+# notes on the release page and in the file.
 #
 #   scripts/release-notes.sh v0.3.1
 

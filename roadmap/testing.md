@@ -4,8 +4,9 @@ The policy is strict on purpose. qreview reads a developer's real repository
 and holds review work that exists nowhere else. A silent failure loses that
 work.
 
-There is no CI yet. The rules below are written so that the day a GitLab
-pipeline exists, it runs `make check` and nothing else changes.
+GitHub Actions runs `make check` on every push and every pull request, and
+again on a tag before it publishes. It is the same command a developer runs,
+so the pipeline and the machine cannot drift apart.
 
 ## The gate
 

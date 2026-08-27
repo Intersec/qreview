@@ -28,7 +28,8 @@ in place.*
 - [x] The `Makefile`: `setup`, `dev`, `build`, `check`, `test`, `fmt`,
       `install`, `dist`
 - [x] `make check`, one line per step, quiet until a step fails
-- [x] `.gitlab-ci.yml`, one `verify` stage that runs `make check`
+- [x] A pipeline that runs `make check` on every push (GitLab first,
+      GitHub Actions since the project was opened)
 - [x] `.gitignore`, `.editorconfig`
 - [x] The first commit
 
@@ -224,11 +225,14 @@ surprised by anything.*
 - [x] Say at start when a newer release is out, and say nothing at all when
       the question cannot be asked
 
+- [x] The move to GitHub: the workflows, the install, and the address the
+      version check asks
+
 ## After that
 
 1. A rebase-aware diff between two patch sets.
-3. A JSON export, and a Claude Code skill that reads it.
-4. An HTTP transport for Gerrit, for a server with ssh closed.
+2. A JSON export, and a Claude Code skill that reads it.
+3. An HTTP transport for Gerrit, for a server with ssh closed.
 
 ## Session protocol
 
