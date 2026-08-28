@@ -12,6 +12,46 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.6.0]
+
+### Added
+
+- **A logo** — a lowercase q whose stroke is a diff, red above and green
+  below. It is the favicon, so a qreview tab is one glance away among twenty
+  others, and it sits beside the name in the top bar.
+- **A comment on the left side** — click a number of the left column, in
+  either view, and the remark speaks of the version before the change. A
+  deleted line takes one this way. The remark is anchored on the base, so it
+  follows that line across patch sets, and the export says
+  `(before the change)` after the place it names.
+- **Review what is not committed** — the tracked changes still in the working
+  tree stand at the top of the series, as one more change to read and write
+  remarks on. Staged or not, both. `--no-worktree` turns it off.
+- **The commit under the version** — hover the version in the top bar, and it
+  says which commit the binary was built from. `qreview --version` says the
+  same. One release names a hundred commits, and a bug report needs the one
+  that is running.
+- **The Gerrit comments** — the remarks already posted on the server are shown
+  beside your own, on the line they speak of, with the name of whoever wrote
+  them. Read only: qreview posts nothing, replies to nothing and votes on
+  nothing.
+- **The second round** — read a series, have the work corrected, read it
+  again. qreview offers the version you reviewed as a patch set, without
+  `--prev`, and lists apart the remarks the correction has answered, with one
+  action that drops them all. A version that is not the newest is read only.
+
+### Changed
+
+- The comment store is format 3. A comment now records the commit it was
+  written against, which is what the second round reads. A store written by
+  an older qreview is read as it is; its comments name no version and take no
+  part in that.
+
+### Fixed
+
+- A file opened while its change was still loading is no longer taken back.
+  The change opened on its first file when the list landed, a moment after
+  the reader had picked another one, and the click was lost.
 ## [0.5.4]
 
 ### Fixed
