@@ -196,10 +196,12 @@ export const useReview = defineStore('review', () => {
       void api
         .patchSets(key)
         .then((versions) => {
-          if (changeKey.value === key) {
-            patchSets.value = versions.sets;
-            gerrit.value = versions.gerrit;
+          if (changeKey.value !== key) {
+            return;
           }
+          patchSets.value = versions.sets;
+          gerrit.value = versions.gerrit;
+          carryPatchSet(versions.sets);
         })
         .catch(() => undefined);
       void loadPosted(key, undefined);
@@ -265,6 +267,23 @@ export const useReview = defineStore('review', () => {
     });
   }
 
+  /// Open the patch set the reader is on, when this change has one too.
+  ///
+  /// The list arrives after the change is open, so this is a second read.
+  /// The newest version is what stands on the screen until it lands, which
+  /// is the right thing to see while waiting.
+  function carryPatchSet(sets: PatchSet[]) {
+    const carry = wanted.value;
+    const last = sets[sets.length - 1]?.number;
+
+    if (carry === undefined || carry === last || patchSet.value === carry) {
+      return;
+    }
+    if (sets.some((one) => one.number === carry)) {
+      void openPatchSet(carry);
+    }
+  }
+
   /// Read another version of the change, against another one.
   async function openPatchSet(number: number | undefined, base?: string) {
     const key = changeKey.value;
@@ -275,6 +294,7 @@ export const useReview = defineStore('review', () => {
 
     await guard(async () => {
       patchSet.value = number;
+      wanted.value = number;
       against.value = base;
       review.value = await api.comments(key, number);
       void loadPosted(key, number);
@@ -402,6 +422,13 @@ export const useReview = defineStore('review', () => {
       await reload();
     });
   }
+
+  /// The patch set the reader picked, carried from change to change.
+  ///
+  /// Reading patch set 1 of one change and then opening another landed on
+  /// its newest version. The number is what the reader asked for, so it is
+  /// asked for again on every change that has it.
+  const wanted = ref<number | undefined>(undefined);
 
   /// The commit of the version being read.
   ///

@@ -45,3 +45,14 @@ test('a version has no selector when it is the only one', async ({ page }) => {
 
   await expect(page.locator('#base-of')).toHaveCount(0);
 });
+
+test('the patch set the reader picked follows them to the next change', async ({ page }) => {
+  await page.locator('#read-set').selectOption('1');
+  await expect(page.locator('#read-set')).toHaveValue('1');
+
+  // Away to a change that has one version, and back. The number the reader
+  // asked for is what is read, not the newest version of the change.
+  await openChange(page, /long: touch two places/);
+  await openChange(page, /net: retry the read/);
+  await expect(page.locator('#read-set')).toHaveValue('1');
+});
