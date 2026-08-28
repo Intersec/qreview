@@ -306,3 +306,28 @@ test('the tab carries the logo, and the binary serves it', async ({ page }) => {
 
   await expect(page.locator('.top-bar .logo')).toBeVisible();
 });
+
+test('a file opened while the change loads keeps the pane', async ({ page }) => {
+  // The page opens on a change and on the first file of it.
+  await expect(page.locator('.file-bar h2')).toContainText('Commit message');
+
+  // From here the file list answers slowly, so a change is still loading
+  // when the reader picks a file of it, off the list already on the screen.
+  await page.route(/\/files/, async (route) => {
+    await new Promise((wait) => setTimeout(wait, 1200));
+    await route.continue();
+  });
+
+  await page
+    .getByRole('button', { name: /docs: rename the document/ })
+    .first()
+    .click();
+  await page.locator('.file-row', { hasText: 'new-name.md' }).first().click();
+  await expect(page.locator('.file-bar h2')).toContainText('new-name.md');
+
+  // And it is still there once the list lands. The first file of the change
+  // used to take the choice back.
+  await page.waitForTimeout(2000);
+  await expect(page.locator('.file-bar h2')).toContainText('new-name.md');
+  await page.unroute(/\/files/);
+});

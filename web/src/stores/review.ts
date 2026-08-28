@@ -184,6 +184,12 @@ export const useReview = defineStore('review', () => {
 
       posted.value = { comments: [], placed: [] };
 
+      // Cleared before the read, not after it. A file the reader opens
+      // while the list is on its way is a choice, and the first file of the
+      // change must not take it back when the list lands.
+      diff.value = null;
+      filePath.value = null;
+
       // The patch sets are asked for on their own. That call reaches Gerrit
       // over ssh, and the file list must not wait a second for it. The
       // remarks already on the server ride the same answer.
@@ -207,8 +213,14 @@ export const useReview = defineStore('review', () => {
       }
       review.value = comments;
       files.value = list;
-      diff.value = null;
-      filePath.value = null;
+
+      // A file of this change that the reader already picked stays. One from
+      // the change before it does not: it is not in this list, and leaving
+      // the pane on it would leave the reader nowhere.
+      const chosen = filePath.value;
+      if (chosen !== null && list.some((file) => file.path === chosen)) {
+        return;
+      }
 
       const first = files.value.find((f) => !f.binary);
       if (first) {
