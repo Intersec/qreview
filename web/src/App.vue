@@ -33,6 +33,7 @@ const {
   build,
   posted,
   readingOlder,
+  reading,
   onMerge,
   mergeBase,
   mergeList,
@@ -80,13 +81,13 @@ function stepFile(by: number) {
     review.openFile(next);
   }
 }
-const lost = computed(() => review.lost());
+const stranded = computed(() => review.stranded());
 /// What Gerrit already holds for the change being read, and the part of it
 /// this version has no line for.
-const postedLost = computed(() => review.postedLost());
-/// The remarks a later version has answered: the second round reads past
-/// these, or drops them all at once.
-const answered = computed(() => review.answered());
+const postedStranded = computed(() => review.postedStranded());
+/// The files of the change, so the diff can tell a remark about a file that
+/// is still here from one about a file the change no longer touches.
+const paths = computed(() => files.value.map((file) => file.path));
 const copied = ref(false);
 const prefs = ref(false);
 const helping = ref(false);
@@ -347,12 +348,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
             :split="split"
             :wrap="wrap"
             :comments="comments"
-            :lost="lost"
+            :stranded="stranded"
+            :paths="paths"
+            :reading="reading"
             :placement="review.placement"
             :posted="posted.comments"
             :posted-placement="review.postedPlacement"
-            :posted-lost="postedLost"
-            :answered="answered"
+            :posted-stranded="postedStranded"
             :read-only="readingOlder"
             :load-lines="review.loadLines"
             @drop-answered="review.dropAnswered"

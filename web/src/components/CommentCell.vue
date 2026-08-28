@@ -17,6 +17,8 @@ defineProps<{
   writing: boolean;
   /// True on a version that is not the newest. History is read, not edited.
   readOnly: boolean;
+  /// The commit being read, so a remark from another version says which.
+  at: string;
   /// Where the browser keeps what is typed and not saved.
   draft: string;
   label: string;
@@ -35,6 +37,7 @@ const emit = defineEmits<{
     v-for="comment in comments"
     :key="comment.id"
     :comment="comment"
+    :at="at"
     :read-only="readOnly"
     @edit="(id, body) => emit('edit', id, body)"
     @remove="(id) => emit('remove', id)"

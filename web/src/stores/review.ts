@@ -365,17 +365,18 @@ export const useReview = defineStore('review', () => {
     return posted.value.placed.find((p) => p.id === id);
   }
 
-  /// The remarks Gerrit holds whose place this version no longer has.
-  function postedLost(): PostedComment[] {
+  /// The remarks Gerrit holds whose line this version no longer has.
+  function postedStranded(): PostedComment[] {
     return posted.value.comments.filter((c) => postedPlacement(c.id)?.lost);
   }
 
-  /// The comments whose place is gone, and that were written on this
-  /// version. They are never dropped.
-  function lost(): Comment[] {
+  /// The comments whose line this version does not have any more. They are
+  /// never dropped, and the diff stands them on the file they were written
+  /// on rather than in a list of their own.
+  function stranded(): Comment[] {
     const comments = review.value?.comments ?? [];
 
-    return comments.filter((c) => placement(c.id)?.lost && !placement(c.id)?.answered);
+    return comments.filter((c) => placement(c.id)?.lost);
   }
 
   /// The comments a later version has answered: the line they spoke of is
@@ -401,6 +402,21 @@ export const useReview = defineStore('review', () => {
       await reload();
     });
   }
+
+  /// The commit of the version being read.
+  ///
+  /// A remark says which version it was written on when that is not this
+  /// one, so old and new are told apart wherever they stand together.
+  const reading = computed(() => {
+    const last = patchSets.value[patchSets.value.length - 1];
+    const set =
+      patchSet.value === undefined
+        ? last
+        : patchSets.value.find((one) => one.number === patchSet.value);
+    const change = series.value?.changes.find((one) => one.key === changeKey.value);
+
+    return set?.commit ?? change?.commit ?? '';
+  });
 
   /// True while the reader is on a version that is not the newest.
   ///
@@ -517,13 +533,14 @@ export const useReview = defineStore('review', () => {
     against,
     openPatchSet,
     placement,
-    lost,
+    stranded,
     answered,
     dropAnswered,
     readingOlder,
+    reading,
     posted,
     postedPlacement,
-    postedLost,
+    postedStranded,
     addComment,
     editComment,
     deleteComment,

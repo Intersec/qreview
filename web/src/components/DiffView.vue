@@ -22,14 +22,18 @@ const props = defineProps<{
   /// Where a comment lands in the patch set being read.
   placement: (
     id: string,
-  ) => { line: number | null; endLine: number | null; lost: boolean } | undefined;
+  ) =>
+    { line: number | null; endLine: number | null; lost: boolean; answered: boolean } | undefined;
   /// Read a run of lines the diff does not carry.
   loadLines: (from: number, to: number) => Promise<Row[]>;
-  /// The comments whose place in this patch set is gone.
-  lost: Comment[];
-  /// The comments a later version has answered: the line they spoke of is
-  /// not there any more.
-  answered: Comment[];
+  /// The comments whose line this version does not have any more.
+  stranded: Comment[];
+  /// The files of the change, so a remark about one it no longer touches
+  /// can be told from one about a file that is still here.
+  paths: string[];
+  /// The commit of the version being read. A remark written on another one
+  /// says which, and reads as a remark from before.
+  reading: string;
   /// True while the reader is on a version that is not the newest. An older
   /// version is history: it is read, never written on.
   readOnly: boolean;
@@ -37,8 +41,8 @@ const props = defineProps<{
   posted: PostedComment[];
   /// Where a Gerrit remark lands in the patch set being read.
   postedPlacement: (id: string) => { line: number | null; lost: boolean } | undefined;
-  /// The Gerrit remarks whose place in this patch set is gone.
-  postedLost: PostedComment[];
+  /// The Gerrit remarks whose line this version does not have any more.
+  postedStranded: PostedComment[];
   /// True when the diff leaves out what differs only by whitespace.
   /// True when a long line is folded rather than scrolled to.
   wrap: boolean;
@@ -703,6 +707,56 @@ const loosePosted = computed(() =>
   props.posted.filter((remark) => remark.line === null && remark.file === props.diff.path),
 );
 
+/// Where a remark stands when this version has no line for it.
+///
+/// A remark belongs on its line, the way Gerrit puts it. Without the line,
+/// the file it was written on is the nearest true place, and without the
+/// file, the change is. It is never a list off to one side.
+function strandedOn(file: string | null | undefined): 'file' | 'change' | null {
+  if (file === null || file === undefined) {
+    return 'change';
+  }
+  if (file === props.diff.path) {
+    return 'file';
+  }
+  return props.paths.includes(file) ? null : 'change';
+}
+
+/// The stranded remarks this file carries, and the ones the change carries
+/// because the file they name is not in it any more.
+const strandedHere = computed(() =>
+  props.stranded.filter((comment) => strandedOn(comment.anchor?.file) === 'file'),
+);
+const strandedOnChange = computed(() =>
+  props.stranded.filter((comment) => strandedOn(comment.anchor?.file) === 'change'),
+);
+const postedHere = computed(() =>
+  props.postedStranded.filter((remark) => strandedOn(remark.file) === 'file'),
+);
+const postedOnChange = computed(() =>
+  props.postedStranded.filter((remark) => strandedOn(remark.file) === 'change'),
+);
+
+/// Answered, or simply not placed. The card says which.
+function mark(comment: Comment): 'answered' | 'lost' {
+  return props.placement(comment.id)?.answered ? 'answered' : 'lost';
+}
+
+/// What the line above the stranded cards says.
+const answeredNote = computed(() =>
+  answeredShown.value === 1
+    ? 'One remark below was answered: the line it spoke of is gone from this version.'
+    : `${answeredShown.value} remarks below were answered: the lines they spoke of are gone from this version.`,
+);
+
+/// How many of the stranded remarks on the screen a later version answered.
+const answeredShown = computed(
+  () =>
+    [...strandedHere.value, ...strandedOnChange.value].filter(
+      (comment) => mark(comment) === 'answered',
+    ).length,
+);
+
 function writeAbout(scope: 'change' | 'file', body: string) {
   emit('add', {
     scope,
@@ -800,9 +854,10 @@ function toggle(row: Row | null, column: Side) {
         about ||
         loose.length ||
         loosePosted.length ||
-        lost.length ||
-        postedLost.length ||
-        answered.length
+        strandedHere.length ||
+        strandedOnChange.length ||
+        postedHere.length ||
+        postedOnChange.length
       "
       class="above-diff"
     >
@@ -813,51 +868,51 @@ function toggle(row: Row | null, column: Side) {
         @cancel="about = null"
       />
 
+      <!-- A remark whose line this version has lost stands at the top of
+         the file it was written on, and one whose file the change no longer
+         touches stands on the change. Never in a list off to one side. -->
+      <p v-if="answeredShown" class="stranded-head">
+        {{ answeredNote }}
+        <button type="button" class="action" @click="emit('dropAnswered')">
+          Delete every answered remark
+        </button>
+      </p>
+
+      <PostedCard v-for="remark in postedOnChange" :key="remark.id" :comment="remark" stranded />
+      <CommentCard
+        v-for="comment in strandedOnChange"
+        :key="comment.id"
+        :comment="comment"
+        :at="reading"
+        :stranded="mark(comment)"
+        :read-only="readOnly"
+        @edit="(id, body) => emit('edit', id, body)"
+        @remove="(id) => emit('remove', id)"
+      />
+
+      <PostedCard v-for="remark in postedHere" :key="remark.id" :comment="remark" stranded />
+      <CommentCard
+        v-for="comment in strandedHere"
+        :key="comment.id"
+        :comment="comment"
+        :at="reading"
+        :stranded="mark(comment)"
+        :read-only="readOnly"
+        @edit="(id, body) => emit('edit', id, body)"
+        @remove="(id) => emit('remove', id)"
+      />
+
       <PostedCard v-for="remark in loosePosted" :key="remark.id" :comment="remark" />
 
       <CommentCard
         v-for="comment in loose"
         :key="comment.id"
         :comment="comment"
+        :at="reading"
+        :read-only="readOnly"
         @edit="(id, body) => emit('edit', id, body)"
         @remove="(id) => emit('remove', id)"
       />
-
-      <div v-if="answered.length" class="lost answered">
-        <p class="lost-title">
-          Answered · {{ answered.length }}
-          <button type="button" class="action" @click="emit('dropAnswered')">Delete all</button>
-        </p>
-        <p class="quiet">
-          The line each of these spoke of is not in this version any more. The work they asked for
-          was done, so they are out of the way rather than gone.
-        </p>
-        <p v-for="comment in answered" :key="comment.id" class="lost-item">
-          <code>{{ comment.anchor?.file }}:{{ comment.anchor?.startLine }}</code>
-          <span class="quiet"> patch set {{ comment.patchSet }} · </span>{{ comment.body }}
-        </p>
-      </div>
-
-      <div v-if="lost.length || postedLost.length" class="lost">
-        <p class="lost-title">Could not be placed · {{ lost.length + postedLost.length }}</p>
-        <p class="quiet">
-          The line these were written on is not in this patch set. They are kept here rather than
-          moved to a line nobody chose.
-        </p>
-        <p v-for="comment in lost" :key="comment.id" class="lost-item">
-          <code>{{ comment.anchor?.file }}:{{ comment.anchor?.startLine }}</code>
-          <span class="quiet"> patch set {{ comment.patchSet }} · </span>{{ comment.body }}
-        </p>
-        <p v-for="remark in postedLost" :key="remark.id" class="lost-item">
-          <code>{{ remark.file }}:{{ remark.line }}</code>
-          <!-- The spaces are inside the expression. A text node of nothing
-             but a space is whitespace, and the compiler drops it. -->
-          <span class="quiet">{{
-            ` ${remark.author} on Gerrit · patch set ${remark.patchSet} · `
-          }}</span
-          >{{ remark.body }}
-        </p>
-      </div>
     </section>
 
     <p v-if="diff.binary" class="note">A binary file has no diff to read.</p>
@@ -897,6 +952,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'old')"
                     :posted="atPosted(row, 'old')"
                     :writing="opening(row, 'old')"
+                    :at="reading"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
@@ -911,6 +967,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'new')"
                     :posted="atPosted(row, 'new')"
                     :writing="opening(row, 'new')"
+                    :at="reading"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
@@ -953,6 +1010,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'old')"
                     :posted="atPosted(row, 'old')"
                     :writing="opening(row, 'old')"
+                    :at="reading"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
@@ -967,6 +1025,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'new')"
                     :posted="atPosted(row, 'new')"
                     :writing="opening(row, 'new')"
+                    :at="reading"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
@@ -1005,6 +1064,7 @@ function toggle(row: Row | null, column: Side) {
                   :comments="at(pair.left, 'old')"
                   :posted="atPosted(pair.left, 'old')"
                   :writing="opening(pair.left, 'old')"
+                  :at="reading"
                   :read-only="readOnly"
                   :draft="draftAt(pair.left, 'old')"
                   :label="boxLabel(pair.left, 'old')"
@@ -1019,6 +1079,7 @@ function toggle(row: Row | null, column: Side) {
                   :comments="at(pair.right, 'new')"
                   :posted="atPosted(pair.right, 'new')"
                   :writing="opening(pair.right, 'new')"
+                  :at="reading"
                   :read-only="readOnly"
                   :draft="draftAt(pair.right, 'new')"
                   :label="boxLabel(pair.right, 'new')"
@@ -1075,6 +1136,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, column)"
                     :posted="atPosted(row, column)"
                     :writing="opening(row, column)"
+                    :at="reading"
                     :read-only="readOnly"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
@@ -1128,6 +1190,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, column)"
                     :posted="atPosted(row, column)"
                     :writing="opening(row, column)"
+                    :at="reading"
                     :read-only="readOnly"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
@@ -1175,6 +1238,7 @@ function toggle(row: Row | null, column: Side) {
                   :comments="at(row, column)"
                   :posted="atPosted(row, column)"
                   :writing="opening(row, column)"
+                  :at="reading"
                   :read-only="readOnly"
                   :draft="draftAt(row, column)"
                   :label="boxLabel(row, column)"

@@ -54,10 +54,14 @@ test('the version that was reviewed comes back, and what is answered is said', a
   // The version reviewed last time is offered, without being named.
   await expect(page.locator('#read-set option')).toHaveCount(2);
 
-  // The remark whose line is gone is out of the way, and says why.
-  const done = page.locator('.answered');
-  await expect(done).toContainText('Answered · 1');
+  // The remark whose line is gone stands at the top of the file it was
+  // written on, marked, rather than in a list of its own.
+  const done = page.locator('.above-diff .talk-stranded');
+  await expect(done).toHaveCount(1);
+  await expect(done).toContainText('answered');
+  await expect(done).toContainText('docs/new-name.md:4');
   await expect(done).toContainText('This line says nothing.');
+  await expect(page.locator('.stranded-head')).toContainText('One remark below was answered');
 
   // The one still standing is on its line, where it always was.
   await expect(card(page, 'The title says nothing.')).toBeVisible();
@@ -84,8 +88,8 @@ test('the answered remarks are dropped in one action', async ({ page }) => {
   await openChange(page, /docs: rename the document/);
   await openFile(page, 'new-name.md');
 
-  await page.getByRole('button', { name: 'Delete all' }).click();
-  await expect(page.locator('.answered')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Delete every answered remark' }).click();
+  await expect(page.locator('.talk-stranded')).toHaveCount(0);
 });
 
 test('an older version is read, not written on', async ({ page }) => {

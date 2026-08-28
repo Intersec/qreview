@@ -33,20 +33,24 @@ test('a thread on a line is shown, read only', async ({ page }) => {
 });
 
 test('a remark about the whole file stands above the diff', async ({ page }) => {
-  const band = page.locator('.above-diff .posted-box');
+  const band = page.locator('.above-diff .posted-box').filter({ hasText: 'buildbot' });
 
-  await expect(band).toContainText('buildbot');
+  await expect(band).toHaveCount(1);
   await expect(band).toContainText('This file has no test.');
+  // It was posted about the file, not about a line, so it is not stranded.
+  await expect(band).not.toHaveClass(/talk-stranded/);
 });
 
-test('a remark on a version that is not here is kept, and said to be unplaced', async ({
-  page,
-}) => {
-  const lost = page.locator('.lost');
+test('a remark on a version that is not here stands at the top of its file', async ({ page }) => {
+  // The line is gone, so the file it was posted on is the nearest true
+  // place. It is a card like any other, not a line in a list of its own.
+  const stranded = page.locator('.above-diff .posted-box.talk-stranded');
 
-  await expect(lost).toContainText('Where does this loop stop?');
-  await expect(lost).toContainText('Jane Reviewer on Gerrit');
-  await expect(lost).toContainText('patch set 1');
+  await expect(stranded).toContainText('Where does this loop stop?');
+  await expect(stranded).toContainText('Jane Reviewer');
+  await expect(stranded).toContainText('not placed');
+  await expect(stranded).toContainText('src/net.blk:3');
+  await expect(stranded).toContainText('patch set 1');
 });
 
 test('a remark of the session is not confused with one from the server', async ({ page }) => {

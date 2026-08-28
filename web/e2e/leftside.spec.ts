@@ -111,8 +111,8 @@ test('a comment on the left comes back after a reload', async ({ page }) => {
   await openChange(page, /long: touch two places/);
   await openFile(page, 'long.c');
 
-  // It is anchored on the base, not left in the panel of what could not be
-  // placed.
+  // It is anchored on the base, and stands on its line rather than at the
+  // top of the file, which is where a remark with no line goes.
   await expect(card(page, 'Written on the left.')).toBeVisible();
-  await expect(page.locator('.lost')).toHaveCount(0);
+  await expect(page.locator('.talk-stranded')).toHaveCount(0);
 });

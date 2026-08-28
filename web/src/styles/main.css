@@ -595,11 +595,36 @@ tr.talk td {
 }
 /* The work that is not committed. Not a commit, and it should not read
    like one. */
-/* The remarks a later version has answered. Out of the way, not gone. */
-.answered .lost-title {
+/* A remark whose line this version has lost. It stands at the top of its
+   file, dimmed, so it reads as a remark about the past rather than one on
+   the code under it. */
+.talk-stranded {
+  border-style: dashed;
+}
+/* A remark written on another version reads as one from before: the draft
+   yellow is for what belongs to the code under it. */
+.talk-earlier {
+  border-color: var(--edge);
+  background: var(--pane);
+}
+.talk-earlier .talk-head {
+  border-bottom-color: var(--edge);
+}
+.talk-earlier .talk-tag {
+  background: var(--edge);
+}
+.was-on {
+  font-family: var(--code-font);
+  font-size: 10px;
+}
+.stranded-head {
   display: flex;
   align-items: baseline;
   gap: 10px;
+  max-width: 44rem;
+  margin: 8px 0 2px;
+  font-size: 11px;
+  color: var(--ink-quiet);
 }
 .tag-worktree {
   background: var(--context-bar);
@@ -706,30 +731,6 @@ tr.talk td {
   border-bottom: 1px solid var(--edge);
   background: var(--pane);
 }
-.lost {
-  max-width: 44rem;
-  margin: 4px 0;
-  border: 1px solid var(--draft-edge);
-  border-left: 3px solid var(--context-ink);
-  background: var(--draft);
-  padding: 6px 10px;
-  font-size: 12px;
-}
-.lost-title {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--context-ink);
-}
-.lost-item {
-  margin-top: 4px;
-}
-.lost-item code {
-  font-family: var(--code-font);
-  font-size: 11px;
-}
-
 /* ----------------------------------------------------------- the shell */
 
 .shell {
