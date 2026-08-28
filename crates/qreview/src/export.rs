@@ -49,7 +49,14 @@ pub async fn series(session: &Session) -> Result<String> {
         // The store is asked, never a count the session cached: a comment
         // written a moment ago must be in the export.
         let file = session.comments(&summary.key, &summary.subject)?;
-        if !file.comments.is_empty() {
+        // A change whose only remarks belong to a round before this one has
+        // nothing to say here, and a heading with nothing under it says less
+        // than no heading at all.
+        let live = file
+            .comments
+            .iter()
+            .any(|comment| comments::of_version(comment, &summary.commit));
+        if live {
             reviewed.push((summary.key.clone(), file));
         }
     }
@@ -133,9 +140,22 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
     let file = session.comments(key, &subject)?;
     let sets = session.patch_sets(key).await.unwrap_or_default();
     let patch_set = sets.last().map(|s| s.number).unwrap_or(1);
-    let count = file.comments.len();
 
     let worktree = session.is_worktree(&commit);
+
+    // Only the remarks of the version under review. The round before this
+    // one left remarks the reader has already dealt with, and an agent
+    // reading them again would redo work that is done.
+    let before = file.comments.len();
+    let mut comments: Vec<Comment> = file
+        .comments
+        .into_iter()
+        .filter(|comment| comments::of_version(comment, &commit))
+        .collect();
+    let earlier = before - comments.len();
+    comments::in_reading_order(&mut comments);
+
+    let count = comments.len();
     let mut about = String::new();
     let _ = writeln!(about, "Change: {subject}");
     let _ = writeln!(
@@ -147,9 +167,13 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
         },
         if count == 1 { "" } else { "s" }
     );
-
-    let mut comments = file.comments;
-    comments::in_reading_order(&mut comments);
+    if earlier > 0 {
+        let _ = writeln!(
+            about,
+            "{earlier} more {} written on an earlier version, and left out here.",
+            if earlier == 1 { "was" } else { "were" }
+        );
+    }
 
     Ok(Head {
         short: short(&commit).to_owned(),
@@ -596,6 +620,45 @@ mod tests {
         // would read the remark against that line.
         assert!(text.contains("`a.c:2` (before the change)"), "{text}");
         assert!(text.contains("2 | two"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_remark_of_a_round_before_is_left_out_and_counted_apart() {
+        let repo = build_repo(&[
+            commit("first").file("a.c", "one\ntwo\n"),
+            commit("work: a change")
+                .file("a.c", "one\ntwo\nthree\n")
+                .change_id("Iearlier"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        session
+            .add_comment("Iearlier", line_comment("a.c", 3, "About this round."))
+            .await
+            .unwrap();
+
+        // A remark of the round before, written on a version that is gone.
+        let mut file = session.comments("Iearlier", "work: a change").unwrap();
+        let mut older = file.comments[0].clone();
+        older.id = "c-older".to_owned();
+        older.commit = "0000000000000000000000000000000000000000".to_owned();
+        older.body = "Dealt with a round ago.".to_owned();
+        file.comments.push(older);
+        session.store.save(&file).unwrap();
+
+        let text = change(&session, "Iearlier").await.unwrap();
+
+        assert!(text.contains("About this round."), "{text}");
+        assert!(
+            !text.contains("Dealt with a round ago."),
+            "an agent must not redo work that is done:\n{text}"
+        );
+        assert!(text.contains("Patch set 1 · 1 comment"), "{text}");
+        assert!(
+            text.contains("1 more was written on an earlier version, and left out here."),
+            "the export says what it left out:\n{text}"
+        );
     }
 
     #[tokio::test]

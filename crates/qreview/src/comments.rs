@@ -73,10 +73,18 @@ pub fn read(store: &Store, key: &str, subject: &str) -> Result<ChangeFile> {
 }
 
 /// The counts the series pane shows.
-pub fn counts(store: &Store, key: &str) -> Counts {
+///
+/// Only the remarks of the version under review are counted. A round before
+/// this one left remarks that the reader has already dealt with, and a count
+/// that holds them says there is work where there is none.
+pub fn counts(store: &Store, key: &str, commit: &str) -> Counts {
     match store.load(key, "") {
         Ok(file) => Counts {
-            total: file.comments.len(),
+            total: file
+                .comments
+                .iter()
+                .filter(|comment| of_version(comment, commit))
+                .count(),
             reviewed: file.reviewed,
         },
         // A file that cannot be read must not stop the series from loading.
@@ -162,6 +170,15 @@ pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
     store.save(&file)?;
 
     Ok(before - file.comments.len())
+}
+
+/// True when the remark was written on the version being read.
+///
+/// A remark from a store older than format 3 names no version. It counts as
+/// this one: it is the only version it can belong to, and leaving it out of
+/// the export would lose a review that nothing would show again.
+pub fn of_version(comment: &Comment, commit: &str) -> bool {
+    comment.commit.is_empty() || comment.commit == commit
 }
 
 /// Put the comments of one change in the order a review reads them.

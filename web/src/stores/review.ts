@@ -4,6 +4,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
+import { rounds } from '@/diff/versions';
 import type {
   ChangeComments,
   Comment,
@@ -87,8 +88,12 @@ export const useReview = defineStore('review', () => {
     () => changeKey.value !== null && changeKey.value === series.value?.boundary.commit,
   );
   /// How many comments the session holds, and how many each change holds.
+  ///
+  /// Only the remarks of the version under review are counted, because only
+  /// those are exported. A round before this one left remarks the reader has
+  /// dealt with, and counting them says there is work where there is none.
   const total = computed(() =>
-    written.value.reduce((sum, change) => sum + change.comments.length, 0),
+    written.value.reduce((sum, change) => sum + rounds(change).now.length, 0),
   );
   /// How many comments sit in each file of the change being read. Out of
   /// the same list as every other count on the screen.
@@ -96,7 +101,7 @@ export const useReview = defineStore('review', () => {
     const counts = new Map<string, number>();
     const here = written.value.find((change) => change.key === changeKey.value);
 
-    for (const comment of here?.comments ?? []) {
+    for (const comment of here ? rounds(here).now : []) {
       const file = comment.anchor?.file;
       if (file) {
         counts.set(file, (counts.get(file) ?? 0) + 1);
@@ -108,7 +113,7 @@ export const useReview = defineStore('review', () => {
   const countOf = computed(() => {
     const counts = new Map<string, number>();
     for (const change of written.value) {
-      counts.set(change.key, change.comments.length);
+      counts.set(change.key, rounds(change).now.length);
     }
     return counts;
   });

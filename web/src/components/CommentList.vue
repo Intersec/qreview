@@ -7,6 +7,7 @@
 
 import { computed, ref } from 'vue';
 import { label } from '@/diff/paths';
+import { rounds } from '@/diff/versions';
 import type { ChangeComments, Comment, Side } from '@/api/types';
 
 const props = defineProps<{
@@ -21,16 +22,24 @@ const emit = defineEmits<{
 
 const folded = ref(false);
 
+/// The count is of this round alone, like every other count on the screen
+/// and like the export. The rounds before are listed under it, and said to
+/// be from before.
 const total = computed(() =>
-  props.written.reduce((sum, change) => sum + change.comments.length, 0),
+  props.written.reduce((sum, change) => sum + rounds(change).now.length, 0),
 );
 
-/// The change being read first, the others in the order they came.
+/// The pane stands as long as the session holds anything at all. A round
+/// that is entirely answered counts nothing and must still be readable.
+const anything = computed(() => props.written.some((change) => change.comments.length > 0));
+
+/// The change being read first, the others in the order they came, and
+/// inside each one the round being written before the rounds before it.
 const groups = computed(() => {
   const here = props.written.filter((change) => change.key === props.openKey);
   const rest = props.written.filter((change) => change.key !== props.openKey);
 
-  return [...here, ...rest];
+  return [...here, ...rest].map((change) => ({ change, ...rounds(change) }));
 });
 
 /// Where a comment sits, short enough for a narrow pane.
@@ -64,7 +73,7 @@ function go(change: ChangeComments, comment: Comment) {
 
 <template>
   <section
-    v-if="total > 0"
+    v-if="anything"
     class="comment-list"
     :class="folded ? 'is-folded' : ''"
     :style="folded ? undefined : { height: `${height}px` }"
@@ -80,18 +89,35 @@ function go(change: ChangeComments, comment: Comment) {
     </button>
 
     <div v-if="!folded" class="list-body">
-      <template v-for="change in groups" :key="change.key">
-        <p class="list-change" :title="change.subject">
-          <span v-if="change.key === openKey" class="tag">here</span>
-          {{ change.subject }}
+      <template v-for="group in groups" :key="group.change.key">
+        <p class="list-change" :title="group.change.subject">
+          <span v-if="group.change.key === openKey" class="tag">here</span>
+          {{ group.change.subject }}
         </p>
         <button
-          v-for="comment in change.comments"
+          v-for="comment in group.now"
           :key="comment.id"
           type="button"
           class="row-button list-row"
           :title="`${comment.anchor?.file ?? 'the change'} — ${gist(comment)}`"
-          @click="go(change, comment)"
+          @click="go(group.change, comment)"
+        >
+          <code class="list-place">{{ place(comment) }}</code>
+          <span class="list-gist">{{ gist(comment) }}</span>
+        </button>
+
+        <!-- The rounds before this one. They are not counted and not
+           exported, and they are here because a remark is never hidden. -->
+        <p v-if="group.earlier.length" class="list-earlier">
+          {{ group.earlier.length }} from an earlier version
+        </p>
+        <button
+          v-for="comment in group.earlier"
+          :key="comment.id"
+          type="button"
+          class="row-button list-row is-earlier"
+          :title="`${comment.anchor?.file ?? 'the change'} — ${gist(comment)}`"
+          @click="go(group.change, comment)"
         >
           <code class="list-place">{{ place(comment) }}</code>
           <span class="list-gist">{{ gist(comment) }}</span>

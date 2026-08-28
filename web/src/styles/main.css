@@ -598,6 +598,19 @@ tr.talk td {
 /* A remark whose line this version has lost. It stands at the top of its
    file, dimmed, so it reads as a remark about the past rather than one on
    the code under it. */
+/* The rounds before this one, in the list of what the session holds. Dim,
+   and under a line that says what they are. */
+.list-earlier {
+  margin: 4px 0 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.list-row.is-earlier {
+  opacity: 0.62;
+}
 .talk-stranded {
   border-style: dashed;
 }

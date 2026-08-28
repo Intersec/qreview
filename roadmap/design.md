@@ -503,6 +503,17 @@ its own.
 A version that is not the newest is history. Its remarks are shown and cannot
 be edited there: the newest version is where a review is written.
 
+**A remark of an earlier round is shown, and counted nowhere.** The export,
+the counts on the series, on the files and on the copy buttons all hold the
+remarks of the version under review and no others. The interface still shows
+the rest: on the line they anchor to, dimmed and naming their version, and in
+the pane under a line that says where they came from. Nothing is hidden, and
+nothing counts twice.
+
+**A remark whose line the version has lost falls back rather than gives up.**
+The file it was written on is the nearest true place, and when the change no
+longer touches that file, the change is. It is never a list off to one side.
+
 ## 6. Gerrit integration
 
 ### 6.1 Reading the coordinates
@@ -706,6 +717,9 @@ Rules for the format:
 - The comments are numbered, so the answer can name one.
 - The export names the commit and the patch set, so the session knows the
   state the remarks were written against.
+- Only the remarks of that version are in it. A round before this one left
+  remarks the reader has dealt with, and an agent that reads them again redoes
+  work that is done. A line under the count says how many were left out.
 
 The comments are ordered the way a reader walks the code:
 

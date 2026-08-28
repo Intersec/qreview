@@ -67,6 +67,39 @@ test('the version that was reviewed comes back, and what is answered is said', a
   await expect(card(page, 'The title says nothing.')).toBeVisible();
 });
 
+test('the pane counts this round and lists the one before it apart', async ({ page }) => {
+  server = await start();
+  await page.goto(server.url);
+  await openChange(page, /docs: rename the document/);
+  await openFile(page, 'new-name.md');
+  await remark(page, '1', 'Written in the first round.');
+
+  const repo = server.fixture.repo;
+  server.kill();
+  writeFileSync(
+    join(repo, 'docs', 'new-name.md'),
+    '# A document\n\nIt has words in it.\nAnd one more line.\nAnd another.\n',
+  );
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['commit', '--amend', '--no-edit'], { cwd: repo });
+
+  server = await start({ on: server.fixture });
+  await page.goto(server.url);
+  await openChange(page, /docs: rename the document/);
+  await openFile(page, 'new-name.md');
+
+  // The round before is not counted, and it is not hidden either.
+  const pane = page.locator('.comment-list');
+  await expect(pane.locator('.list-head')).toContainText('Comments · 0');
+  await expect(pane.locator('.list-earlier')).toContainText('1 from an earlier version');
+  await expect(pane.locator('.list-row.is-earlier')).toContainText('Written in the first round.');
+
+  // And a remark of this round is counted, above the ones from before.
+  await remark(page, '5', 'Written in the second round.');
+  await expect(pane.locator('.list-head')).toContainText('Comments · 1');
+  await expect(pane.locator('.list-row:not(.is-earlier)')).toHaveCount(1);
+});
+
 test('the answered remarks are dropped in one action', async ({ page }) => {
   server = await start();
   await page.goto(server.url);

@@ -664,7 +664,7 @@ impl Session {
     /// still load, and the failure is said where the change opens.
     fn count_comments(&mut self) {
         for change in &mut self.series.changes {
-            let counts = comments::counts(&self.store, &change.key);
+            let counts = comments::counts(&self.store, &change.key, &change.commit);
             change.comment_count = counts.total;
             change.reviewed = counts.reviewed;
         }
