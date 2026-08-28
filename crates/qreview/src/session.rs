@@ -123,6 +123,7 @@ impl Session {
         session.count_comments();
         session.count_patch_sets().await;
         session.refresh_worktree().await;
+        session.report_lost_prevs().await;
 
         Ok(session)
     }
@@ -213,6 +214,32 @@ impl Session {
         let info = commit::info(&self.git, &hash).await.ok()?;
 
         Some(worktree::summary(&hash, &info.author))
+    }
+
+    /// Say which commits named with `--prev` belong to no change.
+    ///
+    /// A `--prev` is placed by its `Change-Id`. A series rewritten commit by
+    /// commit, rather than amended, carries new ones, and the version that
+    /// was reviewed then belongs to nothing. It was dropped without a word,
+    /// and the reader was left looking at a patch set list of one.
+    async fn report_lost_prevs(&self) {
+        let mut named = Vec::new();
+        for hash in &self.prevs {
+            if let Ok(info) = commit::info(&self.git, hash).await {
+                named.push(info);
+            }
+        }
+
+        for lost in patchset::unclaimed(&named, &self.series.changes) {
+            let what = match lost.change_id() {
+                Some(id) => format!("its Change-Id {id} names none of them"),
+                None => "it carries no Change-Id, so nothing places it".to_owned(),
+            };
+            eprintln!(
+                "qreview: --prev {} belongs to no change of the series: {what}.",
+                &lost.hash[..lost.hash.len().min(12)]
+            );
+        }
     }
 
     /// The versions of a change that carry a remark, and are not the one

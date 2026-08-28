@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::git::commit::{self, CommitInfo};
 use crate::git::exec::Git;
+use crate::model::ChangeSummary;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -72,6 +73,29 @@ pub async fn of_change(git: &Git, local: &CommitInfo, prevs: &[String]) -> Resul
         set.number = index + 1;
     }
     Ok(sets)
+}
+
+/// The commits the reader named that no change of the series can claim.
+///
+/// A `--prev` is placed by its `Change-Id`. A series rewritten commit by
+/// commit, rather than amended, carries new ones, and then the commit belongs
+/// to nothing. Saying so is the whole of this: a `--prev` that is dropped
+/// without a word is a long way to look for a reason.
+pub fn unclaimed<'a>(prevs: &'a [CommitInfo], changes: &[ChangeSummary]) -> Vec<&'a CommitInfo> {
+    prevs
+        .iter()
+        .filter(|prev| !changes.iter().any(|change| claims(change, prev)))
+        .collect()
+}
+
+fn claims(change: &ChangeSummary, prev: &CommitInfo) -> bool {
+    if change.commit == prev.hash {
+        return true;
+    }
+    match (change.change_id.as_deref(), prev.change_id()) {
+        (Some(mine), Some(theirs)) => mine == theirs,
+        _ => false,
+    }
 }
 
 fn entry(info: CommitInfo, origin: Origin, gerrit_ref: Option<String>) -> PatchSet {
@@ -150,6 +174,74 @@ pub fn same_base(a: &PatchSet, b: &PatchSet) -> bool {
 mod tests {
     use super::*;
     use crate::testutil::{build_repo, commit};
+
+    fn summary(commit: &str, change_id: Option<&str>) -> ChangeSummary {
+        ChangeSummary {
+            key: change_id.unwrap_or(commit).to_owned(),
+            change_id: change_id.map(str::to_owned),
+            subject: "work".to_owned(),
+            author: "T".to_owned(),
+            commit: commit.to_owned(),
+            patch_set_count: 1,
+            comment_count: 0,
+            reviewed: false,
+            is_merge: false,
+            worktree: false,
+        }
+    }
+
+    fn named(hash: &str, change_id: Option<&str>) -> CommitInfo {
+        let trailer = change_id
+            .map(|id| format!("\n\nChange-Id: {id}"))
+            .unwrap_or_default();
+
+        CommitInfo {
+            hash: hash.to_owned(),
+            parents: Vec::new(),
+            author: "T".to_owned(),
+            email: "t@e".to_owned(),
+            date: String::new(),
+            subject: "work".to_owned(),
+            message: format!("work{trailer}"),
+        }
+    }
+
+    #[test]
+    fn a_prev_with_the_change_id_of_a_change_is_claimed() {
+        let changes = [summary("new", Some("Iwork"))];
+        let prevs = [named("old", Some("Iwork"))];
+
+        assert!(unclaimed(&prevs, &changes).is_empty());
+    }
+
+    #[test]
+    fn a_prev_that_is_a_commit_of_the_series_is_claimed() {
+        let changes = [summary("here", None)];
+        let prevs = [named("here", None)];
+
+        assert!(unclaimed(&prevs, &changes).is_empty());
+    }
+
+    #[test]
+    fn a_prev_whose_change_id_names_nothing_here_is_unclaimed() {
+        // What a series rewritten commit by commit does: every commit comes
+        // back with a new Change-Id, and the version reviewed belongs to
+        // none of them.
+        let changes = [summary("new", Some("Ifresh"))];
+        let prevs = [named("old", Some("Ibefore"))];
+
+        let lost = unclaimed(&prevs, &changes);
+        assert_eq!(lost.len(), 1);
+        assert_eq!(lost[0].hash, "old");
+    }
+
+    #[test]
+    fn a_prev_with_no_change_id_is_unclaimed() {
+        let changes = [summary("new", Some("Iwork"))];
+        let prevs = [named("old", None)];
+
+        assert_eq!(unclaimed(&prevs, &changes).len(), 1);
+    }
 
     /// Two versions of one change, the older one kept out of the branch.
     async fn amended() -> (crate::testutil::Repo, String) {
