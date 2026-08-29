@@ -12,6 +12,52 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.7.0]
+
+### Changed
+
+- A previous remark cannot be edited or deleted. The round it belongs to is
+  over, and a record that can be rewritten is not a record.
+- A remark is **current** when it was written on the sha the change carries
+  now, and **previous** when it was not. Only the current ones are counted and
+  exported. The word *answered* is gone: the tool no longer guesses whether
+  work was done, it says which version a remark belongs to, which is a fact.
+- In the pane, each group of previous remarks is headed by the version it was
+  written on: the short sha and the subject that version carried, cut to fit.
+  A change reviewed over several rounds shows one group per round, newest
+  first.
+- A remark stands where it speaks, the way Gerrit puts one there. On its line;
+  and when this version has no such line, before the first line of the file it
+  was written on, inside the code; and when the change no longer touches that
+  file, before the first line of the commit message. The band above the diff
+  is gone, with the flat panel it held: it took the top of every screen, on
+  every file, whether it held anything or not. The remarks Gerrit holds fall
+  back the same way.
+- The patch set you are reading follows you to the next change. Picking patch
+  set 1 on one change and opening another used to land on the newest version
+  of it, and the number had to be picked again on every change.
+- The export and every count hold the remarks of the version under review and
+  no others. A round before this one left remarks you have already dealt with,
+  and an agent reading them again redoes work that is done. The export says
+  how many it left out, and the interface still shows them all: on their line,
+  grey and naming their version, and in the pane under the version they were
+  written on.
+
+### Fixed
+
+- `--prev` says when the commit you named belongs to no change of the series.
+  It is placed by its `Change-Id`, and a series rewritten commit by commit
+  carries new ones, so the commit belonged to nothing and was dropped without
+  a word.
+
+### Removed
+
+- **Comment on the change** is gone. Gerrit has one and nobody uses it: you
+  cannot reply to it. The convention is to write on the commit message
+  instead, which is a file like any other, takes replies, and is what a
+  session reads first. The button says *Comment on the change* when the commit
+  message is the file you are on. The remarks the old scope left are read as
+  before, and shown on the commit message.
 ## [0.6.0]
 
 ### Added
