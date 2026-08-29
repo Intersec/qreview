@@ -132,6 +132,20 @@ pub struct ChangeComments {
     pub subject: String,
     pub commit: String,
     pub comments: Vec<crate::store::model::Comment>,
+    /// The versions before this one that its remarks were written on,
+    /// newest first. The pane heads each group of previous remarks with
+    /// the one it belongs to.
+    pub versions: Vec<Version>,
+}
+
+/// A version of a change that some of its remarks were written on.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Version {
+    pub commit: String,
+    /// The subject that version carried. Empty when git no longer has it,
+    /// which is what a garbage collection leaves behind.
+    pub subject: String,
 }
 
 /// One file of a change, with its content.

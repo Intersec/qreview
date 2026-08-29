@@ -242,6 +242,38 @@ impl Session {
         }
     }
 
+    /// The versions before this one that these remarks were written on.
+    ///
+    /// Newest first, each with the subject it carried, so the pane can head
+    /// a group of previous remarks with the version it belongs to. A commit
+    /// git no longer has keeps its sha and loses its subject.
+    async fn versions_of(&self, comments: &[Comment], current: &str) -> Vec<crate::model::Version> {
+        let mut seen: Vec<&str> = Vec::new();
+        for comment in comments {
+            let named = comment.commit.as_str();
+            if !named.is_empty() && named != current && !seen.contains(&named) {
+                seen.push(named);
+            }
+        }
+
+        let mut found = Vec::with_capacity(seen.len());
+        for commit in seen {
+            let info = commit::info(&self.git, commit).await.ok();
+            found.push((
+                info.as_ref().map(|i| i.date.clone()).unwrap_or_default(),
+                crate::model::Version {
+                    commit: commit.to_owned(),
+                    subject: info.map(|i| i.subject).unwrap_or_default(),
+                },
+            ));
+        }
+        // Newest first: the round just before this one is the one a reader
+        // is answering, and the older ones sink under it.
+        found.sort_by(|a, b| b.0.cmp(&a.0));
+
+        found.into_iter().map(|(_, version)| version).collect()
+    }
+
     /// The versions of a change that carry a remark, and are not the one
     /// under review.
     ///
@@ -356,7 +388,7 @@ impl Session {
     /// Every comment of the session, change by change, in the order a review
     /// reads them: the oldest commit first, and inside it the order of the
     /// export.
-    pub fn all_comments(&self) -> Vec<crate::model::ChangeComments> {
+    pub async fn all_comments(&self) -> Vec<crate::model::ChangeComments> {
         let mut out = Vec::new();
 
         for change in self.series.changes.iter().rev() {
@@ -368,12 +400,14 @@ impl Session {
             }
             let mut comments = file.comments;
             comments::in_reading_order(&mut comments);
+            let versions = self.versions_of(&comments, &change.commit).await;
 
             out.push(crate::model::ChangeComments {
                 key: change.key.clone(),
                 subject: change.subject.clone(),
                 commit: change.commit.clone(),
                 comments,
+                versions,
             });
         }
         out

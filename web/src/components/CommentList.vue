@@ -7,7 +7,7 @@
 
 import { computed, ref } from 'vue';
 import { label } from '@/diff/paths';
-import { rounds } from '@/diff/versions';
+import { previousGroups, rounds } from '@/diff/versions';
 import type { ChangeComments, Comment, Side } from '@/api/types';
 
 const props = defineProps<{
@@ -39,7 +39,11 @@ const groups = computed(() => {
   const here = props.written.filter((change) => change.key === props.openKey);
   const rest = props.written.filter((change) => change.key !== props.openKey);
 
-  return [...here, ...rest].map((change) => ({ change, ...rounds(change) }));
+  return [...here, ...rest].map((change) => ({
+    change,
+    current: rounds(change).current,
+    previous: previousGroups(change),
+  }));
 });
 
 /// Where a comment sits, short enough for a narrow pane.
@@ -107,22 +111,27 @@ function go(change: ChangeComments, comment: Comment) {
         </button>
 
         <!-- The previous remarks: written on a version the change no longer
-           carries. They are counted nowhere and exported nowhere, and they
-           are here because a remark is never hidden. -->
-        <p v-if="group.previous.length" class="list-previous">
-          Previous · {{ group.previous.length }}
-        </p>
-        <button
-          v-for="comment in group.previous"
-          :key="comment.id"
-          type="button"
-          class="row-button list-row is-previous"
-          :title="`${comment.anchor?.file ?? 'the change'} — ${gist(comment)}`"
-          @click="go(group.change, comment)"
-        >
-          <code class="list-place">{{ place(comment) }}</code>
-          <span class="list-gist">{{ gist(comment) }}</span>
-        </button>
+           carries, under the version each one belongs to. They are counted
+           nowhere and exported nowhere, and they are here because a remark
+           is never hidden. -->
+        <template v-for="round in group.previous" :key="round.version.commit">
+          <p class="list-previous" :title="round.version.subject">
+            <span class="tag">previous</span>
+            <code>{{ round.version.commit.slice(0, 8) }}</code>
+            <span class="list-subject">{{ round.version.subject }}</span>
+          </p>
+          <button
+            v-for="comment in round.comments"
+            :key="comment.id"
+            type="button"
+            class="row-button list-row is-previous"
+            :title="`${comment.anchor?.file ?? 'the change'} — ${gist(comment)}`"
+            @click="go(group.change, comment)"
+          >
+            <code class="list-place">{{ place(comment) }}</code>
+            <span class="list-gist">{{ gist(comment) }}</span>
+          </button>
+        </template>
       </template>
     </div>
   </section>

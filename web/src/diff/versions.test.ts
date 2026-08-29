@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCurrent, rounds } from './versions';
+import { isCurrent, previousGroups, rounds } from './versions';
 import type { Comment } from '@/api/types';
 
 function remark(id: string, commit: string): Comment {
@@ -41,5 +41,32 @@ describe('rounds', () => {
 
     expect(current.map((c) => c.id)).toEqual(['a', 'c']);
     expect(previous.map((c) => c.id)).toEqual(['b']);
+  });
+});
+
+describe('previousGroups', () => {
+  const change = {
+    key: 'Iwork',
+    subject: 'work: a change',
+    commit: 'now',
+    comments: [remark('a', 'now'), remark('b', 'one'), remark('c', 'two'), remark('d', 'one')],
+    versions: [
+      { commit: 'two', subject: 'work: the second try' },
+      { commit: 'one', subject: 'work: the first try' },
+    ],
+  };
+
+  it('groups the previous remarks by the version they were written on', () => {
+    const groups = previousGroups(change);
+
+    expect(groups.map((g) => g.version.commit)).toEqual(['two', 'one']);
+    expect(groups[0].comments.map((c) => c.id)).toEqual(['c']);
+    expect(groups[1].comments.map((c) => c.id)).toEqual(['b', 'd']);
+  });
+
+  it('leaves out a version no remark names any more', () => {
+    const gone = { ...change, comments: [remark('a', 'now'), remark('b', 'one')] };
+
+    expect(previousGroups(gone).map((g) => g.version.commit)).toEqual(['one']);
   });
 });

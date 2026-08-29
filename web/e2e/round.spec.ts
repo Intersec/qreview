@@ -91,7 +91,12 @@ test('the pane counts the current remarks and lists the previous ones apart', as
   // The round before is not counted, and it is not hidden either.
   const pane = page.locator('.comment-list');
   await expect(pane.locator('.list-head')).toContainText('Comments · 0');
-  await expect(pane.locator('.list-previous')).toContainText('Previous · 1');
+  // The group is headed by the version its remarks were written on.
+  const head = pane.locator('.list-previous');
+  await expect(head).toHaveCount(1);
+  await expect(head).toContainText('previous');
+  await expect(head).toContainText('docs: rename the document');
+  await expect(head.locator('code')).toHaveText(/^[0-9a-f]{8}$/);
   await expect(pane.locator('.list-row.is-previous')).toContainText('Written in the first round.');
 
   // And a remark of this round is counted, above the ones from before.

@@ -601,12 +601,22 @@ tr.talk td {
 /* The previous remarks, in the list of what the session holds. Dim, and
    under a line that says what they are. */
 .list-previous {
-  margin: 4px 0 0 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 5px 0 0 8px;
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   color: var(--ink-faint);
+}
+.list-previous code {
+  font-family: var(--code-font);
+}
+/* The subject of that version, cut rather than wrapped: the pane is narrow
+   and the sha before it is what names the round. */
+.list-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .list-row.is-previous {
   opacity: 0.62;

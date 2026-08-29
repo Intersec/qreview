@@ -257,12 +257,22 @@ export interface Posted {
   placed: Placed[];
 }
 
+/** A version of a change that some of its remarks were written on. */
+export interface Version {
+  commit: string;
+  /// The subject it carried. Empty when git no longer has the commit.
+  subject: string;
+}
+
 /** The comments of one change, in the order a review reads them. */
 export interface ChangeComments {
   key: string;
   subject: string;
   commit: string;
   comments: Comment[];
+  /// The versions before this one that its remarks were written on, newest
+  /// first.
+  versions: Version[];
 }
 
 /** Whether a newer qreview is out. */

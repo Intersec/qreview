@@ -589,7 +589,7 @@ async fn all_comments(
 ) -> Result<Json<Vec<crate::model::ChangeComments>>, ApiError> {
     let session = state.session.read().await;
 
-    Ok(Json(session.all_comments()))
+    Ok(Json(session.all_comments().await))
 }
 
 async fn add_comment(
