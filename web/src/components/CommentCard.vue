@@ -39,6 +39,15 @@ const place = computed(() => {
 const version = computed(() =>
   isCurrent(props.comment, props.at) ? '' : props.comment.commit.slice(0, 8),
 );
+
+/// A remark that cannot be edited or deleted.
+///
+/// A previous remark belongs to a round that is over, and the version it
+/// speaks of is not the one on the screen. It is a record of that round, and
+/// a record that can be rewritten is not one. Reading an older patch set
+/// freezes the current remarks too: the newest version is where a review is
+/// written.
+const frozen = computed(() => props.readOnly || version.value !== '');
 </script>
 
 <template>
@@ -72,7 +81,7 @@ const version = computed(() =>
       <div v-else class="prose-comment" v-html="render(comment.body)"></div>
     </div>
 
-    <div v-if="!editing && !readOnly" class="talk-foot">
+    <div v-if="!editing && !frozen" class="talk-foot">
       <span class="spacer"></span>
       <button type="button" class="action" @click="editing = true">Edit</button>
       <button type="button" class="action" @click="emit('remove', comment.id)">Delete</button>

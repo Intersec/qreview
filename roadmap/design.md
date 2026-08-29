@@ -515,8 +515,12 @@ nowhere either, for the same reason and by the same rule.
 
 Nothing is hidden. A previous remark is on the line it anchors to, grey rather
 than the draft yellow, tagged `previous` and naming its version. The pane
-lists them under **Previous**. One that this version has no line for can be
-cleared in one action, because there is nothing left to read it against.
+lists them under **Previous**.
+
+**A previous remark is read, and never written on.** It has no Edit and no
+Delete: the round it belongs to is over, and a record that can be rewritten is
+not a record. Reading a version that is not the newest freezes the current
+remarks the same way, for the same reason.
 
 **A remark whose line the version has lost falls back rather than gives up.**
 The file it was written on is the nearest true place, and when the change no

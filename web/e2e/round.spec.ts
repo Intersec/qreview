@@ -100,12 +100,17 @@ test('the pane counts the current remarks and lists the previous ones apart', as
   await expect(pane.locator('.list-row:not(.is-previous)')).toHaveCount(1);
 });
 
-test('a previous remark can be read, edited and deleted like any other', async ({ page }) => {
+test('a previous remark is read, never edited and never deleted', async ({ page }) => {
   server = await start();
   await page.goto(server.url);
   await openChange(page, /docs: rename the document/);
   await openFile(page, 'new-name.md');
   await remark(page, '4', 'This line says nothing.');
+
+  // While it is the current round, it is the reader's to change.
+  await expect(
+    card(page, 'This line says nothing.').getByRole('button', { name: 'Edit' }),
+  ).toBeVisible();
 
   const repo = server.fixture.repo;
   server.kill();
@@ -121,14 +126,12 @@ test('a previous remark can be read, edited and deleted like any other', async (
   await openChange(page, /docs: rename the document/);
   await openFile(page, 'new-name.md');
 
-  // It stands before the first line, and it is a card like any other: the
-  // reader deletes it themselves, one at a time.
-  const previous = page.locator('.talk-stranded');
+  // The round it belongs to is over. It is a record of that round, and a
+  // record that can be rewritten is not one.
+  const previous = page.locator('.talk-previous');
   await expect(previous).toHaveCount(1);
-  await expect(previous.getByRole('button', { name: 'Edit' })).toBeVisible();
-
-  await previous.getByRole('button', { name: 'Delete' }).click();
-  await expect(page.locator('.talk-stranded')).toHaveCount(0);
+  await expect(previous).toContainText('This line says nothing.');
+  await expect(previous.getByRole('button')).toHaveCount(0);
 });
 
 test('an older version is read, not written on', async ({ page }) => {
@@ -152,16 +155,18 @@ test('an older version is read, not written on', async ({ page }) => {
   await openChange(page, /docs: rename the document/);
   await openFile(page, 'new-name.md');
 
-  // On the newest version the remark can be corrected.
+  // A remark of this round, on the newest version, is the reader's to
+  // correct.
+  await remark(page, '1', 'And the title still says nothing.');
   await expect(
-    card(page, 'The title says nothing.').getByRole('button', { name: 'Edit' }),
+    card(page, 'And the title still says nothing.').getByRole('button', { name: 'Edit' }),
   ).toBeVisible();
 
-  // On the version before it, the remark is history.
+  // On the version before it, every remark is history.
   await page.locator('#read-set').selectOption('1');
-  await expect(card(page, 'The title says nothing.')).toBeVisible();
+  await expect(card(page, 'And the title still says nothing.')).toBeVisible();
   await expect(
-    card(page, 'The title says nothing.').getByRole('button', { name: 'Edit' }),
+    card(page, 'And the title still says nothing.').getByRole('button', { name: 'Edit' }),
   ).toHaveCount(0);
 
   // And nothing invites a new one there. A remark written on an older
