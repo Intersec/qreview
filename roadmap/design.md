@@ -432,6 +432,13 @@ section 5.4.
 `scope` is `line`, `range`, `file`, or `change`. A `file` comment has an anchor
 with no line. A `change` comment has no anchor.
 
+Nothing writes a `change` comment any more. Gerrit has no useful place for a
+remark about the whole change — you cannot reply to one — so the convention is
+to write it on the commit message, which is a file like any other. That is
+what a session already reads, and what the export already lists first. The
+ones a `change` scope left behind are still read, and shown on the commit
+message with the rest.
+
 A `range` covers `startLine` to `endLine`. It can also open and close inside a
 line: `startChar` and `endChar` then hold the first character on the first
 line and the one after the last on the last line. Both count **UTF-16 code
@@ -513,7 +520,12 @@ cleared in one action, because there is nothing left to read it against.
 
 **A remark whose line the version has lost falls back rather than gives up.**
 The file it was written on is the nearest true place, and when the change no
-longer touches that file, the change is. It is never a list off to one side.
+longer touches that file, the commit message is.
+
+Everything that belongs to no line of the file stands **before the first
+line**, inside the code, the way Gerrit puts a remark about a file above line
+1. A band above the diff took the top of every screen, on every file, whether
+it held anything or not.
 
 ## 6. Gerrit integration
 

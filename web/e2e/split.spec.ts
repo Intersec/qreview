@@ -1,7 +1,7 @@
 // The side-by-side view. Two columns of code, not two columns of margin.
 
 import { expect, test } from '@playwright/test';
-import { openChange, openFile, useSplit } from './act.ts';
+import { card, openChange, openFile, useSplit } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -92,16 +92,27 @@ test('a doc comment stays on the line it was written on', async ({ page }) => {
   await expect(row).toContainText('/** Return whether the field is a pointer or not.');
 });
 
-test('the band above the diff spans the pane, whatever the code does', async ({ page }) => {
+test('the file bar spans the pane, whatever the code does', async ({ page }) => {
   await openFile(page, 'long.c');
-  await page.getByRole('button', { name: 'Comment on the file' }).click();
 
   const pane = await page.locator('.diff-pane').boundingBox();
-  const band = await page.locator('.above-diff').boundingBox();
   const bar = await page.locator('.file-bar').boundingBox();
 
-  // The pane used to scroll sideways itself, which sized these two to their
-  // own content and left a strip of colour that stopped mid-window.
-  expect(band!.width).toBeGreaterThan(pane!.width - 2);
+  // The pane used to scroll sideways itself, which sized the bar to its own
+  // content and left a strip of colour that stopped mid-window.
   expect(bar!.width).toBeGreaterThan(pane!.width - 2);
+});
+
+test('a remark about the file stands before the first line', async ({ page }) => {
+  await openFile(page, 'long.c');
+  await page.getByRole('button', { name: 'Comment on the file' }).click();
+  await page.getByRole('textbox').first().fill('This file does two things.');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(card(page, 'This file does two things.')).toBeVisible();
+
+  // Inside the code, above line 1, not in a band that takes the top of the
+  // screen on every file.
+  const first = page.locator('table.code tr').first();
+  await expect(first).toHaveClass(/talk/);
+  await expect(first).toContainText('This file does two things.');
 });

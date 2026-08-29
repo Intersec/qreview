@@ -631,14 +631,9 @@ tr.talk td {
   font-family: var(--code-font);
   font-size: 10px;
 }
-.stranded-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  max-width: 44rem;
-  margin: 8px 0 2px;
-  font-size: 11px;
-  color: var(--ink-quiet);
+/* A file with no diff to read still carries its remarks. */
+.no-diff {
+  padding: 4px 10px;
 }
 .tag-worktree {
   background: var(--context-bar);
@@ -739,11 +734,6 @@ tr.talk td {
   display: flex;
   gap: 6px;
   margin-left: auto;
-}
-.above-diff {
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--edge);
-  background: var(--pane);
 }
 /* ----------------------------------------------------------- the shell */
 

@@ -59,3 +59,20 @@ test('a message that did not change between two versions is still readable', asy
   await expect(page.locator('td.code-cell.row-add')).toHaveCount(0);
   await expect(page.locator('td.code-cell.row-remove')).toHaveCount(0);
 });
+
+test('a remark about the change goes on the commit message', async ({ page }) => {
+  // Gerrit has no useful place for a remark about the whole change, so the
+  // convention is to write it on the message. The button says so there.
+  await openChange(page, /net: retry the read/);
+  await openFile(page, 'Commit message');
+  await page.getByRole('button', { name: 'Comment on the change' }).click();
+  await page.getByRole('textbox').first().fill('This series needs a test plan.');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await expect(card(page, 'This series needs a test plan.')).toBeVisible();
+
+  // On any other file the same button is about that file alone.
+  await openFile(page, 'net.blk');
+  await expect(page.getByRole('button', { name: 'Comment on the file' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Comment on the change' })).toHaveCount(0);
+});

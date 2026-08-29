@@ -4,7 +4,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
-import { isCurrent, rounds } from '@/diff/versions';
+import { rounds } from '@/diff/versions';
 import type {
   ChangeComments,
   Comment,
@@ -404,31 +404,6 @@ export const useReview = defineStore('review', () => {
     return comments.filter((c) => placement(c.id)?.lost);
   }
 
-  /// The previous remarks this version has no line for.
-  ///
-  /// They were written on a version that is gone and the line went with it,
-  /// so there is nothing left to read them against. One action clears them.
-  function previousUnplaced(): Comment[] {
-    const comments = review.value?.comments ?? [];
-
-    return comments.filter((c) => placement(c.id)?.lost && !isCurrent(c, currentSha.value));
-  }
-
-  /// Drop them all, in one action.
-  async function dropPrevious() {
-    const key = changeKey.value;
-    const gone = previousUnplaced();
-    if (!key || gone.length === 0) {
-      return;
-    }
-    await guard(async () => {
-      for (const comment of gone) {
-        await api.deleteComment(key, comment.id);
-      }
-      await reload();
-    });
-  }
-
   /// The patch set the reader picked, carried from change to change.
   ///
   /// Reading patch set 1 of one change and then opening another landed on
@@ -561,8 +536,6 @@ export const useReview = defineStore('review', () => {
     openPatchSet,
     placement,
     stranded,
-    previousUnplaced,
-    dropPrevious,
     readingOlder,
     currentSha,
     posted,

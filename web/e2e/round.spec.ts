@@ -56,15 +56,12 @@ test('the version that was reviewed comes back, and its remarks say so', async (
 
   // The remark whose line is gone stands at the top of the file it was
   // written on, marked, rather than in a list of its own.
-  const done = page.locator('.above-diff .talk-stranded');
+  const done = page.locator('table.code .talk-stranded');
   await expect(done).toHaveCount(1);
   await expect(done).toContainText('previous');
   await expect(done).toContainText('no line here');
   await expect(done).toContainText('docs/new-name.md:4');
   await expect(done).toContainText('This line says nothing.');
-  await expect(page.locator('.stranded-head')).toContainText(
-    'One remark below was written on an earlier version',
-  );
 
   // The one still standing is on its line, where it always was.
   await expect(card(page, 'The title says nothing.')).toBeVisible();
@@ -103,7 +100,7 @@ test('the pane counts the current remarks and lists the previous ones apart', as
   await expect(pane.locator('.list-row:not(.is-previous)')).toHaveCount(1);
 });
 
-test('the previous remarks with no line left are dropped in one action', async ({ page }) => {
+test('a previous remark can be read, edited and deleted like any other', async ({ page }) => {
   server = await start();
   await page.goto(server.url);
   await openChange(page, /docs: rename the document/);
@@ -124,7 +121,13 @@ test('the previous remarks with no line left are dropped in one action', async (
   await openChange(page, /docs: rename the document/);
   await openFile(page, 'new-name.md');
 
-  await page.getByRole('button', { name: 'Delete it' }).click();
+  // It stands before the first line, and it is a card like any other: the
+  // reader deletes it themselves, one at a time.
+  const previous = page.locator('.talk-stranded');
+  await expect(previous).toHaveCount(1);
+  await expect(previous.getByRole('button', { name: 'Edit' })).toBeVisible();
+
+  await previous.getByRole('button', { name: 'Delete' }).click();
   await expect(page.locator('.talk-stranded')).toHaveCount(0);
 });
 

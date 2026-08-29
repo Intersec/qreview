@@ -7,10 +7,9 @@ import CommentCell from './CommentCell.vue';
 import DiffRow from './DiffRow.vue';
 import PostedCard from './PostedCard.vue';
 import { gaps, type Gap } from '@/diff/gaps';
-import { label } from '@/diff/paths';
+import { COMMIT_MSG, label } from '@/diff/paths';
 import { pairs } from '@/diff/pairs';
 import { places, slot } from '@/diff/drafts';
-import { isCurrent } from '@/diff/versions';
 import type { Mark } from '@/diff/segments';
 import type { Comment, FileDiff, Hunk, NewComment, PostedComment, Row, Side } from '@/api/types';
 
@@ -52,7 +51,6 @@ const emit = defineEmits<{
   add: [comment: NewComment];
   edit: [id: string, body: string];
   remove: [id: string];
-  dropPrevious: [];
 }>();
 
 /// Above this, the browser spends more time building the DOM than the reader
@@ -126,8 +124,47 @@ function onDown(event: MouseEvent) {
   selecting.value = column === 'old' || column === 'new' ? column : null;
 }
 
-/// Which of the two "write about" boxes is open.
-const about = ref<'change' | 'file' | null>(null);
+/// True while a remark about the file as a whole is being written.
+const aboutFile = ref(false);
+
+/// The file that carries what belongs to no file of the change.
+///
+/// Gerrit has no useful place for a remark about the whole change, so the
+/// convention is to write it on the commit message, which is a file like any
+/// other. A change with no message to review falls back to its first file.
+const homeFile = computed(() =>
+  props.paths.includes(COMMIT_MSG) ? COMMIT_MSG : (props.paths[0] ?? ''),
+);
+const isHome = computed(() => props.diff.path === homeFile.value);
+
+/// What stands before the first line of the file, the way Gerrit puts a
+/// remark about a file above line 1 rather than in a band of its own.
+///
+/// A remark about this file, one this version has no line for, and, on the
+/// file that stands for the change, everything that belongs to no file at
+/// all.
+const beforeFirstLine = computed<Comment[]>(() => {
+  const mine = props.comments.filter(
+    (comment) => comment.scope === 'file' && comment.anchor?.file === props.diff.path,
+  );
+  const home = isHome.value
+    ? [...props.comments.filter((comment) => comment.scope === 'change'), ...strandedOnChange.value]
+    : [];
+
+  return [...home, ...mine, ...strandedHere.value];
+});
+
+const postedBeforeFirstLine = computed<PostedComment[]>(() => [
+  ...(isHome.value ? postedOnChange.value : []),
+  ...loosePosted.value,
+  ...postedHere.value,
+]);
+
+/// True when anything at all stands above the code.
+const opensWithRemarks = computed(
+  () =>
+    aboutFile.value || beforeFirstLine.value.length > 0 || postedBeforeFirstLine.value.length > 0,
+);
 
 /// The context a reader opened, and what is left to open, per gap.
 const opened = reactive(new Map<string, Row[]>());
@@ -146,7 +183,7 @@ watch(
       // A box left open would come back on whatever line of the new file
       // happens to carry the same number. What the reader typed and did not
       // save comes back instead, on the lines it was typed on.
-      about.value = null;
+      aboutFile.value = false;
       cursor.value = null;
       writing.value = new Set(places(props.changeKey, fresh.path));
 
@@ -692,16 +729,6 @@ function write(row: Row | null, column: Side, body: string) {
   clearPicked();
 }
 
-/// A comment about the whole change, or about this file. Neither belongs to
-/// a line, so both sit above the diff rather than in a pane of their own.
-const loose = computed(() =>
-  props.comments.filter(
-    (comment) =>
-      comment.scope === 'change' ||
-      (comment.scope === 'file' && comment.anchor?.file === props.diff.path),
-  ),
-);
-
 /// What Gerrit holds about this file rather than about a line of it.
 const loosePosted = computed(() =>
   props.posted.filter((remark) => remark.line === null && remark.file === props.diff.path),
@@ -737,35 +764,9 @@ const postedOnChange = computed(() =>
   props.postedStranded.filter((remark) => strandedOn(remark.file) === 'change'),
 );
 
-/// True when the remark was written on a version the change no longer
-/// carries. It is shown, and counted nowhere.
-function previous(comment: Comment): boolean {
-  return !isCurrent(comment, props.currentSha);
-}
-
-/// The previous remarks on the screen that this version has no line for.
-///
-/// They were written on a version that is gone, and the line went with it.
-/// There is nothing left to read them against, so one action clears them.
-const clearable = computed(() =>
-  [...strandedHere.value, ...strandedOnChange.value].filter((comment) => previous(comment)),
-);
-
-/// What the line above them says.
-const clearableNote = computed(() =>
-  clearable.value.length === 1
-    ? 'One remark below was written on an earlier version, and this one has no line for it.'
-    : `${clearable.value.length} remarks below were written on earlier versions, and this one has no line for them.`,
-);
-
-function writeAbout(scope: 'change' | 'file', body: string) {
-  emit('add', {
-    scope,
-    file: scope === 'file' ? props.diff.path : undefined,
-    side: scope === 'file' ? 'new' : undefined,
-    body,
-  });
-  about.value = null;
+function writeAboutFile(body: string) {
+  emit('add', { scope: 'file', file: props.diff.path, side: 'new', body });
+  aboutFile.value = false;
 }
 
 /// Where an unfinished remark on this place is kept.
@@ -823,21 +824,11 @@ function toggle(row: Row | null, column: Side) {
            here would be anchored on the newest one, at the line numbers of
            this one, which is a remark on a line nobody chose. -->
         <span v-if="readOnly" class="tag">reading an older version</span>
-        <button
-          v-if="!readOnly"
-          type="button"
-          class="chip"
-          @click="about = about === 'file' ? null : 'file'"
-        >
-          Comment on the file
-        </button>
-        <button
-          v-if="!readOnly"
-          type="button"
-          class="chip"
-          @click="about = about === 'change' ? null : 'change'"
-        >
-          Comment on the change
+        <!-- A remark about the whole change goes on the commit message,
+           which is a file like any other. Gerrit has no useful place for one
+           either, and that convention is what a session already reads. -->
+        <button v-if="!readOnly" type="button" class="chip" @click="aboutFile = !aboutFile">
+          {{ isHome ? 'Comment on the change' : 'Comment on the file' }}
         </button>
         <button
           type="button"
@@ -850,69 +841,29 @@ function toggle(row: Row | null, column: Side) {
       </span>
     </header>
 
-    <section
-      v-if="
-        about ||
-        loose.length ||
-        loosePosted.length ||
-        strandedHere.length ||
-        strandedOnChange.length ||
-        postedHere.length ||
-        postedOnChange.length
-      "
-      class="above-diff"
-    >
+    <!-- A file with no diff still carries its remarks. -->
+    <section v-if="(diff.binary || diff.hunks.length === 0) && opensWithRemarks" class="no-diff">
+      <PostedCard
+        v-for="remark in postedBeforeFirstLine"
+        :key="remark.id"
+        :comment="remark"
+        :stranded="remark.line !== null"
+      />
+      <CommentCard
+        v-for="comment in beforeFirstLine"
+        :key="comment.id"
+        :comment="comment"
+        :at="currentSha"
+        :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
+        :read-only="readOnly"
+        @edit="(id, body) => emit('edit', id, body)"
+        @remove="(id) => emit('remove', id)"
+      />
       <CommentBox
-        v-if="about"
-        :label="about === 'change' ? 'A remark about the change' : 'A remark about the file'"
-        @save="(body) => writeAbout(about!, body)"
-        @cancel="about = null"
-      />
-
-      <!-- A remark whose line this version has lost stands at the top of
-         the file it was written on, and one whose file the change no longer
-         touches stands on the change. Never in a list off to one side. -->
-      <p v-if="clearable.length" class="stranded-head">
-        {{ clearableNote }}
-        <button type="button" class="action" @click="emit('dropPrevious')">
-          {{ clearable.length === 1 ? 'Delete it' : 'Delete them all' }}
-        </button>
-      </p>
-
-      <PostedCard v-for="remark in postedOnChange" :key="remark.id" :comment="remark" stranded />
-      <CommentCard
-        v-for="comment in strandedOnChange"
-        :key="comment.id"
-        :comment="comment"
-        :at="currentSha"
-        :stranded="true"
-        :read-only="readOnly"
-        @edit="(id, body) => emit('edit', id, body)"
-        @remove="(id) => emit('remove', id)"
-      />
-
-      <PostedCard v-for="remark in postedHere" :key="remark.id" :comment="remark" stranded />
-      <CommentCard
-        v-for="comment in strandedHere"
-        :key="comment.id"
-        :comment="comment"
-        :at="currentSha"
-        :stranded="true"
-        :read-only="readOnly"
-        @edit="(id, body) => emit('edit', id, body)"
-        @remove="(id) => emit('remove', id)"
-      />
-
-      <PostedCard v-for="remark in loosePosted" :key="remark.id" :comment="remark" />
-
-      <CommentCard
-        v-for="comment in loose"
-        :key="comment.id"
-        :comment="comment"
-        :at="currentSha"
-        :read-only="readOnly"
-        @edit="(id, body) => emit('edit', id, body)"
-        @remove="(id) => emit('remove', id)"
+        v-if="aboutFile"
+        :label="isHome ? 'A remark about the change' : 'A remark about the file'"
+        @save="(body) => writeAboutFile(body)"
+        @cancel="aboutFile = false"
       />
     </section>
 
@@ -928,6 +879,37 @@ function toggle(row: Row | null, column: Side) {
           <col class="gut" />
           <col />
         </colgroup>
+        <!-- Before the first line, the way Gerrit puts a remark about a
+           file above line 1: a band of its own took the top of every
+           screen, on every file, whether it held anything or not. -->
+        <tbody v-if="opensWithRemarks">
+          <tr class="talk">
+            <td colspan="4">
+              <PostedCard
+                v-for="remark in postedBeforeFirstLine"
+                :key="remark.id"
+                :comment="remark"
+                :stranded="remark.line !== null"
+              />
+              <CommentCard
+                v-for="comment in beforeFirstLine"
+                :key="comment.id"
+                :comment="comment"
+                :at="currentSha"
+                :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
+                :read-only="readOnly"
+                @edit="(id, body) => emit('edit', id, body)"
+                @remove="(id) => emit('remove', id)"
+              />
+              <CommentBox
+                v-if="aboutFile"
+                :label="isHome ? 'A remark about the change' : 'A remark about the file'"
+                @save="(body) => writeAboutFile(body)"
+                @cancel="aboutFile = false"
+              />
+            </td>
+          </tr>
+        </tbody>
         <tbody v-for="(block, b) in blocks" :key="b">
           <template v-if="block.kind === 'gap'">
             <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
@@ -1101,6 +1083,37 @@ function toggle(row: Row | null, column: Side) {
           <col class="gut" />
           <col />
         </colgroup>
+        <!-- Before the first line, the way Gerrit puts a remark about a
+           file above line 1: a band of its own took the top of every
+           screen, on every file, whether it held anything or not. -->
+        <tbody v-if="opensWithRemarks">
+          <tr class="talk">
+            <td colspan="3">
+              <PostedCard
+                v-for="remark in postedBeforeFirstLine"
+                :key="remark.id"
+                :comment="remark"
+                :stranded="remark.line !== null"
+              />
+              <CommentCard
+                v-for="comment in beforeFirstLine"
+                :key="comment.id"
+                :comment="comment"
+                :at="currentSha"
+                :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
+                :read-only="readOnly"
+                @edit="(id, body) => emit('edit', id, body)"
+                @remove="(id) => emit('remove', id)"
+              />
+              <CommentBox
+                v-if="aboutFile"
+                :label="isHome ? 'A remark about the change' : 'A remark about the file'"
+                @save="(body) => writeAboutFile(body)"
+                @cancel="aboutFile = false"
+              />
+            </td>
+          </tr>
+        </tbody>
         <tbody v-for="(block, b) in blocks" :key="b">
           <template v-if="block.kind === 'gap'">
             <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">

@@ -357,7 +357,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
             :posted-stranded="postedStranded"
             :read-only="readingOlder"
             :load-lines="review.loadLines"
-            @drop-previous="review.dropPrevious"
             @update:split="review.setSplit"
             @add="review.addComment"
             @edit="(id, body) => review.editComment(id, { body })"
