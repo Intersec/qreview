@@ -1653,15 +1653,19 @@ mod tests {
         let about2 = &placed[0];
         let about3 = &placed[1];
 
-        assert_eq!(about2["lost"], true);
-        assert_eq!(about2["answered"], true, "the line it spoke of is gone");
-        assert_eq!(about3["lost"], false);
-        assert_eq!(about3["answered"], false, "that line was not touched");
+        assert_eq!(about2["lost"], true, "the line it spoke of is gone");
+        assert_eq!(about3["lost"], false, "that line was not touched");
         assert_eq!(about3["line"], 3);
+
+        // Both were written on the version before this one, which is what
+        // makes them previous remarks: they are not counted and not
+        // exported. See `design.md` 5.4.
+        assert_eq!(body["comments"][0]["commit"], first);
+        assert_eq!(body["comments"][1]["commit"], first);
     }
 
     #[tokio::test]
-    async fn a_remark_written_on_this_version_is_never_called_answered() {
+    async fn a_remark_written_on_this_version_names_it() {
         let repo = fixture().await;
         let app = server(&repo).await;
 
@@ -1673,7 +1677,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(body["placed"][0]["answered"], false);
+        assert_eq!(body["placed"][0]["lost"], false);
         assert_eq!(
             body["comments"][0]["commit"],
             repo.sha("HEAD").await,

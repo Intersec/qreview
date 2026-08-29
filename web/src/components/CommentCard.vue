@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import CommentBox from './CommentBox.vue';
 import { render } from '@/diff/markdown';
+import { isCurrent } from '@/diff/versions';
 import type { Comment } from '@/api/types';
 
 const props = defineProps<{
@@ -11,8 +12,9 @@ const props = defineProps<{
   readOnly?: boolean;
   /// Set when the line this remark spoke of is not in this version. The card
   /// then stands at the top of its file rather than on a line, and says so.
-  stranded?: 'answered' | 'lost';
-  /// The commit being read, so a remark written on another one says which.
+  stranded?: boolean;
+  /// The sha the change carries now. A remark written on any other one is a
+  /// previous remark: it is counted nowhere and exported nowhere.
   at: string;
 }>();
 const emit = defineEmits<{ edit: [id: string, body: string]; remove: [id: string] }>();
@@ -32,24 +34,22 @@ const place = computed(() => {
   return anchor.startLine === null ? anchor.file : `${anchor.file}:${anchor.startLine}`;
 });
 
-/// The version it was written on, when that is not the one being read. A
-/// remark of this version says nothing: it is the one the code belongs to.
-const version = computed(() => {
-  const { commit } = props.comment;
-
-  return commit === '' || commit === props.at ? '' : commit.slice(0, 8);
-});
+/// The version a previous remark was written on. A current remark says
+/// nothing: it belongs to the code under it.
+const version = computed(() =>
+  isCurrent(props.comment, props.at) ? '' : props.comment.commit.slice(0, 8),
+);
 </script>
 
 <template>
   <article
     class="talk-box"
-    :class="[stranded ? 'talk-stranded' : '', version ? 'talk-earlier' : '']"
+    :class="[stranded ? 'talk-stranded' : '', version ? 'talk-previous' : '']"
   >
     <p class="talk-head">
       <span>{{ when(comment) }}</span>
-      <span v-if="stranded === 'answered'" class="talk-tag">answered</span>
-      <span v-else-if="stranded" class="talk-tag">not placed</span>
+      <span v-if="version" class="talk-tag">previous</span>
+      <span v-if="stranded" class="talk-tag">no line here</span>
       <code v-if="stranded" class="was-on">{{ place }}</code>
       <span class="spacer"></span>
       <span v-if="version">on {{ version }}</span>

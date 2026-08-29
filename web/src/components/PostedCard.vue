@@ -24,7 +24,7 @@ const place = computed(() =>
     <p class="talk-head">
       <span class="talk-who">{{ comment.author }}</span>
       <span class="talk-tag">Gerrit</span>
-      <span v-if="stranded" class="talk-tag">not placed</span>
+      <span v-if="stranded" class="talk-tag">no line here</span>
       <code v-if="stranded" class="was-on">{{ place }}</code>
       <span class="spacer"></span>
       <span>patch set {{ comment.patchSet }}</span>

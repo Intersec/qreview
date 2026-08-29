@@ -233,10 +233,9 @@ export interface Placed {
   /// The last line of the range. It follows the first one.
   endLine: number | null;
   moved: boolean;
+  /// The line it spoke of is not in this version. The remark then stands at
+  /// the top of the file it was written on.
   lost: boolean;
-  /// Written on another version, and the line it spoke of is gone from this
-  /// one. The work it asked for was done.
-  answered: boolean;
 }
 
 /**

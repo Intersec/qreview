@@ -33,7 +33,7 @@ const {
   build,
   posted,
   readingOlder,
-  reading,
+  currentSha,
   onMerge,
   mergeBase,
   mergeList,
@@ -350,14 +350,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
             :comments="comments"
             :stranded="stranded"
             :paths="paths"
-            :reading="reading"
+            :current-sha="currentSha"
             :placement="review.placement"
             :posted="posted.comments"
             :posted-placement="review.postedPlacement"
             :posted-stranded="postedStranded"
             :read-only="readingOlder"
             :load-lines="review.loadLines"
-            @drop-answered="review.dropAnswered"
+            @drop-previous="review.dropPrevious"
             @update:split="review.setSplit"
             @add="review.addComment"
             @edit="(id, body) => review.editComment(id, { body })"

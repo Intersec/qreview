@@ -491,24 +491,25 @@ Each comment records the commit it was written against. Two things follow.
 a remark and is not the one under review is offered as a patch set, without
 `--prev`. The diff between the two is what the correction did.
 
-**A remark that was answered says so.** The line it spoke of is not in this
-version any more, and the remark was not written on this version, so the only
-thing that can have taken the line away is the work in between. The interface
-lists these apart, under **Answered**, with one action that drops them all.
-
-That is a guess, and it is the honest one available: nothing else in the
-repository says whether a remark was dealt with. It never deletes anything on
-its own.
+**A remark names the version it was written on, and that is the only word on
+whether it still counts.** A remark written on the sha the change carries now
+is a **current** one. Any other is a **previous** one: the round it belongs to
+is over. Nothing guesses whether the work was done; the sha is a fact, and the
+tool says no more than it knows.
 
 A version that is not the newest is history. Its remarks are shown and cannot
 be edited there: the newest version is where a review is written.
 
-**A remark of an earlier round is shown, and counted nowhere.** The export,
-the counts on the series, on the files and on the copy buttons all hold the
-remarks of the version under review and no others. The interface still shows
-the rest: on the line they anchor to, dimmed and naming their version, and in
-the pane under a line that says where they came from. Nothing is hidden, and
-nothing counts twice.
+**A previous remark is shown, and counted nowhere.** The export, the counts
+on the series, on the files and on the copy buttons all hold the current
+remarks and no others: a round that is over must not be handed to an agent
+again, or it does work that is done. The remarks Gerrit holds are counted
+nowhere either, for the same reason and by the same rule.
+
+Nothing is hidden. A previous remark is on the line it anchors to, grey rather
+than the draft yellow, tagged `previous` and naming its version. The pane
+lists them under **Previous**. One that this version has no line for can be
+cleared in one action, because there is nothing left to read it against.
 
 **A remark whose line the version has lost falls back rather than gives up.**
 The file it was written on is the nearest true place, and when the change no
@@ -717,9 +718,10 @@ Rules for the format:
 - The comments are numbered, so the answer can name one.
 - The export names the commit and the patch set, so the session knows the
   state the remarks were written against.
-- Only the remarks of that version are in it. A round before this one left
-  remarks the reader has dealt with, and an agent that reads them again redoes
-  work that is done. A line under the count says how many were left out.
+- Only the current remarks are in it: the ones written on the sha the change
+  carries now. A previous round is over, and an agent that reads it again
+  redoes work that is done. A line under the count says how many were left
+  out.
 
 The comments are ordered the way a reader walks the code:
 

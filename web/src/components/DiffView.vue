@@ -10,6 +10,7 @@ import { gaps, type Gap } from '@/diff/gaps';
 import { label } from '@/diff/paths';
 import { pairs } from '@/diff/pairs';
 import { places, slot } from '@/diff/drafts';
+import { isCurrent } from '@/diff/versions';
 import type { Mark } from '@/diff/segments';
 import type { Comment, FileDiff, Hunk, NewComment, PostedComment, Row, Side } from '@/api/types';
 
@@ -22,8 +23,7 @@ const props = defineProps<{
   /// Where a comment lands in the patch set being read.
   placement: (
     id: string,
-  ) =>
-    { line: number | null; endLine: number | null; lost: boolean; answered: boolean } | undefined;
+  ) => { line: number | null; endLine: number | null; lost: boolean } | undefined;
   /// Read a run of lines the diff does not carry.
   loadLines: (from: number, to: number) => Promise<Row[]>;
   /// The comments whose line this version does not have any more.
@@ -31,9 +31,9 @@ const props = defineProps<{
   /// The files of the change, so a remark about one it no longer touches
   /// can be told from one about a file that is still here.
   paths: string[];
-  /// The commit of the version being read. A remark written on another one
-  /// says which, and reads as a remark from before.
-  reading: string;
+  /// The sha the change carries now. A remark written on any other one is a
+  /// previous remark: it says so, and it is counted nowhere.
+  currentSha: string;
   /// True while the reader is on a version that is not the newest. An older
   /// version is history: it is read, never written on.
   readOnly: boolean;
@@ -52,7 +52,7 @@ const emit = defineEmits<{
   add: [comment: NewComment];
   edit: [id: string, body: string];
   remove: [id: string];
-  dropAnswered: [];
+  dropPrevious: [];
 }>();
 
 /// Above this, the browser spends more time building the DOM than the reader
@@ -737,24 +737,25 @@ const postedOnChange = computed(() =>
   props.postedStranded.filter((remark) => strandedOn(remark.file) === 'change'),
 );
 
-/// Answered, or simply not placed. The card says which.
-function mark(comment: Comment): 'answered' | 'lost' {
-  return props.placement(comment.id)?.answered ? 'answered' : 'lost';
+/// True when the remark was written on a version the change no longer
+/// carries. It is shown, and counted nowhere.
+function previous(comment: Comment): boolean {
+  return !isCurrent(comment, props.currentSha);
 }
 
-/// What the line above the stranded cards says.
-const answeredNote = computed(() =>
-  answeredShown.value === 1
-    ? 'One remark below was answered: the line it spoke of is gone from this version.'
-    : `${answeredShown.value} remarks below were answered: the lines they spoke of are gone from this version.`,
+/// The previous remarks on the screen that this version has no line for.
+///
+/// They were written on a version that is gone, and the line went with it.
+/// There is nothing left to read them against, so one action clears them.
+const clearable = computed(() =>
+  [...strandedHere.value, ...strandedOnChange.value].filter((comment) => previous(comment)),
 );
 
-/// How many of the stranded remarks on the screen a later version answered.
-const answeredShown = computed(
-  () =>
-    [...strandedHere.value, ...strandedOnChange.value].filter(
-      (comment) => mark(comment) === 'answered',
-    ).length,
+/// What the line above them says.
+const clearableNote = computed(() =>
+  clearable.value.length === 1
+    ? 'One remark below was written on an earlier version, and this one has no line for it.'
+    : `${clearable.value.length} remarks below were written on earlier versions, and this one has no line for them.`,
 );
 
 function writeAbout(scope: 'change' | 'file', body: string) {
@@ -871,10 +872,10 @@ function toggle(row: Row | null, column: Side) {
       <!-- A remark whose line this version has lost stands at the top of
          the file it was written on, and one whose file the change no longer
          touches stands on the change. Never in a list off to one side. -->
-      <p v-if="answeredShown" class="stranded-head">
-        {{ answeredNote }}
-        <button type="button" class="action" @click="emit('dropAnswered')">
-          Delete every answered remark
+      <p v-if="clearable.length" class="stranded-head">
+        {{ clearableNote }}
+        <button type="button" class="action" @click="emit('dropPrevious')">
+          {{ clearable.length === 1 ? 'Delete it' : 'Delete them all' }}
         </button>
       </p>
 
@@ -883,8 +884,8 @@ function toggle(row: Row | null, column: Side) {
         v-for="comment in strandedOnChange"
         :key="comment.id"
         :comment="comment"
-        :at="reading"
-        :stranded="mark(comment)"
+        :at="currentSha"
+        :stranded="true"
         :read-only="readOnly"
         @edit="(id, body) => emit('edit', id, body)"
         @remove="(id) => emit('remove', id)"
@@ -895,8 +896,8 @@ function toggle(row: Row | null, column: Side) {
         v-for="comment in strandedHere"
         :key="comment.id"
         :comment="comment"
-        :at="reading"
-        :stranded="mark(comment)"
+        :at="currentSha"
+        :stranded="true"
         :read-only="readOnly"
         @edit="(id, body) => emit('edit', id, body)"
         @remove="(id) => emit('remove', id)"
@@ -908,7 +909,7 @@ function toggle(row: Row | null, column: Side) {
         v-for="comment in loose"
         :key="comment.id"
         :comment="comment"
-        :at="reading"
+        :at="currentSha"
         :read-only="readOnly"
         @edit="(id, body) => emit('edit', id, body)"
         @remove="(id) => emit('remove', id)"
@@ -952,7 +953,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'old')"
                     :posted="atPosted(row, 'old')"
                     :writing="opening(row, 'old')"
-                    :at="reading"
+                    :at="currentSha"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
@@ -967,7 +968,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'new')"
                     :posted="atPosted(row, 'new')"
                     :writing="opening(row, 'new')"
-                    :at="reading"
+                    :at="currentSha"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
@@ -1010,7 +1011,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'old')"
                     :posted="atPosted(row, 'old')"
                     :writing="opening(row, 'old')"
-                    :at="reading"
+                    :at="currentSha"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
@@ -1025,7 +1026,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, 'new')"
                     :posted="atPosted(row, 'new')"
                     :writing="opening(row, 'new')"
-                    :at="reading"
+                    :at="currentSha"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
@@ -1064,7 +1065,7 @@ function toggle(row: Row | null, column: Side) {
                   :comments="at(pair.left, 'old')"
                   :posted="atPosted(pair.left, 'old')"
                   :writing="opening(pair.left, 'old')"
-                  :at="reading"
+                  :at="currentSha"
                   :read-only="readOnly"
                   :draft="draftAt(pair.left, 'old')"
                   :label="boxLabel(pair.left, 'old')"
@@ -1079,7 +1080,7 @@ function toggle(row: Row | null, column: Side) {
                   :comments="at(pair.right, 'new')"
                   :posted="atPosted(pair.right, 'new')"
                   :writing="opening(pair.right, 'new')"
-                  :at="reading"
+                  :at="currentSha"
                   :read-only="readOnly"
                   :draft="draftAt(pair.right, 'new')"
                   :label="boxLabel(pair.right, 'new')"
@@ -1136,7 +1137,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, column)"
                     :posted="atPosted(row, column)"
                     :writing="opening(row, column)"
-                    :at="reading"
+                    :at="currentSha"
                     :read-only="readOnly"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
@@ -1190,7 +1191,7 @@ function toggle(row: Row | null, column: Side) {
                     :comments="at(row, column)"
                     :posted="atPosted(row, column)"
                     :writing="opening(row, column)"
-                    :at="reading"
+                    :at="currentSha"
                     :read-only="readOnly"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
@@ -1238,7 +1239,7 @@ function toggle(row: Row | null, column: Side) {
                   :comments="at(row, column)"
                   :posted="atPosted(row, column)"
                   :writing="opening(row, column)"
-                  :at="reading"
+                  :at="currentSha"
                   :read-only="readOnly"
                   :draft="draftAt(row, column)"
                   :label="boxLabel(row, column)"

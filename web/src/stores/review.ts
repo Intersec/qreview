@@ -4,7 +4,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
-import { rounds } from '@/diff/versions';
+import { isCurrent, rounds } from '@/diff/versions';
 import type {
   ChangeComments,
   Comment,
@@ -93,7 +93,7 @@ export const useReview = defineStore('review', () => {
   /// those are exported. A round before this one left remarks the reader has
   /// dealt with, and counting them says there is work where there is none.
   const total = computed(() =>
-    written.value.reduce((sum, change) => sum + rounds(change).now.length, 0),
+    written.value.reduce((sum, change) => sum + rounds(change).current.length, 0),
   );
   /// How many comments sit in each file of the change being read. Out of
   /// the same list as every other count on the screen.
@@ -101,7 +101,7 @@ export const useReview = defineStore('review', () => {
     const counts = new Map<string, number>();
     const here = written.value.find((change) => change.key === changeKey.value);
 
-    for (const comment of here ? rounds(here).now : []) {
+    for (const comment of here ? rounds(here).current : []) {
       const file = comment.anchor?.file;
       if (file) {
         counts.set(file, (counts.get(file) ?? 0) + 1);
@@ -113,7 +113,7 @@ export const useReview = defineStore('review', () => {
   const countOf = computed(() => {
     const counts = new Map<string, number>();
     for (const change of written.value) {
-      counts.set(change.key, rounds(change).now.length);
+      counts.set(change.key, rounds(change).current.length);
     }
     return counts;
   });
@@ -404,19 +404,20 @@ export const useReview = defineStore('review', () => {
     return comments.filter((c) => placement(c.id)?.lost);
   }
 
-  /// The comments a later version has answered: the line they spoke of is
-  /// not there any more. This is the second round, and these are the ones to
-  /// read past, or drop.
-  function answered(): Comment[] {
+  /// The previous remarks this version has no line for.
+  ///
+  /// They were written on a version that is gone and the line went with it,
+  /// so there is nothing left to read them against. One action clears them.
+  function previousUnplaced(): Comment[] {
     const comments = review.value?.comments ?? [];
 
-    return comments.filter((c) => placement(c.id)?.answered);
+    return comments.filter((c) => placement(c.id)?.lost && !isCurrent(c, currentSha.value));
   }
 
-  /// Drop every remark a later version has answered, in one action.
-  async function dropAnswered() {
+  /// Drop them all, in one action.
+  async function dropPrevious() {
     const key = changeKey.value;
-    const gone = answered();
+    const gone = previousUnplaced();
     if (!key || gone.length === 0) {
       return;
     }
@@ -435,20 +436,14 @@ export const useReview = defineStore('review', () => {
   /// asked for again on every change that has it.
   const wanted = ref<number | undefined>(undefined);
 
-  /// The commit of the version being read.
+  /// The sha the change carries now.
   ///
-  /// A remark says which version it was written on when that is not this
-  /// one, so old and new are told apart wherever they stand together.
-  const reading = computed(() => {
-    const last = patchSets.value[patchSets.value.length - 1];
-    const set =
-      patchSet.value === undefined
-        ? last
-        : patchSets.value.find((one) => one.number === patchSet.value);
-    const change = series.value?.changes.find((one) => one.key === changeKey.value);
-
-    return set?.commit ?? change?.commit ?? '';
-  });
+  /// One definition of current, everywhere: a remark written on this sha is
+  /// a current remark, and any other is a previous one, whichever version
+  /// the reader happens to be looking at.
+  const currentSha = computed(
+    () => series.value?.changes.find((one) => one.key === changeKey.value)?.commit ?? '',
+  );
 
   /// True while the reader is on a version that is not the newest.
   ///
@@ -566,10 +561,10 @@ export const useReview = defineStore('review', () => {
     openPatchSet,
     placement,
     stranded,
-    answered,
-    dropAnswered,
+    previousUnplaced,
+    dropPrevious,
     readingOlder,
-    reading,
+    currentSha,
     posted,
     postedPlacement,
     postedStranded,

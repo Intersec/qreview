@@ -598,9 +598,9 @@ tr.talk td {
 /* A remark whose line this version has lost. It stands at the top of its
    file, dimmed, so it reads as a remark about the past rather than one on
    the code under it. */
-/* The rounds before this one, in the list of what the session holds. Dim,
-   and under a line that says what they are. */
-.list-earlier {
+/* The previous remarks, in the list of what the session holds. Dim, and
+   under a line that says what they are. */
+.list-previous {
   margin: 4px 0 0 8px;
   font-size: 10px;
   font-weight: 700;
@@ -608,22 +608,23 @@ tr.talk td {
   text-transform: uppercase;
   color: var(--ink-faint);
 }
-.list-row.is-earlier {
+.list-row.is-previous {
   opacity: 0.62;
 }
 .talk-stranded {
   border-style: dashed;
 }
-/* A remark written on another version reads as one from before: the draft
-   yellow is for what belongs to the code under it. */
-.talk-earlier {
+/* A previous remark: written on a version the change no longer carries. The
+   draft yellow is for the current ones, which belong to the code under
+   them. */
+.talk-previous {
   border-color: var(--edge);
   background: var(--pane);
 }
-.talk-earlier .talk-head {
+.talk-previous .talk-head {
   border-bottom-color: var(--edge);
 }
-.talk-earlier .talk-tag {
+.talk-previous .talk-tag {
   background: var(--edge);
 }
 .was-on {

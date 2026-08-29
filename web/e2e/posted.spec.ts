@@ -48,7 +48,7 @@ test('a remark on a version that is not here stands at the top of its file', asy
 
   await expect(stranded).toContainText('Where does this loop stop?');
   await expect(stranded).toContainText('Jane Reviewer');
-  await expect(stranded).toContainText('not placed');
+  await expect(stranded).toContainText('no line here');
   await expect(stranded).toContainText('src/net.blk:3');
   await expect(stranded).toContainText('patch set 1');
 });

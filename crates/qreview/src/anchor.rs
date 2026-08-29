@@ -25,14 +25,9 @@ pub struct Placed {
     pub end_line: Option<usize>,
     /// True when the line is not the one the comment was written against.
     pub moved: bool,
-    /// True when the place is gone. The interface lists these apart.
+    /// True when the place is gone. The remark then stands at the top of
+    /// the file it was written on, never on a line nobody chose.
     pub lost: bool,
-    /// True when the remark was written on another version and the line it
-    /// spoke of is not in this one: the work it asked for was done.
-    ///
-    /// This is the second round. You review, an agent corrects, you review
-    /// again, and forty remarks you have already dealt with are in the way.
-    pub answered: bool,
 }
 
 /// Place every comment of a review in the patch set being read.
@@ -40,26 +35,70 @@ pub struct Placed {
 /// `rev` is the commit being read, and `base` what it is read against. A
 /// comment on a removed line lives on the base, so both are needed.
 pub async fn place_all(git: &Git, comments: &[Comment], rev: &str, base: &str) -> Vec<Placed> {
+    let mut read = Files::default();
     let mut out = Vec::with_capacity(comments.len());
 
     for comment in comments {
-        out.push(place(git, comment, rev, base).await);
+        out.push(one(git, comment, rev, base, &mut read).await);
     }
     out
 }
 
-/// Place one comment, and say whether it looks answered.
+/// Place one comment.
 pub async fn place(git: &Git, comment: &Comment, rev: &str, base: &str) -> Placed {
-    let mut placed = locate(git, comment, rev, base).await;
-
-    // The line is gone, and the remark was not written on this version. The
-    // only thing that can have taken the line away is the work in between.
-    placed.answered = placed.lost && !comment.commit.is_empty() && comment.commit != rev;
-
-    placed
+    one(git, comment, rev, base, &mut Files::default()).await
 }
 
-async fn locate(git: &Git, comment: &Comment, rev: &str, base: &str) -> Placed {
+/// The files a run of placements has already read.
+///
+/// Twenty remarks on one file used to cost twenty reads of it. Every count
+/// on the screen rests on this now, so it is asked once per file.
+#[derive(Default)]
+struct Files {
+    text: std::collections::HashMap<(String, String), Option<String>>,
+    blob: std::collections::HashMap<(String, String), Option<String>>,
+}
+
+impl Files {
+    async fn blob_of(&mut self, git: &Git, tree: &str, path: &str) -> Option<String> {
+        let key = (tree.to_owned(), path.to_owned());
+        if let Some(known) = self.blob.get(&key) {
+            return known.clone();
+        }
+        let found = blob_of(git, tree, path).await;
+        self.blob.insert(key, found.clone());
+
+        found
+    }
+
+    async fn text_of(&mut self, git: &Git, tree: &str, path: &str, blob: &str) -> Option<String> {
+        let key = (tree.to_owned(), path.to_owned());
+        if let Some(known) = self.text.get(&key) {
+            return known.clone();
+        }
+        let found = git.text(&["cat-file", "blob", blob]).await.ok();
+        self.text.insert(key, found.clone());
+
+        found
+    }
+
+    async fn message_of(&mut self, git: &Git, tree: &str) -> Option<String> {
+        let key = (tree.to_owned(), crate::commitmsg::PATH.to_owned());
+        if let Some(known) = self.text.get(&key) {
+            return known.clone();
+        }
+        let found = crate::commitmsg::text(git, tree).await;
+        self.text.insert(key, found.clone());
+
+        found
+    }
+}
+
+async fn one(git: &Git, comment: &Comment, rev: &str, base: &str, read: &mut Files) -> Placed {
+    locate(git, comment, rev, base, read).await
+}
+
+async fn locate(git: &Git, comment: &Comment, rev: &str, base: &str, read: &mut Files) -> Placed {
     let id = comment.id.clone();
 
     // A comment about the change belongs to no line and cannot be lost.
@@ -86,19 +125,19 @@ async fn locate(git: &Git, comment: &Comment, rev: &str, base: &str) -> Placed {
 
     // The commit message is not a blob. It is read from the commit, and the
     // line hash is the only way back to it.
-    let read = match crate::commitmsg::is(&anchor.file) {
-        true => crate::commitmsg::text(git, tree).await,
-        false => match blob_of(git, tree, &anchor.file).await {
+    let lines = match crate::commitmsg::is(&anchor.file) {
+        true => read.message_of(git, tree).await,
+        false => match read.blob_of(git, tree, &anchor.file).await {
             // One: the file did not change at all.
             Some(blob) if anchor.blob.as_deref() == Some(blob.as_str()) => {
                 return found(id, line, span, false);
             }
-            Some(blob) => git.text(&["cat-file", "blob", &blob]).await.ok(),
+            Some(blob) => read.text_of(git, tree, &anchor.file, &blob).await,
             None => None,
         },
     };
 
-    let Some(text) = read else {
+    let Some(text) = lines else {
         return gone(id);
     };
     let fresh: Vec<&str> = text.lines().collect();
@@ -124,7 +163,6 @@ fn nowhere(id: String) -> Placed {
         end_line: None,
         moved: false,
         lost: false,
-        answered: false,
     }
 }
 
@@ -136,7 +174,6 @@ fn gone(id: String) -> Placed {
         end_line: None,
         moved: false,
         lost: true,
-        answered: false,
     }
 }
 
@@ -147,7 +184,6 @@ fn found(id: String, line: usize, span: usize, moved: bool) -> Placed {
         end_line: Some(line + span),
         moved,
         lost: false,
-        answered: false,
     }
 }
 

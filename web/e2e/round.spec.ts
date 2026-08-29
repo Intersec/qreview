@@ -2,7 +2,7 @@
 //
 // The remarks of the first round are still there, keyed by the Change-Id.
 // What qreview owes the reader is the version they reviewed, found on its
-// own, and a word on which remarks the correction has answered.
+// own, and a word on which of the remarks belong to the round that is over.
 
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -26,7 +26,7 @@ async function remark(page: Page, line: string, body: string) {
   await expect(card(page, body)).toBeVisible();
 }
 
-test('the version that was reviewed comes back, and what is answered is said', async ({ page }) => {
+test('the version that was reviewed comes back, and its remarks say so', async ({ page }) => {
   server = await start();
   await page.goto(server.url);
   await openChange(page, /docs: rename the document/);
@@ -58,16 +58,19 @@ test('the version that was reviewed comes back, and what is answered is said', a
   // written on, marked, rather than in a list of its own.
   const done = page.locator('.above-diff .talk-stranded');
   await expect(done).toHaveCount(1);
-  await expect(done).toContainText('answered');
+  await expect(done).toContainText('previous');
+  await expect(done).toContainText('no line here');
   await expect(done).toContainText('docs/new-name.md:4');
   await expect(done).toContainText('This line says nothing.');
-  await expect(page.locator('.stranded-head')).toContainText('One remark below was answered');
+  await expect(page.locator('.stranded-head')).toContainText(
+    'One remark below was written on an earlier version',
+  );
 
   // The one still standing is on its line, where it always was.
   await expect(card(page, 'The title says nothing.')).toBeVisible();
 });
 
-test('the pane counts this round and lists the one before it apart', async ({ page }) => {
+test('the pane counts the current remarks and lists the previous ones apart', async ({ page }) => {
   server = await start();
   await page.goto(server.url);
   await openChange(page, /docs: rename the document/);
@@ -91,16 +94,16 @@ test('the pane counts this round and lists the one before it apart', async ({ pa
   // The round before is not counted, and it is not hidden either.
   const pane = page.locator('.comment-list');
   await expect(pane.locator('.list-head')).toContainText('Comments · 0');
-  await expect(pane.locator('.list-earlier')).toContainText('1 from an earlier version');
-  await expect(pane.locator('.list-row.is-earlier')).toContainText('Written in the first round.');
+  await expect(pane.locator('.list-previous')).toContainText('Previous · 1');
+  await expect(pane.locator('.list-row.is-previous')).toContainText('Written in the first round.');
 
   // And a remark of this round is counted, above the ones from before.
   await remark(page, '5', 'Written in the second round.');
   await expect(pane.locator('.list-head')).toContainText('Comments · 1');
-  await expect(pane.locator('.list-row:not(.is-earlier)')).toHaveCount(1);
+  await expect(pane.locator('.list-row:not(.is-previous)')).toHaveCount(1);
 });
 
-test('the answered remarks are dropped in one action', async ({ page }) => {
+test('the previous remarks with no line left are dropped in one action', async ({ page }) => {
   server = await start();
   await page.goto(server.url);
   await openChange(page, /docs: rename the document/);
@@ -121,7 +124,7 @@ test('the answered remarks are dropped in one action', async ({ page }) => {
   await openChange(page, /docs: rename the document/);
   await openFile(page, 'new-name.md');
 
-  await page.getByRole('button', { name: 'Delete every answered remark' }).click();
+  await page.getByRole('button', { name: 'Delete it' }).click();
   await expect(page.locator('.talk-stranded')).toHaveCount(0);
 });
 

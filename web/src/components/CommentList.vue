@@ -22,19 +22,19 @@ const emit = defineEmits<{
 
 const folded = ref(false);
 
-/// The count is of this round alone, like every other count on the screen
-/// and like the export. The rounds before are listed under it, and said to
-/// be from before.
+/// The count is of the current remarks alone, like every other count on the
+/// screen and like the export. The previous ones are listed under them, and
+/// said to be previous.
 const total = computed(() =>
-  props.written.reduce((sum, change) => sum + rounds(change).now.length, 0),
+  props.written.reduce((sum, change) => sum + rounds(change).current.length, 0),
 );
 
 /// The pane stands as long as the session holds anything at all. A round
-/// that is entirely answered counts nothing and must still be readable.
+/// whose remarks are all previous counts nothing and must still be read.
 const anything = computed(() => props.written.some((change) => change.comments.length > 0));
 
 /// The change being read first, the others in the order they came, and
-/// inside each one the round being written before the rounds before it.
+/// inside each one the current remarks before the previous ones.
 const groups = computed(() => {
   const here = props.written.filter((change) => change.key === props.openKey);
   const rest = props.written.filter((change) => change.key !== props.openKey);
@@ -95,7 +95,7 @@ function go(change: ChangeComments, comment: Comment) {
           {{ group.change.subject }}
         </p>
         <button
-          v-for="comment in group.now"
+          v-for="comment in group.current"
           :key="comment.id"
           type="button"
           class="row-button list-row"
@@ -106,16 +106,17 @@ function go(change: ChangeComments, comment: Comment) {
           <span class="list-gist">{{ gist(comment) }}</span>
         </button>
 
-        <!-- The rounds before this one. They are not counted and not
-           exported, and they are here because a remark is never hidden. -->
-        <p v-if="group.earlier.length" class="list-earlier">
-          {{ group.earlier.length }} from an earlier version
+        <!-- The previous remarks: written on a version the change no longer
+           carries. They are counted nowhere and exported nowhere, and they
+           are here because a remark is never hidden. -->
+        <p v-if="group.previous.length" class="list-previous">
+          Previous · {{ group.previous.length }}
         </p>
         <button
-          v-for="comment in group.earlier"
+          v-for="comment in group.previous"
           :key="comment.id"
           type="button"
-          class="row-button list-row is-earlier"
+          class="row-button list-row is-previous"
           :title="`${comment.anchor?.file ?? 'the change'} — ${gist(comment)}`"
           @click="go(group.change, comment)"
         >
