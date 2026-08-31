@@ -11,7 +11,16 @@ import { COMMIT_MSG, label } from '@/diff/paths';
 import { pairs } from '@/diff/pairs';
 import { places, slot } from '@/diff/drafts';
 import type { Mark } from '@/diff/segments';
-import type { Comment, FileDiff, Hunk, NewComment, PostedComment, Row, Side } from '@/api/types';
+import type {
+  Comment,
+  FileDiff,
+  Hunk,
+  NewComment,
+  PatchSet,
+  PostedComment,
+  Row,
+  Side,
+} from '@/api/types';
 
 const props = defineProps<{
   /// The change being read. An unfinished remark is kept under it.
@@ -33,6 +42,8 @@ const props = defineProps<{
   /// The sha the change carries now. A remark written on any other one is a
   /// previous remark: it says so, and it is counted nowhere.
   currentSha: string;
+  /// The versions of the change, so a previous remark names its patch set.
+  sets: PatchSet[];
   /// True while the reader is on a version that is not the newest. An older
   /// version is history: it is read, never written on.
   readOnly: boolean;
@@ -854,6 +865,7 @@ function toggle(row: Row | null, column: Side) {
         :key="comment.id"
         :comment="comment"
         :at="currentSha"
+        :sets="sets"
         :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
         :read-only="readOnly"
         @edit="(id, body) => emit('edit', id, body)"
@@ -896,6 +908,7 @@ function toggle(row: Row | null, column: Side) {
                 :key="comment.id"
                 :comment="comment"
                 :at="currentSha"
+                :sets="sets"
                 :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
                 :read-only="readOnly"
                 @edit="(id, body) => emit('edit', id, body)"
@@ -936,6 +949,7 @@ function toggle(row: Row | null, column: Side) {
                     :posted="atPosted(row, 'old')"
                     :writing="opening(row, 'old')"
                     :at="currentSha"
+                    :sets="sets"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
@@ -951,6 +965,7 @@ function toggle(row: Row | null, column: Side) {
                     :posted="atPosted(row, 'new')"
                     :writing="opening(row, 'new')"
                     :at="currentSha"
+                    :sets="sets"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
@@ -994,6 +1009,7 @@ function toggle(row: Row | null, column: Side) {
                     :posted="atPosted(row, 'old')"
                     :writing="opening(row, 'old')"
                     :at="currentSha"
+                    :sets="sets"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
@@ -1009,6 +1025,7 @@ function toggle(row: Row | null, column: Side) {
                     :posted="atPosted(row, 'new')"
                     :writing="opening(row, 'new')"
                     :at="currentSha"
+                    :sets="sets"
                     :read-only="readOnly"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
@@ -1048,6 +1065,7 @@ function toggle(row: Row | null, column: Side) {
                   :posted="atPosted(pair.left, 'old')"
                   :writing="opening(pair.left, 'old')"
                   :at="currentSha"
+                  :sets="sets"
                   :read-only="readOnly"
                   :draft="draftAt(pair.left, 'old')"
                   :label="boxLabel(pair.left, 'old')"
@@ -1063,6 +1081,7 @@ function toggle(row: Row | null, column: Side) {
                   :posted="atPosted(pair.right, 'new')"
                   :writing="opening(pair.right, 'new')"
                   :at="currentSha"
+                  :sets="sets"
                   :read-only="readOnly"
                   :draft="draftAt(pair.right, 'new')"
                   :label="boxLabel(pair.right, 'new')"
@@ -1100,6 +1119,7 @@ function toggle(row: Row | null, column: Side) {
                 :key="comment.id"
                 :comment="comment"
                 :at="currentSha"
+                :sets="sets"
                 :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
                 :read-only="readOnly"
                 @edit="(id, body) => emit('edit', id, body)"
@@ -1151,6 +1171,7 @@ function toggle(row: Row | null, column: Side) {
                     :posted="atPosted(row, column)"
                     :writing="opening(row, column)"
                     :at="currentSha"
+                    :sets="sets"
                     :read-only="readOnly"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
@@ -1205,6 +1226,7 @@ function toggle(row: Row | null, column: Side) {
                     :posted="atPosted(row, column)"
                     :writing="opening(row, column)"
                     :at="currentSha"
+                    :sets="sets"
                     :read-only="readOnly"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
@@ -1253,6 +1275,7 @@ function toggle(row: Row | null, column: Side) {
                   :posted="atPosted(row, column)"
                   :writing="opening(row, column)"
                   :at="currentSha"
+                  :sets="sets"
                   :read-only="readOnly"
                   :draft="draftAt(row, column)"
                   :label="boxLabel(row, column)"

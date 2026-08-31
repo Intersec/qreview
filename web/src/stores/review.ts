@@ -4,7 +4,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
-import { rounds } from '@/diff/versions';
+import { isCurrent, rounds } from '@/diff/versions';
 import type {
   ChangeComments,
   Comment,
@@ -206,7 +206,6 @@ export const useReview = defineStore('review', () => {
           }
           patchSets.value = versions.sets;
           gerrit.value = versions.gerrit;
-          carryPatchSet(versions.sets);
         })
         .catch(() => undefined);
       void loadPosted(key, undefined);
@@ -272,23 +271,6 @@ export const useReview = defineStore('review', () => {
     });
   }
 
-  /// Open the patch set the reader is on, when this change has one too.
-  ///
-  /// The list arrives after the change is open, so this is a second read.
-  /// The newest version is what stands on the screen until it lands, which
-  /// is the right thing to see while waiting.
-  function carryPatchSet(sets: PatchSet[]) {
-    const carry = wanted.value;
-    const last = sets[sets.length - 1]?.number;
-
-    if (carry === undefined || carry === last || patchSet.value === carry) {
-      return;
-    }
-    if (sets.some((one) => one.number === carry)) {
-      void openPatchSet(carry);
-    }
-  }
-
   /// Read another version of the change, against another one.
   async function openPatchSet(number: number | undefined, base?: string) {
     const key = changeKey.value;
@@ -299,7 +281,6 @@ export const useReview = defineStore('review', () => {
 
     await guard(async () => {
       patchSet.value = number;
-      wanted.value = number;
       against.value = base;
       review.value = await api.comments(key, number);
       void loadPosted(key, number);
@@ -399,17 +380,23 @@ export const useReview = defineStore('review', () => {
   /// never dropped, and the diff stands them on the file they were written
   /// on rather than in a list of their own.
   function stranded(): Comment[] {
-    const comments = review.value?.comments ?? [];
-
-    return comments.filter((c) => placement(c.id)?.lost);
+    return comments().filter((c) => placement(c.id)?.lost);
   }
 
-  /// The patch set the reader picked, carried from change to change.
+  /// The commit of the version on the screen.
   ///
-  /// Reading patch set 1 of one change and then opening another landed on
-  /// its newest version. The number is what the reader asked for, so it is
-  /// asked for again on every change that has it.
-  const wanted = ref<number | undefined>(undefined);
+  /// The diff shows the remarks written on it and no others: a remark of
+  /// another version speaks of code that is not there. The pane lists them
+  /// all, under the version each one belongs to.
+  const reading = computed(() => {
+    const last = patchSets.value[patchSets.value.length - 1];
+    const set =
+      patchSet.value === undefined
+        ? last
+        : patchSets.value.find((one) => one.number === patchSet.value);
+
+    return set?.commit ?? currentSha.value;
+  });
 
   /// The sha the change carries now.
   ///
@@ -430,9 +417,10 @@ export const useReview = defineStore('review', () => {
     return patchSet.value !== undefined && last !== undefined && patchSet.value !== last;
   });
 
-  /// The comments of the change being read.
+  /// The comments the diff shows: the ones written on the version on the
+  /// screen. See `reading`.
   function comments(): Comment[] {
-    return review.value?.comments ?? [];
+    return (review.value?.comments ?? []).filter((c) => isCurrent(c, reading.value));
   }
 
   async function reload() {
@@ -538,6 +526,7 @@ export const useReview = defineStore('review', () => {
     stranded,
     readingOlder,
     currentSha,
+    reading,
     posted,
     postedPlacement,
     postedStranded,

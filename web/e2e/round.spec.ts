@@ -26,45 +26,70 @@ async function remark(page: Page, line: string, body: string) {
   await expect(card(page, body)).toBeVisible();
 }
 
-test('the version that was reviewed comes back, and its remarks say so', async ({ page }) => {
+/// Review a change, then have the work corrected and the commit amended.
+///
+/// The remark is written on line 4, which the correction rewrites, so the
+/// version after it has no line for it.
+async function reviewThenCorrect(page: import('@playwright/test').Page, body: string) {
   server = await start();
   await page.goto(server.url);
   await openChange(page, /docs: rename the document/);
   await openFile(page, 'new-name.md');
+  await remark(page, '4', body);
 
-  await remark(page, '1', 'The title says nothing.');
-  await remark(page, '4', 'This line says nothing.');
-
-  // An agent answers the second remark and leaves the first alone.
   const repo = server.fixture.repo;
   server.kill();
   writeFileSync(
     join(repo, 'docs', 'new-name.md'),
-    '# A document\n\nIt has words in it.\nIt carries the answer now.\n',
+    '# A document\n\nIt has words in it.\nCorrected.\n',
   );
   execFileSync('git', ['add', '-A'], { cwd: repo });
   execFileSync('git', ['commit', '--amend', '--no-edit'], { cwd: repo });
 
-  // Round two, on the same repository and the same store, with no --prev.
   server = await start({ on: server.fixture });
   await page.goto(server.url);
   await openChange(page, /docs: rename the document/);
   await openFile(page, 'new-name.md');
+}
+
+test('the version that was reviewed comes back as a patch set', async ({ page }) => {
+  await reviewThenCorrect(page, 'This line says nothing.');
 
   // The version reviewed last time is offered, without being named.
   await expect(page.locator('#read-set option')).toHaveCount(2);
+  await expect(page.locator('#read-set')).toHaveValue('2');
 
-  // The remark whose line is gone stands at the top of the file it was
-  // written on, marked, rather than in a list of its own.
-  const done = page.locator('table.code .talk-stranded');
-  await expect(done).toHaveCount(1);
-  await expect(done).toContainText('previous');
-  await expect(done).toContainText('no line here');
-  await expect(done).toContainText('docs/new-name.md:4');
-  await expect(done).toContainText('This line says nothing.');
+  // Its remarks are not on the newest version: they speak of code that is
+  // not on the screen. The pane still lists them, under the version they
+  // were written on.
+  await expect(card(page, 'This line says nothing.')).toHaveCount(0);
+  await expect(page.locator('.comment-list .list-previous')).toContainText('previous');
+  await expect(page.locator('.comment-list .list-row.is-previous')).toContainText(
+    'This line says nothing.',
+  );
+});
 
-  // The one still standing is on its line, where it always was.
-  await expect(card(page, 'The title says nothing.')).toBeVisible();
+test('a remark shows again on the version it was written on', async ({ page }) => {
+  await reviewThenCorrect(page, 'This line says nothing.');
+  await page.locator('#read-set').selectOption('1');
+
+  // On its own version the line is there, so the remark is on it, and it
+  // says which patch set and which sha it belongs to.
+  const shown = card(page, 'This line says nothing.');
+  await expect(shown).toBeVisible();
+  await expect(shown).toContainText('previous');
+  await expect(shown).toContainText(/patch set 1 · [0-9a-f]{8}/);
+});
+
+test('a previous remark is read, never edited and never deleted', async ({ page }) => {
+  await reviewThenCorrect(page, 'This line says nothing.');
+  await page.locator('#read-set').selectOption('1');
+
+  // The round it belongs to is over. It is a record of that round, and a
+  // record that can be rewritten is not one.
+  const shown = card(page, 'This line says nothing.');
+  await expect(shown).toBeVisible();
+  await expect(shown.getByRole('button')).toHaveCount(0);
 });
 
 test('the pane counts the current remarks and lists the previous ones apart', async ({ page }) => {
@@ -105,78 +130,13 @@ test('the pane counts the current remarks and lists the previous ones apart', as
   await expect(pane.locator('.list-row:not(.is-previous)')).toHaveCount(1);
 });
 
-test('a previous remark is read, never edited and never deleted', async ({ page }) => {
-  server = await start();
-  await page.goto(server.url);
-  await openChange(page, /docs: rename the document/);
-  await openFile(page, 'new-name.md');
-  await remark(page, '4', 'This line says nothing.');
-
-  // While it is the current round, it is the reader's to change.
-  await expect(
-    card(page, 'This line says nothing.').getByRole('button', { name: 'Edit' }),
-  ).toBeVisible();
-
-  const repo = server.fixture.repo;
-  server.kill();
-  writeFileSync(
-    join(repo, 'docs', 'new-name.md'),
-    '# A document\n\nIt has words in it.\nAnswered.\n',
-  );
-  execFileSync('git', ['add', '-A'], { cwd: repo });
-  execFileSync('git', ['commit', '--amend', '--no-edit'], { cwd: repo });
-
-  server = await start({ on: server.fixture });
-  await page.goto(server.url);
-  await openChange(page, /docs: rename the document/);
-  await openFile(page, 'new-name.md');
-
-  // The round it belongs to is over. It is a record of that round, and a
-  // record that can be rewritten is not one.
-  const previous = page.locator('.talk-previous');
-  await expect(previous).toHaveCount(1);
-  await expect(previous).toContainText('This line says nothing.');
-  await expect(previous.getByRole('button')).toHaveCount(0);
-});
-
 test('an older version is read, not written on', async ({ page }) => {
-  server = await start();
-  await page.goto(server.url);
-  await openChange(page, /docs: rename the document/);
-  await openFile(page, 'new-name.md');
-  await remark(page, '1', 'The title says nothing.');
-
-  const repo = server.fixture.repo;
-  server.kill();
-  writeFileSync(
-    join(repo, 'docs', 'new-name.md'),
-    '# A document\n\nIt has words in it.\nSomething else.\n',
-  );
-  execFileSync('git', ['add', '-A'], { cwd: repo });
-  execFileSync('git', ['commit', '--amend', '--no-edit'], { cwd: repo });
-
-  server = await start({ on: server.fixture });
-  await page.goto(server.url);
-  await openChange(page, /docs: rename the document/);
-  await openFile(page, 'new-name.md');
-
-  // A remark of this round, on the newest version, is the reader's to
-  // correct.
-  await remark(page, '1', 'And the title still says nothing.');
-  await expect(
-    card(page, 'And the title still says nothing.').getByRole('button', { name: 'Edit' }),
-  ).toBeVisible();
-
-  // On the version before it, every remark is history.
+  await reviewThenCorrect(page, 'This line says nothing.');
   await page.locator('#read-set').selectOption('1');
-  await expect(card(page, 'And the title still says nothing.')).toBeVisible();
-  await expect(
-    card(page, 'And the title still says nothing.').getByRole('button', { name: 'Edit' }),
-  ).toHaveCount(0);
 
-  // And nothing invites a new one there. A remark written on an older
-  // version would be anchored on the newest, at the line numbers of this
-  // one, which is a remark on a line nobody chose.
+  // Nothing invites a remark there. One written on an older version would be
+  // anchored on the newest, at the line numbers of this one, which is a
+  // remark on a line nobody chose.
   await expect(page.locator('.file-bar')).toContainText('reading an older version');
   await expect(page.locator('td.gutter-comment')).toHaveCount(0);
   await page.keyboard.press('j');

@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import CommentBox from './CommentBox.vue';
 import { render } from '@/diff/markdown';
 import { isCurrent } from '@/diff/versions';
-import type { Comment } from '@/api/types';
+import type { Comment, PatchSet } from '@/api/types';
 
 const props = defineProps<{
   comment: Comment;
@@ -16,6 +16,9 @@ const props = defineProps<{
   /// The sha the change carries now. A remark written on any other one is a
   /// previous remark: it is counted nowhere and exported nowhere.
   at: string;
+  /// The versions of the change, so a previous remark can name the patch set
+  /// it belongs to as well as the sha. A sha alone is a needle in a reflog.
+  sets?: PatchSet[];
 }>();
 const emit = defineEmits<{ edit: [id: string, body: string]; remove: [id: string] }>();
 
@@ -40,6 +43,11 @@ const version = computed(() =>
   isCurrent(props.comment, props.at) ? '' : props.comment.commit.slice(0, 8),
 );
 
+/// The patch set that version was, when the change still has it in its list.
+const patchSet = computed(
+  () => props.sets?.find((set) => set.commit === props.comment.commit)?.number,
+);
+
 /// A remark that cannot be edited or deleted.
 ///
 /// A previous remark belongs to a round that is over, and the version it
@@ -61,7 +69,8 @@ const frozen = computed(() => props.readOnly || version.value !== '');
       <span v-if="stranded" class="talk-tag">no line here</span>
       <code v-if="stranded" class="was-on">{{ place }}</code>
       <span class="spacer"></span>
-      <span v-if="version">on {{ version }}</span>
+      <span v-if="version && patchSet">patch set {{ patchSet }} · {{ version }}</span>
+      <span v-else-if="version">{{ version }}</span>
     </p>
 
     <div class="talk-body">

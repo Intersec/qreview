@@ -6,7 +6,7 @@
 import CommentBox from './CommentBox.vue';
 import CommentCard from './CommentCard.vue';
 import PostedCard from './PostedCard.vue';
-import type { Comment, PostedComment } from '@/api/types';
+import type { Comment, PatchSet, PostedComment } from '@/api/types';
 
 defineProps<{
   comments: Comment[];
@@ -17,8 +17,10 @@ defineProps<{
   writing: boolean;
   /// True on a version that is not the newest. History is read, not edited.
   readOnly: boolean;
-  /// The commit being read, so a remark from another version says which.
+  /// The sha the change carries now, so a previous remark says so.
   at: string;
+  /// The versions of the change, so a previous remark names its patch set.
+  sets: PatchSet[];
   /// Where the browser keeps what is typed and not saved.
   draft: string;
   label: string;
@@ -38,6 +40,7 @@ const emit = defineEmits<{
     :key="comment.id"
     :comment="comment"
     :at="at"
+    :sets="sets"
     :read-only="readOnly"
     @edit="(id, body) => emit('edit', id, body)"
     @remove="(id) => emit('remove', id)"

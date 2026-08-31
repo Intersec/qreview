@@ -513,14 +513,22 @@ remarks and no others: a round that is over must not be handed to an agent
 again, or it does work that is done. The remarks Gerrit holds are counted
 nowhere either, for the same reason and by the same rule.
 
-Nothing is hidden. A previous remark is on the line it anchors to, grey rather
-than the draft yellow, tagged `previous` and naming its version. The pane
-lists them under **Previous**.
+**The diff shows the remarks of the version on the screen, and no others.** A
+remark of another version speaks of code that is not there. Open the patch set
+it was written on and it is on its line, grey rather than the draft yellow,
+tagged `previous`, naming the patch set and the sha. Nothing is hidden: the
+pane lists every remark of the change, under the version each one belongs to.
 
 **A previous remark is read, and never written on.** It has no Edit and no
 Delete: the round it belongs to is over, and a record that can be rewritten is
-not a record. Reading a version that is not the newest freezes the current
-remarks the same way, for the same reason.
+not a record. A version that is not the newest takes no new remark either: one
+written there would be anchored on the newest version, at the line numbers of
+the one on the screen.
+
+**A change opens on its newest version, always.** The number of a patch set
+means nothing across changes: patch set 4 of one is not the work of patch set
+4 of another, and a reader who opened an old version of one change did not ask
+for an old version of the next.
 
 **A remark whose line the version has lost falls back rather than gives up.**
 The file it was written on is the nearest true place, and when the change no

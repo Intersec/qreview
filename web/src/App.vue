@@ -351,6 +351,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
             :stranded="stranded"
             :paths="paths"
             :current-sha="currentSha"
+            :sets="patchSets"
             :placement="review.placement"
             :posted="posted.comments"
             :posted-placement="review.postedPlacement"
