@@ -8,3 +8,6 @@
   change on the server.
 - A version that is only on the server says when it was pushed. It showed no
   date at all.
+- Each version in the picker says whether the server knows it: `Patch set 3`
+  when it does, `Local` when it does not. A version whose commit is not in
+  this clone still says `· not fetched`.

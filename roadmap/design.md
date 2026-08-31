@@ -573,6 +573,13 @@ Gerrit owns the numbering of the versions it knows, because those numbers are
 what a reviewer on the server sees. A version Gerrit never saw is not a patch
 set of the change and takes no number of one: the interface calls it **local**.
 
+Each version says where it is, because the two facts are separate. The name
+says whether the server knows it: `Patch set 3`, or `Local`. The mark after
+the date says when the commit is not in this clone: `· not fetched`, and a
+version that is here carries nothing. A mark that reads the same on every
+version says nothing at all, and an amended-away version is often still in the
+object database, so `here` was on most of them.
+
 ### 6.2 The query
 
 ```sh

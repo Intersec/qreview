@@ -32,10 +32,12 @@ test('the change carries the number the server gave it', async ({ page }) => {
   await expect(bar).toContainText('NEW');
 });
 
-test('the server owns the numbering, and says what is not here yet', async ({ page }) => {
+test('every version says whether the server has it, and whether we do', async ({ page }) => {
   const options = page.locator('#read-set option');
 
   await expect(options).toHaveCount(2);
+  // The server knows both, so both carry the number the server gave. One of
+  // them is not in this clone yet, and the other is.
   await expect(options.nth(0)).toContainText('Patch set 1');
   await expect(options.nth(0)).toContainText('not fetched');
   await expect(options.nth(1)).toContainText('Patch set 2');
