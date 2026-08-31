@@ -38,6 +38,9 @@ pub struct Session {
     pub gerrit: Option<Coordinates>,
     /// Show the tracked changes that are not committed as a change.
     pub worktree: bool,
+    /// The earlier versions of a change that carries no `Change-Id`, found
+    /// in the reflog. See `reflog.rs`.
+    linked: std::collections::HashMap<String, Vec<String>>,
     /// One query per change, kept for the life of the run.
     gerrit_answers: tokio::sync::Mutex<std::collections::HashMap<String, Option<gerrit::Change>>>,
 }
@@ -117,15 +120,33 @@ impl Session {
             prevs,
             gerrit,
             worktree: opts.worktree,
+            linked: std::collections::HashMap::new(),
             gerrit_answers: tokio::sync::Mutex::new(std::collections::HashMap::new()),
         };
         session.make_keys_unique();
+        session.link_versions().await;
         session.count_comments();
         session.count_patch_sets().await;
         session.refresh_worktree().await;
         session.report_lost_prevs().await;
 
         Ok(session)
+    }
+
+    /// Find the earlier versions of the changes that carry no `Change-Id`.
+    ///
+    /// A `Change-Id` is what keeps a review under one key across an amend.
+    /// Without one the key follows the sha, so the round before is filed
+    /// under a name nothing claims. The reflog still has that commit, and
+    /// `reflog.rs` says which of its commits belong to which change.
+    ///
+    /// Nothing is moved: the store keeps every file where it is. The linked
+    /// versions become patch sets, and their remarks are read as remarks of
+    /// the change they belong to, which is what they always were.
+    async fn link_versions(&mut self) {
+        self.linked =
+            crate::reflog::earlier_versions(&self.git, &self.series.changes, &self.series.head)
+                .await;
     }
 
     /// Load the next batch, from the commit the boundary named.
@@ -170,6 +191,7 @@ impl Session {
         self.series.boundary = batch.boundary;
         self.plan = plan;
         self.make_keys_unique();
+        self.link_versions().await;
         self.count_comments();
         self.count_patch_sets().await;
 
@@ -294,6 +316,13 @@ impl Session {
             }
             if !out.contains(&comment.commit) {
                 out.push(comment.commit.clone());
+            }
+        }
+
+        // And the ones the reflog links to a change with no `Change-Id`.
+        for commit in self.linked.get(key).into_iter().flatten() {
+            if commit != current && !out.contains(commit) {
+                out.push(commit.clone());
             }
         }
         out
@@ -887,9 +916,26 @@ impl Session {
         }
     }
 
-    /// The review of a change.
+    /// The review of a change: its own remarks, and the ones written on the
+    /// versions the reflog links to it.
+    ///
+    /// A change with no `Change-Id` is a new key at every amend, so the
+    /// round before it sits under the key of a commit nothing points at. The
+    /// remarks are read here rather than moved: the store keeps every file
+    /// where it is, and nothing is rewritten on a guess.
+    ///
+    /// Read only. A write goes to the store under the key of the change it
+    /// is written on, never through this.
     pub fn comments(&self, key: &str, subject: &str) -> Result<ChangeFile> {
-        comments::read(&self.store, key, subject)
+        let mut file = comments::read(&self.store, key, subject)?;
+
+        for commit in self.linked.get(key).into_iter().flatten() {
+            let Ok(older) = comments::read(&self.store, &format!("sha-{commit}"), "") else {
+                continue;
+            };
+            file.comments.extend(older.comments);
+        }
+        Ok(file)
     }
 
     /// Write a comment on a change.

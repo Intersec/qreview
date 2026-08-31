@@ -1665,6 +1665,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_change_with_no_change_id_finds_its_earlier_version() {
+        // No Change-Id, so the key follows the sha and an amend files the
+        // next round under a new name. The reflog still has the old commit.
+        let repo = build_repo(&[
+            commit("base").file("base.txt", "0\n"),
+            commit("work: no Change-Id here").file("a.txt", "one\ntwo\n"),
+        ])
+        .await;
+        let before = repo.sha("HEAD").await;
+
+        json(
+            server(&repo).await,
+            post(
+                &format!("/api/changes/sha-{before}/comments"),
+                r#"{"scope":"line","file":"a.txt","side":"new","startLine":2,"body":"why two"}"#,
+            ),
+        )
+        .await;
+
+        std::fs::write(repo.path().join("a.txt"), "one\nTWO\n").unwrap();
+        repo.git(&["add", "-A"]).await;
+        repo.git(&["commit", "--amend", "--no-edit"]).await;
+        let after = repo.sha("HEAD").await;
+
+        // The version before the amend is a patch set, with nobody naming it.
+        let (status, sets) = json(
+            server(&repo).await,
+            get_with_cookie(&format!("/api/changes/sha-{after}/patchsets"), TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let list = sets["sets"].as_array().unwrap();
+        assert_eq!(list.len(), 2, "the reflog holds the version before it");
+        assert_eq!(list[0]["commit"], before);
+
+        // And the remark written on it is read as a remark of this change,
+        // under the version it belongs to. The store moved nothing.
+        let (_, pane) = json(server(&repo).await, get_with_cookie("/api/comments", TOKEN)).await;
+        let change = &pane[0];
+
+        assert_eq!(change["key"], format!("sha-{after}"));
+        assert_eq!(change["comments"][0]["body"], "why two");
+        assert_eq!(change["comments"][0]["commit"], before);
+        assert_eq!(change["versions"][0]["commit"], before);
+
+        // It belongs to a round that is over, so it is counted nowhere.
+        let (_, body) = json(server(&repo).await, get_with_cookie("/api/session", TOKEN)).await;
+        assert_eq!(body["series"]["changes"][0]["commentCount"], 0);
+    }
+
+    #[tokio::test]
     async fn a_remark_written_on_this_version_names_it() {
         let repo = fixture().await;
         let app = server(&repo).await;

@@ -19,6 +19,7 @@ pub mod lang;
 pub mod model;
 pub mod offsets;
 pub mod patchset;
+pub mod reflog;
 pub mod repo;
 pub mod report;
 pub mod series;

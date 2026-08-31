@@ -525,6 +525,23 @@ not a record. A version that is not the newest takes no new remark either: one
 written there would be anchored on the newest version, at the line numbers of
 the one on the screen.
 
+**A change with no `Change-Id` finds its earlier versions in the reflog.**
+The `Change-Id` is what keeps a review under one key across an amend. Without
+one the key follows the sha, so the round before sits under the key of a
+commit nothing points at. Git has not lost that commit: an amend stops
+pointing at it, and the reflog keeps the pointer.
+
+A commit of the reflog is an earlier version of a change when it carries the
+same subject, when the series cannot reach it — a commit of the history that
+shares a subject is left alone — and when that subject names exactly one
+change of the series. It becomes a patch set, and its remarks are read as
+remarks of that change.
+
+Nothing is moved. The store keeps every file where it is, and a link that is
+wrong costs a patch set in a list and a read-only remark from a round that is
+over. A change that carries a `Change-Id` is left out of this: its identity is
+in its message, and guessing beside that is only a way to be wrong.
+
 **A change opens on its newest version, always.** The number of a patch set
 means nothing across changes: patch set 4 of one is not the work of patch set
 4 of another, and a reader who opened an old version of one change did not ask
