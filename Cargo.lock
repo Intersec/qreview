@@ -688,7 +688,7 @@ dependencies = [
 
 [[package]]
 name = "qreview"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1215,7 +1215,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "tempfile",

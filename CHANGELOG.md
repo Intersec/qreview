@@ -12,6 +12,46 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.8.0]
+
+### Added
+
+- **A change with no `Change-Id` finds its earlier versions too.** The key of
+  such a change follows the sha, so an amend used to leave the round before it
+  under a name nothing claimed, and the review with it. Git still has that
+  commit — an amend stops pointing at it, and the reflog keeps the pointer —
+  so qreview reads the reflog and links it: the version becomes a patch set
+  and its remarks come back, read only, under the version they belong to.
+  Nothing in the store is moved.
+
+### Changed
+
+- The diff shows the remarks of the version on the screen and no others. A
+  remark of another version speaks of code that is not there; open the patch
+  set it was written on and it is on its line. The pane lists them all, as
+  before.
+- A previous remark names the patch set it belongs to as well as the sha. A
+  sha alone is a needle in a reflog.
+
+### Fixed
+
+- A change opens on its newest version again. Reading patch set 4 of one
+  change and opening another landed on patch set 4 of that one, which is not
+  the same work and is rarely what anybody wants. The number of a patch set
+  means nothing across changes.
+- The commit under review is the last version in the picker again. A version
+  the server never saw was numbered after the newest and landed at the end, so
+  a change opened on an old version whenever a remark had been written on one
+  before it was pushed. The list follows the order the versions were written,
+  and the one being reviewed is last.
+- A version Gerrit never saw is called **Local** rather than given a patch set
+  number of its own. That number meant nothing to anybody reading the same
+  change on the server.
+- A version that is only on the server says when it was pushed. It showed no
+  date at all.
+- Each version in the picker says whether the server knows it: `Patch set 3`
+  when it does, `Local` when it does not. A version whose commit is not in
+  this clone still says `· not fetched`.
 ## [0.7.0]
 
 ### Changed
