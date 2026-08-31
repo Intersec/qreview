@@ -93,7 +93,7 @@ fn parse(out: &str) -> Vec<CommitInfo> {
 }
 
 /// A count of seconds since the epoch, as a date the interface can show.
-fn iso_utc(seconds: &str) -> String {
+pub fn iso_utc(seconds: &str) -> String {
     let Ok(seconds) = seconds.trim().parse::<i64>() else {
         return String::new();
     };

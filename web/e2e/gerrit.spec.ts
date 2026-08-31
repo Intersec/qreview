@@ -50,3 +50,17 @@ test('opening a version that is on the server fetches it', async ({ page }) => {
     timeout: 15000,
   });
 });
+
+test('the version being reviewed is the last one in the list', async ({ page }) => {
+  // Patch set 1 is on the server and not here; patch set 2 is the commit
+  // under review. The one being reviewed is what the list ends on, and what
+  // the picker opens on.
+  const options = page.locator('#read-set option');
+
+  await expect(options.nth(1)).toContainText('Patch set 2');
+  await expect(page.locator('#read-set')).toHaveValue('2');
+
+  // Every version says when it was pushed or written, the server's included.
+  await expect(options.nth(0)).toContainText(/\d{4}-\d{2}-\d{2}/);
+  await expect(options.nth(1)).toContainText(/\d{4}-\d{2}-\d{2}/);
+});

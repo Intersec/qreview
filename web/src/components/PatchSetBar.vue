@@ -26,11 +26,17 @@ const rebased = computed(
   () => target.value && baseSet.value && target.value.parent !== baseSet.value.parent,
 );
 
+/// What a version is called.
+///
+/// Gerrit owns the numbering of a change it knows, and a version it never
+/// saw is not a patch set of it: calling it one puts a number on the screen
+/// that means nothing to anybody reading the same change on the server.
 function label(set: PatchSet): string {
   const when = set.createdAt ? set.createdAt.slice(0, 10) : '';
   const where = set.available ? '' : ' · not fetched';
+  const name = props.gerrit && !set.gerritRef ? 'Local' : `Patch set ${set.number}`;
 
-  return `Patch set ${set.number} | ${set.commit.slice(0, 7)} ${when}${where}`;
+  return `${name} | ${set.commit.slice(0, 7)} ${when}${where}`;
 }
 
 function pickBase(value: string) {

@@ -115,12 +115,20 @@ fn entry(info: CommitInfo, origin: Origin, gerrit_ref: Option<String>) -> PatchS
 ///
 /// Gerrit owns the numbering: those numbers are what a reviewer on the server
 /// sees, and two people must mean the same thing by "patch set 2". A local
-/// commit that Gerrit already has keeps its number and is marked local. One
-/// it does not have comes after the highest number Gerrit gave.
+/// commit that Gerrit already has keeps its number and is marked local.
+///
+/// A version Gerrit never saw is not a patch set of it and takes no number of
+/// its own. It gets one past the highest, as a handle to open it by, and the
+/// interface calls it local rather than reading a number out to the reader.
+///
+/// The list is ordered the way the versions were written, and the commit
+/// under review is last whatever the dates say: it is the newest thing there
+/// is, and it is what a reader opens on.
 pub fn merge_gerrit(local: Vec<PatchSet>, remote: &[crate::gerrit::PatchSet]) -> Vec<PatchSet> {
     if remote.is_empty() {
         return local;
     }
+    let reviewed = local.last().map(|set| set.commit.clone());
 
     let mut out: Vec<PatchSet> = remote
         .iter()
@@ -129,7 +137,7 @@ pub fn merge_gerrit(local: Vec<PatchSet>, remote: &[crate::gerrit::PatchSet]) ->
             commit: set.revision.clone(),
             parent: None,
             origin: Origin::Gerrit,
-            created_at: String::new(),
+            created_at: commit::iso_utc(&set.created_on.to_string()),
             subject: String::new(),
             gerrit_ref: Some(set.git_ref.clone()),
             available: false,
@@ -155,7 +163,13 @@ pub fn merge_gerrit(local: Vec<PatchSet>, remote: &[crate::gerrit::PatchSet]) ->
         }
     }
 
-    out.sort_by_key(|set| set.number);
+    let under_review = |set: &PatchSet| Some(&set.commit) == reviewed.as_ref();
+    out.sort_by(|a, b| {
+        under_review(a)
+            .cmp(&under_review(b))
+            .then_with(|| a.created_at.cmp(&b.created_at))
+            .then_with(|| a.number.cmp(&b.number))
+    });
     out
 }
 
@@ -318,6 +332,80 @@ mod tests {
             merged[1].gerrit_ref.as_deref(),
             Some("refs/changes/21/12321/2")
         );
+    }
+
+    /// A version on the server, pushed at a moment of its own.
+    fn pushed(number: usize, revision: &str, created_on: i64) -> crate::gerrit::PatchSet {
+        crate::gerrit::PatchSet {
+            created_on,
+            ..remote(number, revision)
+        }
+    }
+
+    fn version(commit: &str, when: &str, origin: Origin) -> PatchSet {
+        PatchSet {
+            number: 0,
+            commit: commit.to_owned(),
+            parent: None,
+            origin,
+            created_at: when.to_owned(),
+            subject: "work".to_owned(),
+            gerrit_ref: None,
+            available: true,
+        }
+    }
+
+    #[test]
+    fn the_commit_under_review_is_the_last_version() {
+        // A version reviewed before anything was pushed, and never pushed
+        // itself. It used to land after the newest, because a local commit
+        // the server does not know was taken for a newer one.
+        let local = vec![
+            version("older", "2001-01-01T00:00:00Z", Origin::Prev),
+            version("head", "2002-01-01T00:00:00Z", Origin::Local),
+        ];
+        // 1000000000 is 2001-09-09, between the two.
+        let merged = merge_gerrit(
+            local,
+            &[pushed(1, "pushed", 1_000_000_000), remote(2, "head")],
+        );
+
+        let order: Vec<&str> = merged.iter().map(|set| set.commit.as_str()).collect();
+        assert_eq!(order, ["older", "pushed", "head"]);
+        assert_eq!(merged[2].origin, Origin::Local, "the one being reviewed");
+        assert_eq!(merged[1].number, 1, "Gerrit still owns its numbering");
+        assert_eq!(merged[2].number, 2);
+    }
+
+    #[test]
+    fn a_version_gerrit_never_saw_takes_a_number_past_the_highest() {
+        let local = vec![
+            version("older", "2001-01-01T00:00:00Z", Origin::Prev),
+            version("head", "2002-01-01T00:00:00Z", Origin::Local),
+        ];
+        let merged = merge_gerrit(
+            local,
+            &[pushed(1, "pushed", 1_000_000_000), remote(2, "head")],
+        );
+
+        // It is not a patch set of the change and takes no number of one.
+        // The interface calls it local; this is only a handle to open it by.
+        assert_eq!(merged[0].commit, "older");
+        assert_eq!(merged[0].number, 3);
+        assert!(merged[0].gerrit_ref.is_none());
+    }
+
+    #[test]
+    fn a_version_only_gerrit_has_carries_the_date_it_was_pushed() {
+        let merged = merge_gerrit(
+            vec![version("head", "2002-01-01T00:00:00Z", Origin::Local)],
+            &[remote(1, "pushed"), remote(2, "head")],
+        );
+
+        // `remote` pushes at the epoch. Without a date nothing can be put in
+        // order, and the picker showed a version with no date at all.
+        assert_eq!(merged[0].commit, "pushed");
+        assert_eq!(merged[0].created_at, "1970-01-01T00:00:00Z");
     }
 
     #[test]

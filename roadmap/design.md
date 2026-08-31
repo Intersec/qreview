@@ -567,6 +567,12 @@ it held anything or not.
 | Branch | `git show <rev>:.gerrit-branch` when that file exists in the commit, then the configuration, then the upstream branch name |
 | Change-Id | The commit trailer |
 
+The list of versions is ordered the way they were written, and the commit
+under review is last whatever the dates say: it is what a reader opens on.
+Gerrit owns the numbering of the versions it knows, because those numbers are
+what a reviewer on the server sees. A version Gerrit never saw is not a patch
+set of the change and takes no number of one: the interface calls it **local**.
+
 ### 6.2 The query
 
 ```sh
