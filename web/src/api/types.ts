@@ -7,6 +7,8 @@ export interface RepoInfo {
   root: string;
   remote: string | null;
   id: string;
+  /// What the repository is called, for a person to read.
+  name: string;
 }
 
 export interface ParentInfo {

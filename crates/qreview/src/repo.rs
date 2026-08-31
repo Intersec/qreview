@@ -26,9 +26,27 @@ pub async fn info(git: &Git) -> Result<RepoInfo> {
 
     Ok(RepoInfo {
         root: git.root().to_string_lossy().into_owned(),
+        name: name_of(git, canonical.as_deref()),
         remote: canonical,
         id: id_of(&seed),
     })
+}
+
+/// What to call the repository in front of a person.
+///
+/// The last part of the remote path, because that is what a developer calls
+/// the project. With no remote, the directory the checkout sits in.
+fn name_of(git: &Git, remote: Option<&str>) -> String {
+    if let Some(name) = remote.and_then(|url| url.rsplit('/').next())
+        && !name.is_empty()
+    {
+        return name.to_owned();
+    }
+
+    git.root()
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "this repository".to_owned())
 }
 
 async fn remote_url(git: &Git) -> Option<String> {
@@ -141,6 +159,7 @@ mod tests {
 
         assert_eq!(info.remote.as_deref(), Some("review.example.com/myproject"));
         assert_eq!(info.id.len(), 16);
+        assert_eq!(info.name, "myproject");
     }
 
     #[tokio::test]
@@ -151,6 +170,19 @@ mod tests {
 
         assert_eq!(info.remote, None);
         assert_eq!(info.id.len(), 16);
+        // The directory of the checkout is all there is to go on.
+        assert_eq!(info.name, git.root().file_name().unwrap().to_string_lossy());
+    }
+
+    #[tokio::test]
+    async fn a_nested_remote_path_names_the_project_alone() {
+        let repo = build_repo(&[commit("first").file("a", "1\n")]).await;
+        repo.remote("origin", "ssh://review.example.com/group/sub/myproject.git")
+            .await;
+
+        let git = Git::discover(repo.path()).await.unwrap();
+
+        assert_eq!(info(&git).await.unwrap().name, "myproject");
     }
 
     #[tokio::test]

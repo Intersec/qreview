@@ -815,18 +815,7 @@ impl Session {
 
     /// What the repository is called, for a person to read.
     pub fn project(&self) -> String {
-        if let Some(remote) = &self.repo.remote
-            && let Some(name) = remote.rsplit('/').next()
-            && !name.is_empty()
-        {
-            return name.to_owned();
-        }
-
-        self.git
-            .root()
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "this repository".to_owned())
+        self.repo.name.clone()
     }
 
     /// What Gerrit calls a change, when the server knows it.

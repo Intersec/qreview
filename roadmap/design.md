@@ -302,6 +302,13 @@ type Series = {
   boundary: Boundary;      // why the walk stopped
 };
 
+type RepoInfo = {
+  root: string;            // the top level directory
+  remote: string | null;   // the canonical remote URL, when there is one
+  id: string;              // what the comment store is keyed by
+  name: string;            // what to call it: the project, or the directory
+};
+
 type Boundary = {
   kind: 'merge' | 'tag' | 'base' | 'guess' | 'root';
   commit: string;          // the commit under the boundary, not loaded yet

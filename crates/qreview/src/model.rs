@@ -14,6 +14,9 @@ pub struct RepoInfo {
     pub remote: Option<String>,
     /// The identity the comment store is keyed by.
     pub id: String,
+    /// What the repository is called, for a person to read. The last part of
+    /// the remote path, or the name of the directory.
+    pub name: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

@@ -372,3 +372,19 @@ harder to find once the line numbers have drifted. An underline under the
 text breaks on a tab or a wide character. The `grep` convention, `:` after
 the number of a match and `-` after a context line, is a marker that a
 reader has to know to see.
+
+## 2026-08-31 — The name of the repository crosses the wire
+
+GitHub issue #17 asks for the repository and the commit title in the page
+title. The subject was already on the wire; the name of the repository was
+not. `Series.repo` carried the root path, the canonical remote URL, and the
+store identity, and none of those is what a person calls the project.
+
+`RepoInfo` gains `name`. `repo::info` computes it once, out of the last part
+of the remote path, or out of the directory of the checkout when there is no
+remote. That is the definition `Session::project()` held for the export, so
+the export and the page title now say the same word.
+
+The title reads `<repository> · <subject>`, and falls back to `qreview` until
+the series lands. The repository comes first because it does not change while
+the window is open, so a row of tabs sorts by review rather than by change.

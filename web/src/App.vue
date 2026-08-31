@@ -216,6 +216,18 @@ watch(
   { immediate: true },
 );
 
+/// The tab names the repository and the change being read.
+///
+/// A reader opens one window per review, and a row of tabs that all say
+/// `qreview` says nothing about which is which.
+watch(
+  [() => series.value?.repo.name, () => change.value?.subject],
+  ([repo, subject]) => {
+    document.title = [repo, subject].filter(Boolean).join(' · ') || 'qreview';
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
   review.load();
   window.addEventListener('keydown', onKey);
