@@ -177,7 +177,11 @@ export const useReview = defineStore('review', () => {
     });
   }
 
-  async function openChange(key: string, base?: MergeBase) {
+  /// Open a change: its files, its remarks, and the diff of one file.
+  ///
+  /// `prefer` names the file to open when the change has it. A refresh uses
+  /// it to leave the reader on the file that was on the screen.
+  async function openChange(key: string, base?: MergeBase, prefer?: string) {
     await guard(async () => {
       changeKey.value = key;
       mergeBase.value = base;
@@ -228,10 +232,42 @@ export const useReview = defineStore('review', () => {
         return;
       }
 
-      const first = files.value.find((f) => !f.binary);
+      const wanted = prefer ? files.value.find((f) => f.path === prefer && !f.binary) : undefined;
+      const first = wanted ?? files.value.find((f) => !f.binary);
       if (first) {
         await openFile(first.path);
       }
+    });
+  }
+
+  /// Read the repository again, and leave the reader where they were.
+  ///
+  /// The series on the screen is the one git held when the page loaded. A
+  /// commit amended, a commit added or a rebase leaves it stale, and nothing
+  /// on the screen says so. This is the reader asking what git holds now.
+  ///
+  /// A change that is still in the series opens again, on the file that was
+  /// open. One that is gone leaves the reader on the newest change, which is
+  /// what a fresh page would have shown.
+  async function refresh() {
+    await guard(async () => {
+      const body = await api.refresh();
+      series.value = body.series;
+      void readWritten();
+
+      const was = filePath.value;
+      const here =
+        body.series.changes.find((change) => change.key === changeKey.value) ??
+        body.series.changes[0];
+
+      if (!here) {
+        changeKey.value = null;
+        files.value = [];
+        filePath.value = null;
+        diff.value = null;
+        return;
+      }
+      await openChange(here.key, undefined, was ?? undefined);
     });
   }
 
@@ -560,6 +596,7 @@ export const useReview = defineStore('review', () => {
     onMerge,
     load,
     loadMore,
+    refresh,
     openChange,
     openFile,
     openMerge,

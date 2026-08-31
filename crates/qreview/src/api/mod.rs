@@ -71,6 +71,7 @@ impl AppState {
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/api/session", get(session))
+        .route("/api/session/refresh", post(refresh))
         .route("/api/series/extend", post(extend))
         .route("/api/changes/{key}", get(change).patch(mark_change))
         .route("/api/changes/{key}/files", get(files))
@@ -129,12 +130,28 @@ async fn session(State(state): State<AppState>) -> Json<SessionBody> {
     let mut session = state.session.write().await;
     session.refresh_worktree().await;
 
-    Json(SessionBody {
+    Json(body(&session, &state))
+}
+
+/// Read the repository again, and answer with the series it holds now.
+///
+/// `GET /api/session` catches up with the working tree alone, because a page
+/// load must not walk the history a second time. Here the reader asked for
+/// it, so the whole series is resolved again.
+async fn refresh(State(state): State<AppState>) -> Result<Json<SessionBody>, ApiError> {
+    let mut session = state.session.write().await;
+    session.refresh().await?;
+
+    Ok(Json(body(&session, &state)))
+}
+
+fn body(session: &Session, state: &AppState) -> SessionBody {
+    SessionBody {
         version: crate::version::VERSION,
         build: crate::version::LONG,
         series: session.series.clone(),
         config: state.config(),
-    })
+    }
 }
 
 #[derive(Deserialize)]
@@ -2288,5 +2305,96 @@ mod tests {
         assert_eq!(changes.len(), 5);
         assert_eq!(changes[0]["subject"], "change 9", "the head does not move");
         assert_eq!(changes[4]["subject"], "change 5");
+    }
+
+    #[tokio::test]
+    async fn a_refresh_reads_the_commits_git_holds_now() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        let (_, before) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+        assert_eq!(before["series"]["changes"][0]["subject"], "second: go on");
+
+        repo.add(&commit("third: one more").file("src/a.blk", "one\nTWO\nthree\n"))
+            .await;
+
+        let (status, after) = json(server, post("/api/session/refresh", "")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(after["series"]["changes"][0]["subject"], "third: one more");
+        assert_eq!(
+            after["series"]["changes"][1]["subject"], "second: go on",
+            "and the commits under it are the same ones"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refresh_follows_an_amend() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        let (_, before) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+        let was = before["series"]["changes"][0]["commit"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        std::fs::write(repo.path().join("src/a.blk"), "one\nTHREE\n").unwrap();
+        repo.git(&["add", "-A"]).await;
+        repo.git(&[
+            "commit",
+            "--amend",
+            "-m",
+            "second: say it better\n\nChange-Id: I8f3ac21\n",
+        ])
+        .await;
+
+        let (status, after) = json(server.clone(), post("/api/session/refresh", "")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let change = &after["series"]["changes"][0];
+        assert_eq!(change["key"], "I8f3ac21", "the Change-Id keeps the key");
+        assert_eq!(change["subject"], "second: say it better");
+        assert_ne!(change["commit"].as_str().unwrap(), was);
+
+        // And the diff the routes answer with is the one of that commit.
+        let (_, diff) = json(
+            server,
+            get_with_cookie("/api/changes/I8f3ac21/diff?file=src/a.blk", TOKEN),
+        )
+        .await;
+        assert_eq!(diff["hunks"][0]["rows"][2]["text"], "THREE");
+    }
+
+    #[tokio::test]
+    async fn a_refresh_loads_the_batches_the_reader_had_loaded() {
+        let repo = merged().await;
+        // One commit above the merge, so the first batch stops on it.
+        repo.add(&commit("after the merge").file("after.txt", "1\n"))
+            .await;
+        let server = server(&repo).await;
+
+        let (_, first) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+        assert_eq!(first["series"]["changes"].as_array().unwrap().len(), 1);
+
+        // The merge, and the two commits under it.
+        let (_, after) = json(server.clone(), post("/api/series/extend", r#"{"count":2}"#)).await;
+        assert_eq!(after["changes"].as_array().unwrap().len(), 4);
+
+        repo.add(&commit("on top of it all").file("after.txt", "2\n"))
+            .await;
+
+        let (status, again) = json(server, post("/api/session/refresh", "")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let changes = again["series"]["changes"].as_array().unwrap();
+        assert_eq!(changes[0]["subject"], "on top of it all");
+        assert_eq!(
+            changes.len(),
+            5,
+            "the batch the reader had loaded is read again, not lost"
+        );
+        assert_eq!(changes[2]["subject"], "Merge side into main");
+        assert_eq!(changes[3]["subject"], "main work");
     }
 }

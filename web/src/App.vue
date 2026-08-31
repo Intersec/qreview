@@ -271,6 +271,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         >
           Copy the series<span v-if="total" class="count"> · {{ total }}</span>
         </button>
+        <button
+          type="button"
+          class="chip"
+          aria-label="Read the repository again"
+          title="Read the repository again"
+          :disabled="busy"
+          @click="review.refresh()"
+        >
+          ⟳
+        </button>
         <button type="button" class="chip" title="Keyboard shortcuts ( ? )" @click="helping = true">
           ?
         </button>

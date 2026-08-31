@@ -47,6 +47,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   session: () => call<SessionBody>('/api/session'),
 
+  /// Read the repository again. The series comes back as git holds it now.
+  refresh: () => call<SessionBody>('/api/session/refresh', { method: 'POST' }),
+
   saveConfig: (patch: object) =>
     call<Config>('/api/config', {
       method: 'PUT',

@@ -162,6 +162,9 @@ body {
 .chip:hover {
   background: var(--edge-soft);
 }
+.chip:disabled {
+  opacity: 0.45;
+}
 .chip[aria-pressed='true'] {
   background: var(--pick);
   border-color: var(--pick-edge);

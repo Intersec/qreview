@@ -65,6 +65,8 @@ What the browser shows:
 - A patch set selector, and a diff between any two versions.
 - A merge read against the auto-merge, so you see the conflict resolution and
   not the whole branch it brought in.
+- A **⟳** button that reads the repository again, so an amend or a new
+  commit made while the page is open joins the series without a restart.
 - Two buttons that put the review in the clipboard, made to be pasted into a
   session with an AI agent.
 

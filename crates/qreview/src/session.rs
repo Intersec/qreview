@@ -38,6 +38,12 @@ pub struct Session {
     pub gerrit: Option<Coordinates>,
     /// Show the tracked changes that are not committed as a change.
     pub worktree: bool,
+    /// How the run asked for the series, kept so a refresh can ask again.
+    opts: Options,
+    /// The size of every batch the reader loaded past the first one. A
+    /// refresh replays them, so a series read down to a merge comes back as
+    /// deep as it was.
+    extends: Vec<usize>,
     /// The earlier versions of a change that carries no `Change-Id`, found
     /// in the reflog. See `reflog.rs`.
     linked: std::collections::HashMap<String, Vec<String>>,
@@ -120,6 +126,8 @@ impl Session {
             prevs,
             gerrit,
             worktree: opts.worktree,
+            opts: opts.clone(),
+            extends: Vec::new(),
             linked: std::collections::HashMap::new(),
             gerrit_answers: tokio::sync::Mutex::new(std::collections::HashMap::new()),
         };
@@ -190,12 +198,77 @@ impl Session {
         self.series.changes.extend(changes);
         self.series.boundary = batch.boundary;
         self.plan = plan;
+        self.extends.push(count);
         self.make_keys_unique();
         self.link_versions().await;
         self.count_comments();
         self.count_patch_sets().await;
 
         Ok(added)
+    }
+
+    /// Read the repository again, the way this run first read it.
+    ///
+    /// A commit amended, a commit added, a rebase, a branch checked out: the
+    /// series on the screen is the one git held when the page loaded, and
+    /// nothing in it says so. This is the reader asking what git holds now.
+    ///
+    /// The walk starts over from the head, and the batches the reader loaded
+    /// are replayed, so a series read down past a merge comes back as deep
+    /// as it was. A change the repository no longer holds leaves the series,
+    /// and its remarks stay in the store: nothing but the reader deletes a
+    /// remark, and a rebase away and back finds them again.
+    pub async fn refresh(&mut self) -> Result<()> {
+        let (plan, batch) = series::first_batch(&self.git, &self.opts).await?;
+
+        let oldest = batch
+            .changes
+            .last()
+            .map(|c| c.commit.clone())
+            .unwrap_or_else(|| plan.head.clone());
+
+        self.series = Series {
+            repo: self.repo.clone(),
+            head: plan.head.clone(),
+            oldest,
+            changes: batch.changes,
+            boundary: batch.boundary,
+        };
+        self.plan = plan;
+
+        // The head can be another commit now, and the branch a change is
+        // pushed to is read from the head.
+        self.gerrit = match self.opts.gerrit {
+            true => {
+                coords_of(
+                    &self.git,
+                    &self.series.head,
+                    self.opts.integration_branch.as_deref(),
+                )
+                .await
+            }
+            false => None,
+        };
+        // A patch set pushed since the page loaded is part of what git holds
+        // now, so the answer kept for the run is thrown away.
+        self.gerrit_answers.lock().await.clear();
+
+        for count in std::mem::take(&mut self.extends) {
+            // The boundary can be gone, and then there is nothing to walk.
+            // That is an answer, not a failure.
+            if let Err(error) = self.extend(count).await {
+                eprintln!("qreview: the older commits could not be read again: {error}");
+                break;
+            }
+        }
+
+        self.make_keys_unique();
+        self.link_versions().await;
+        self.count_comments();
+        self.count_patch_sets().await;
+        self.refresh_worktree().await;
+
+        Ok(())
     }
 
     /// Put the work that is not committed at the top of the series, take it

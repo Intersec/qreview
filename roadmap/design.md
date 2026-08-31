@@ -688,6 +688,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | Method and route | What it does |
 |---|---|
 | `GET /api/session` | The repository, the first batch of the series, the tool version and the commit it was built from |
+| `POST /api/session/refresh` | Resolve the series again, and answer with what git holds now |
 | `POST /api/series/extend` | Load the next batch. Body: `{ "count": 5, "parent": 1 }` |
 | `GET /api/changes/:key` | The change, its patch sets, its comment count |
 | `PATCH /api/changes/:key` | Mark the change read, or unread |
@@ -717,6 +718,11 @@ and on a merge `automerge` (its default), `parent1` or `parent2`.
 
 One file at a time on the diff route. A change with 200 files must not build
 200 diffs to show the first one.
+
+`GET /api/session` catches up with the working tree, and nothing else: a page
+load must not walk the history a second time. `POST /api/session/refresh` is
+the reader asking outright, so it resolves the head and the base again, and
+replays the batches the reader had loaded.
 
 ### 8.1 One list, four counts
 

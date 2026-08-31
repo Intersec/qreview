@@ -388,3 +388,24 @@ the export and the page title now say the same word.
 The title reads `<repository> · <subject>`, and falls back to `qreview` until
 the series lands. The repository comes first because it does not change while
 the window is open, so a row of tabs sorts by review rather than by change.
+
+## 2026-08-31 — A refresh that resolves the series again
+
+GitHub issue #16 asks for a button that reads the current state of the
+repository. `GET /api/session` already caught up with the working tree at
+every page load, and nothing else: a commit amended or added left the series
+stale, and only a restart of the tool fixed it.
+
+`POST /api/session/refresh` resolves the head and the base again, out of the
+`Options` the run started with. The session keeps those options now, and the
+size of every batch the reader loaded, so a series read down past a merge
+comes back as deep as it was. A page load stays cheap: it must not walk the
+history a second time, and only the reader asking outright does.
+
+Three things are read again with the series: the Gerrit coordinates, because
+the head can be another commit and the branch is read from it; the answer
+kept for each Gerrit change, because a patch set pushed since the page loaded
+is part of what the repository holds now; and the comment counts.
+
+Nothing is deleted. A change the walk no longer meets leaves the series, and
+its remarks stay in the store, so a rebase away and back finds them again.
