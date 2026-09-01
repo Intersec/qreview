@@ -216,14 +216,16 @@ watch(
   { immediate: true },
 );
 
-/// The tab names the repository and the change being read.
+/// The tab names the tool, then the repository and the change being read.
 ///
-/// A reader opens one window per review, and a row of tabs that all say
-/// `qreview` says nothing about which is which.
+/// The name comes first, so a tab is qreview at a glance among the other
+/// tabs of the browser. The rest follows, because a reader opens one window
+/// per review and a row of tabs that all say `qreview` says nothing about
+/// which is which.
 watch(
   [() => series.value?.repo.name, () => change.value?.subject],
   ([repo, subject]) => {
-    document.title = [repo, subject].filter(Boolean).join(' · ') || 'qreview';
+    document.title = ['qreview', repo, subject].filter(Boolean).join(' · ');
   },
   { immediate: true },
 );

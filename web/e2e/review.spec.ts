@@ -21,12 +21,12 @@ test('the series stops at the merge and says so', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Load 5 older' })).toBeVisible();
 });
 
-test('the tab names the repository and the change', async ({ page }) => {
+test('the tab names the tool, the repository and the change', async ({ page }) => {
   // The page opens on the newest change of the series.
-  await expect(page).toHaveTitle('myproject · docs: rename the document');
+  await expect(page).toHaveTitle('qreview · myproject · docs: rename the document');
 
   await openChange(page, /net: retry the read/);
-  await expect(page).toHaveTitle('myproject · net: retry the read');
+  await expect(page).toHaveTitle('qreview · myproject · net: retry the read');
 });
 
 test('a change shows its files and the first diff', async ({ page }) => {
