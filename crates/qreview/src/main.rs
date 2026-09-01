@@ -85,6 +85,10 @@ async fn main() -> Result<()> {
     let token = auth::new_token();
     let state = AppState::new(session, token.clone()).with_config(config.clone(), root.clone());
 
+    // While the reader reads the change the page opens on, the server reads
+    // the file list of the others. See `api::read_ahead`.
+    api::read_ahead(state.clone());
+
     serve(cli.port, api::app(state), &token, cli.no_open).await
 }
 

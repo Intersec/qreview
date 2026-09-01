@@ -42,6 +42,49 @@ impl Default for How {
     }
 }
 
+/// The file lists a run has already read, keyed by the pair of trees.
+///
+/// Rename and copy detection is the expensive half of a diff, and the answer
+/// never moves: a commit is immutable, and the synthetic commit of the
+/// working tree gets a new hash whenever the tree changes.
+///
+/// It is shared rather than owned, so the task that reads the series ahead of
+/// the reader fills the same one, without holding the session.
+#[derive(Default)]
+pub struct FileLists {
+    kept: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<Vec<FileEntry>>>>,
+}
+
+impl FileLists {
+    /// The files of a pair of trees, from what is kept or from git.
+    ///
+    /// Every caller gets its own copy, because a reader edits what it takes:
+    /// the language of each entry is filled in, and between two patch sets
+    /// the rows the rebase brought are dropped.
+    pub async fn of(&self, git: &Git, base: &str, rev: &str, how: &How) -> Result<Vec<FileEntry>> {
+        // Of the three options, only `-w` changes which files differ.
+        let key = format!("{base} {rev} {}", how.ignore_ws);
+
+        if let Some(hit) = self.kept.lock().unwrap().get(&key) {
+            crate::trace::note(|| format!("file list of {rev}, from the cache"));
+            return Ok(hit.as_ref().clone());
+        }
+
+        let entries = files(git, base, rev, how).await?;
+        self.kept
+            .lock()
+            .unwrap()
+            .insert(key, std::sync::Arc::new(entries.clone()));
+
+        Ok(entries)
+    }
+
+    /// How many lists are kept. What the read-ahead task is judged by.
+    pub fn count(&self) -> usize {
+        self.kept.lock().unwrap().len()
+    }
+}
+
 /// The files a change touches, with the counts and no content.
 ///
 /// One call, two output formats. `--raw` names the status of each file and

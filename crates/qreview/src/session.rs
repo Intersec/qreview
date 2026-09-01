@@ -49,12 +49,9 @@ pub struct Session {
     linked: std::collections::HashMap<String, Vec<String>>,
     /// One query per change, kept for the life of the run.
     gerrit_answers: tokio::sync::Mutex<std::collections::HashMap<String, Option<gerrit::Change>>>,
-    /// The file list of a pair of trees, kept for the life of the run.
-    ///
-    /// Rename and copy detection is the expensive half of a diff, and the
-    /// answer never moves: a commit is immutable, and the synthetic commit
-    /// of the working tree gets a new hash whenever the tree changes.
-    file_lists: std::sync::Mutex<std::collections::HashMap<String, Arc<Vec<FileEntry>>>>,
+    /// The file lists this run has read. Shared, so the task that reads the
+    /// series ahead of the reader fills the same one.
+    pub lists: Arc<diff::FileLists>,
 }
 
 /// What a diff is read against.
@@ -136,7 +133,7 @@ impl Session {
             extends: Vec::new(),
             linked: std::collections::HashMap::new(),
             gerrit_answers: tokio::sync::Mutex::new(std::collections::HashMap::new()),
-            file_lists: std::sync::Mutex::new(std::collections::HashMap::new()),
+            lists: Arc::new(diff::FileLists::default()),
         };
         session.make_keys_unique();
         session.link_versions().await;
@@ -533,27 +530,13 @@ impl Session {
         }
     }
 
-    /// The file list of a pair of trees, from the cache or from git.
+    /// The file list of a pair of trees, from what is kept or from git.
     ///
     /// Every read of a file asks for it, only to learn the old path of a
     /// rename. Asking git again would run the rename and copy detection
     /// again, which on a large repository is most of what a read costs.
     async fn entries(&self, base: &str, rev: &str, how: &diff::How) -> Result<Vec<FileEntry>> {
-        // Of the three options, only `-w` changes which files differ.
-        let key = format!("{base} {rev} {}", how.ignore_ws);
-
-        if let Some(hit) = self.file_lists.lock().unwrap().get(&key) {
-            crate::trace::note(|| format!("file list of {rev}, from the cache"));
-            return Ok(hit.as_ref().clone());
-        }
-
-        let entries = diff::files(&self.git, base, rev, how).await?;
-        self.file_lists
-            .lock()
-            .unwrap()
-            .insert(key, Arc::new(entries.clone()));
-
-        Ok(entries)
+        self.lists.of(&self.git, base, rev, how).await
     }
 
     pub async fn files(

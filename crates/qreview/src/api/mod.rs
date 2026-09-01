@@ -35,6 +35,18 @@ pub struct AppState {
     pub root: Arc<std::path::PathBuf>,
     /// Whether a newer qreview is out. Asked once, by whoever asks first.
     release: Arc<tokio::sync::OnceCell<crate::update::Release>>,
+    /// What the server has in hand. The task that reads ahead waits for a
+    /// quiet moment, so it never competes with the reader.
+    busy: Arc<std::sync::Mutex<Busy>>,
+}
+
+/// What the server is doing, as the read-ahead task needs to know it.
+#[derive(Debug)]
+struct Busy {
+    /// Requests being answered right now.
+    in_hand: usize,
+    /// When the last one ended.
+    ended: std::time::Instant,
 }
 
 impl AppState {
@@ -45,6 +57,10 @@ impl AppState {
             config: Arc::new(std::sync::RwLock::new(crate::config::Config::default())),
             root: Arc::new(std::path::PathBuf::from(".")),
             release: Arc::new(tokio::sync::OnceCell::new()),
+            busy: Arc::new(std::sync::Mutex::new(Busy {
+                in_hand: 0,
+                ended: std::time::Instant::now(),
+            })),
         }
     }
 
@@ -53,6 +69,20 @@ impl AppState {
         self.config = Arc::new(std::sync::RwLock::new(config));
         self.root = Arc::new(root);
         self
+    }
+
+    /// How long the server has had nothing in hand.
+    ///
+    /// Zero while a request is being answered, however long it runs. A
+    /// timestamp alone would not do: the middle of a request that takes a
+    /// second and a half reads as a quiet second.
+    fn quiet_for(&self) -> std::time::Duration {
+        let busy = self.busy.lock().unwrap();
+
+        match busy.in_hand {
+            0 => busy.ended.elapsed(),
+            _ => std::time::Duration::ZERO,
+        }
     }
 
     fn config(&self) -> crate::config::Config {
@@ -98,7 +128,7 @@ pub fn app(state: AppState) -> Router {
         )
         .fallback(interface)
         .layer(middleware::from_fn_with_state(state.clone(), auth::guard))
-        .layer(middleware::from_fn(timed))
+        .layer(middleware::from_fn_with_state(state.clone(), timed))
         .with_state(state)
 }
 
@@ -106,10 +136,15 @@ pub fn app(state: AppState) -> Router {
 ///
 /// It sits outside the token guard: a request that fails the guard is worth
 /// a line too.
-async fn timed(request: axum::extract::Request, next: middleware::Next) -> Response {
+async fn timed(
+    State(state): State<AppState>,
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> Response {
     let started = crate::trace::start();
     let what = started.map(|_| format!("{} {}", request.method(), without_token(request.uri())));
 
+    let _in_hand = InHand::new(state);
     let response = next.run(request).await;
 
     crate::trace::since(started, || {
@@ -120,6 +155,29 @@ async fn timed(request: axum::extract::Request, next: middleware::Next) -> Respo
         )
     });
     response
+}
+
+/// Held while one request is being answered.
+///
+/// A guard rather than a pair of calls: the browser can hang up, and then
+/// the answer is dropped half made. A count that never came back down would
+/// leave the server looking busy for the rest of the run.
+struct InHand(AppState);
+
+impl InHand {
+    fn new(state: AppState) -> Self {
+        state.busy.lock().unwrap().in_hand += 1;
+
+        Self(state)
+    }
+}
+
+impl Drop for InHand {
+    fn drop(&mut self) {
+        let mut busy = self.0.busy.lock().unwrap();
+        busy.in_hand = busy.in_hand.saturating_sub(1);
+        busy.ended = std::time::Instant::now();
+    }
 }
 
 /// The address a trace may print. The token never belongs in a log.
@@ -133,6 +191,82 @@ fn without_token(uri: &axum::http::Uri) -> String {
     match kept.is_empty() {
         true => path.to_owned(),
         false => format!("{path}?{}", kept.join("&")),
+    }
+}
+
+/// How long the server must have been quiet before the task reads on.
+const QUIET: std::time::Duration = std::time::Duration::from_millis(750);
+
+/// Read the file list of every change of the series, before it is asked for.
+///
+/// A change of many files costs about a second of rename and copy detection,
+/// and the reader pays it on the click that opens the change. A reader opens
+/// one change and reads it for a while, so the rest is read in that time.
+///
+/// **Only while nobody is waiting.** The task holds before every change until
+/// the server has answered nothing for `QUIET`. Read ahead of a reader who is
+/// still clicking, it would take the git and the processor that the click
+/// needs, and make the change they asked for slower to buy one they may never
+/// open.
+///
+/// The newest change is left out: the page opens on it, and that request is
+/// already in flight.
+///
+/// The session is held only while the base of a change is resolved. The long
+/// call runs outside it, so a request the reader made is never behind this
+/// one.
+pub fn read_ahead(state: AppState) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let how = how(&state, None);
+        let (git, lists, keys) = {
+            let session = state.session.read().await;
+            (
+                session.git.clone(),
+                session.lists.clone(),
+                session
+                    .series
+                    .changes
+                    .iter()
+                    .skip(1)
+                    .map(|change| change.key.clone())
+                    .collect::<Vec<_>>(),
+            )
+        };
+
+        for key in keys {
+            quiet(&state).await;
+
+            let pair = {
+                let session = state.session.read().await;
+
+                match session.commit_of(&key) {
+                    Some(rev) => session
+                        .base_of(&rev, &Against::Parent)
+                        .await
+                        .ok()
+                        .map(|base| (base, rev)),
+                    None => None,
+                }
+            };
+
+            let Some((base, rev)) = pair else {
+                continue;
+            };
+            if let Err(error) = lists.of(&git, &base, &rev, &how).await {
+                // Nobody asked for this yet. The read that does will say so.
+                crate::trace::note(|| format!("read ahead of {rev} failed: {error}"));
+            }
+        }
+    })
+}
+
+/// Hold until the server has answered nothing for `QUIET`.
+async fn quiet(state: &AppState) {
+    while let Some(left) = QUIET
+        .checked_sub(state.quiet_for())
+        .filter(|l| !l.is_zero())
+    {
+        tokio::time::sleep(left).await;
     }
 }
 
@@ -176,8 +310,14 @@ async fn session(State(state): State<AppState>) -> Json<SessionBody> {
 async fn refresh(State(state): State<AppState>) -> Result<Json<SessionBody>, ApiError> {
     let mut session = state.session.write().await;
     session.refresh().await?;
+    let answer = body(&session, &state);
+    drop(session);
 
-    Ok(Json(body(&session, &state)))
+    // An amend gives a change a new commit, and with it a file list nothing
+    // has read yet.
+    read_ahead(state.clone());
+
+    Ok(Json(answer))
 }
 
 fn body(session: &Session, state: &AppState) -> SessionBody {
@@ -204,8 +344,13 @@ async fn extend(
     let mut session = state.session.write().await;
 
     session.extend(count).await?;
+    let series = session.series.clone();
+    drop(session);
 
-    Ok(Json(session.series.clone()))
+    // The commits that just joined are the ones the reader is about to open.
+    read_ahead(state.clone());
+
+    Ok(Json(series))
 }
 
 async fn change(
@@ -752,6 +897,49 @@ mod tests {
     use crate::testutil::{Repo, build_repo, commit};
 
     const TOKEN: &str = "0123456789abcdef";
+
+    /// The reader clicks a change and waits for its file list. The task
+    /// reads the rest of the series while they read the first one, so the
+    /// next click has nothing to wait for.
+    #[tokio::test]
+    async fn every_change_but_the_first_is_read_before_it_is_asked_for() {
+        let repo = build_repo(&[
+            commit("first: start").file("src/a.c", "int a;\n"),
+            commit("second: go on").file("src/a.c", "int b;\n"),
+            commit("third: and on").file("src/a.c", "int c;\n"),
+        ])
+        .await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+
+        assert_eq!(state.session.read().await.lists.count(), 0);
+        // Nothing has asked the server anything, so the task reads at once
+        // after its first hold. See `QUIET`.
+        read_ahead(state.clone()).await.unwrap();
+
+        // The page opens on the newest change, and asks for that one itself.
+        let session = state.session.read().await;
+        assert_eq!(session.series.changes.len(), 3);
+        assert_eq!(session.lists.count(), 2);
+    }
+
+    /// The reader is what the server is for. The task that reads ahead of
+    /// them must never take the git a click is waiting on.
+    #[tokio::test]
+    async fn the_task_holds_while_the_server_is_answering() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+
+        let answering = InHand::new(state.clone());
+        let reading = read_ahead(state.clone());
+
+        // A request in hand is not a quiet server, however long it runs.
+        tokio::time::sleep(QUIET * 2).await;
+        assert_eq!(state.session.read().await.lists.count(), 0);
+
+        drop(answering);
+        reading.await.unwrap();
+        assert!(state.session.read().await.lists.count() > 0);
+    }
 
     /// A trace goes into a log or a bug report. The token must not.
     #[test]
