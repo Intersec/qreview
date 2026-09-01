@@ -903,9 +903,17 @@ qreview --no-gerrit           skip the Gerrit query
 qreview --no-open             start the server, print the URL, open nothing
 qreview --port <n>            use a fixed port
 qreview -v                    print the series and the files before the URL
+qreview --trace               print on standard error what the work costs
 qreview export [--key <id>]   print the export text to stdout
 qreview list                  list the stored reviews of this repository
 ```
+
+**The trace.** `--trace`, or `QREVIEW_TRACE=1`, prints one line per piece of
+work to standard error: every git child process, every highlight pass, every
+diff parse, and every HTTP request with the status it answered. Each line
+carries the time since the process started and what the work cost, so a slow
+read is measured and not guessed. Standard output stays clean, because
+`export` writes there. The token never appears in a line.
 
 ## 12. Build and distribution
 

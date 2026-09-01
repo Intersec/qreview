@@ -25,6 +25,7 @@ pub mod report;
 pub mod series;
 pub mod session;
 pub mod store;
+pub mod trace;
 pub mod update;
 pub mod version;
 pub mod worktree;

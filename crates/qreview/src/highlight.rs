@@ -73,10 +73,20 @@ impl Highlighter {
     /// keyed by. `language` comes from the map, and `path` is the fallback.
     pub fn lines(&self, blob: &str, text: &str, language: Option<&str>, path: &str) -> Lines {
         if let Some(hit) = self.cache.lock().unwrap().get(blob) {
+            crate::trace::note(|| format!("highlight {path}, from the cache"));
             return hit.clone();
         }
 
+        let started = crate::trace::start();
         let lines = Arc::new(self.compute(text, language, path));
+        crate::trace::since(started, || {
+            format!(
+                "highlight {path}, {} bytes, {} lines",
+                text.len(),
+                lines.len()
+            )
+        });
+
         self.cache
             .lock()
             .unwrap()

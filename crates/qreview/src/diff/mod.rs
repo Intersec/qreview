@@ -97,12 +97,21 @@ pub async fn file(
     }
 
     let patch = git.text(&call).await?;
+
+    let started = crate::trace::start();
     let mut found = parse(&patch).into_iter().find(|f| f.file.path == path);
+    crate::trace::since(started, || {
+        format!("parse the patch of {path}, {} bytes", patch.len())
+    });
 
     if let Some(diff) = found.as_mut() {
+        let started = crate::trace::start();
         for hunk in &mut diff.hunks {
             words::mark(hunk);
         }
+        crate::trace::since(started, || {
+            format!("word diff of {path}, {} hunks", diff.hunks.len())
+        });
     }
     Ok(found)
 }

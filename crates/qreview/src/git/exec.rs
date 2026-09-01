@@ -109,9 +109,11 @@ async fn raw<S: AsRef<OsStr>>(
         cmd.env(name, value);
     }
 
-    let run = cmd.output();
+    let started = crate::trace::start();
+    let out = tokio::time::timeout(TIMEOUT, cmd.output()).await;
+    crate::trace::since(started, || format!("git {}", describe(args)));
 
-    match tokio::time::timeout(TIMEOUT, run).await {
+    match out {
         Ok(Ok(out)) => Ok(out),
         Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
             Err(anyhow!("git is not on the PATH"))

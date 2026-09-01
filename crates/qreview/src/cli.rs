@@ -35,6 +35,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub verbose: bool,
 
+    /// Print, on standard error, what every piece of work costs.
+    #[arg(long)]
+    pub trace: bool,
+
     /// The port to listen on. 0 asks the system for a free one.
     #[arg(long, default_value_t = 0)]
     pub port: u16,

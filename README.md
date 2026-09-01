@@ -52,6 +52,7 @@ qreview list                                     # what this repository holds
 | `--no-open` | Print the URL, open no browser |
 | `--port <n>` | Use a fixed port |
 | `-v, --verbose` | Print the series and the files of every change |
+| `--trace` | Print on standard error what every piece of work costs |
 
 What the browser shows:
 

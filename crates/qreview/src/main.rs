@@ -23,6 +23,12 @@ use qreview::session::Session;
 async fn main() -> Result<()> {
     let cli = cli::Cli::parse();
 
+    // Before the first git call, so the whole start is timed.
+    qreview::trace::enable_from_env();
+    if cli.trace {
+        qreview::trace::enable();
+    }
+
     let cwd = std::env::current_dir().context("cannot read the working directory")?;
     let root = Git::discover(&cwd).await?.root().to_path_buf();
     let config = config::load(&root)?;

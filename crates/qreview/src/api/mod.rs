@@ -98,7 +98,42 @@ pub fn app(state: AppState) -> Router {
         )
         .fallback(interface)
         .layer(middleware::from_fn_with_state(state.clone(), auth::guard))
+        .layer(middleware::from_fn(timed))
         .with_state(state)
+}
+
+/// Time the whole request, so a trace shows what the browser waited for.
+///
+/// It sits outside the token guard: a request that fails the guard is worth
+/// a line too.
+async fn timed(request: axum::extract::Request, next: middleware::Next) -> Response {
+    let started = crate::trace::start();
+    let what = started.map(|_| format!("{} {}", request.method(), without_token(request.uri())));
+
+    let response = next.run(request).await;
+
+    crate::trace::since(started, || {
+        format!(
+            "{} -> {}",
+            what.unwrap_or_default(),
+            response.status().as_u16()
+        )
+    });
+    response
+}
+
+/// The address a trace may print. The token never belongs in a log.
+fn without_token(uri: &axum::http::Uri) -> String {
+    let path = uri.path();
+    let Some(query) = uri.query() else {
+        return path.to_owned();
+    };
+
+    let kept: Vec<&str> = query.split('&').filter(|p| !p.starts_with("t=")).collect();
+    match kept.is_empty() {
+        true => path.to_owned(),
+        false => format!("{path}?{}", kept.join("&")),
+    }
 }
 
 /// The interface, out of the binary.
@@ -717,6 +752,19 @@ mod tests {
     use crate::testutil::{Repo, build_repo, commit};
 
     const TOKEN: &str = "0123456789abcdef";
+
+    /// A trace goes into a log or a bug report. The token must not.
+    #[test]
+    fn a_traced_address_carries_no_token() {
+        let uri = |text: &str| text.parse::<axum::http::Uri>().unwrap();
+
+        assert_eq!(without_token(&uri("/?t=secret")), "/");
+        assert_eq!(
+            without_token(&uri("/api/changes/I1/diff?file=a.c&t=secret")),
+            "/api/changes/I1/diff?file=a.c"
+        );
+        assert_eq!(without_token(&uri("/api/session")), "/api/session");
+    }
 
     /// A server whose comment store is a temporary directory. A test must
     /// never write into the state directory of the person running it.
