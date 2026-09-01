@@ -12,6 +12,44 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.9.0]
+
+### Added
+
+- **Ctrl+S saves a comment** — the box already answered to Ctrl+Enter. It now
+  takes the key Gerrit uses too, and holds the browser's own save back.
+- **The word under the pointer** — hovering a name lights it up wherever else
+  it stands in the file, so a variable is followed without a search and
+  without a click. Whole words only: `fd` is not the `fd` of `fdesc`.
+- **The tab names the review** — the page title carries the name of the
+  repository and the subject of the change being read, so one window per
+  review is easy to find again.
+- **A refresh button** — reads the repository again, so a commit amended or
+  added while the page is open joins the series without a restart. The reader
+  stays on the change and the file that were on the screen.
+
+### Changed
+
+- The export marks the lines a comment covers with a `>` at the left edge of
+  the excerpt, and says so once at the top. A reader that does not count
+  gave every line of the excerpt the same weight, and a remark on one line
+  was applied to its neighbour.
+- The button a selection offers, and the box it opens, say when the
+  selection opens or closes inside a line: `Comment on part of 2 lines`, `A
+  remark about a part of lines 6 to 7`. Whole lines, picked with the mouse
+  or with `v`, read as before.
+
+### Fixed
+
+- A comment on a part of a line reaches the export as one. It used to export
+  as its whole lines, so a remark on the last sentence of a paragraph read as
+  a remark on the two lines it stood on (#8). The heading now quotes the
+  text: `` on `for (;;)` `` on one line, `` from `…` to `…` `` over several,
+  and `` on the second `%d` `` when the line holds the text more than once.
+- A selection that opens or closes inside a line stays what you selected
+  once the button appears. The range was painted under the live selection,
+  which replaced the text it was anchored on, and the browser spread it to
+  the whole lines.
 ## [0.8.0]
 
 ### Added
