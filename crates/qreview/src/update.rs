@@ -62,7 +62,10 @@ async fn fetch(url: &str, token: Option<&str>) -> Option<String> {
         call.arg("--header")
             .arg(format!("Authorization: Bearer {token}"));
     }
+    let started = crate::trace::start();
     let out = call.arg(url).output().await.ok()?;
+    // The token is a header, never a part of the address.
+    crate::trace::since(started, || format!("curl {url}"));
 
     match out.status.success() {
         true => String::from_utf8(out.stdout).ok(),

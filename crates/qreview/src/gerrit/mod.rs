@@ -90,8 +90,13 @@ async fn ssh(coords: &Coordinates, args: &[&str]) -> Result<String, Refusal> {
         .env("SSH_ASKPASS_REQUIRE", "never")
         .env("GIT_TERMINAL_PROMPT", "0");
 
-    let run = command.output();
-    let out = match tokio::time::timeout(TIMEOUT, run).await {
+    let started = crate::trace::start();
+    let answered = tokio::time::timeout(TIMEOUT, command.output()).await;
+    crate::trace::since(started, || {
+        format!("ssh {} {}", coords.host, args.join(" "))
+    });
+
+    let out = match answered {
         Ok(Ok(out)) => out,
         Ok(Err(error)) => {
             return Err(Refusal::Unreachable(
