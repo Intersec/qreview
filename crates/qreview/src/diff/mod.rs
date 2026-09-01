@@ -43,33 +43,20 @@ impl Default for How {
 }
 
 /// The files a change touches, with the counts and no content.
+///
+/// One call, two output formats. `--raw` names the status of each file and
+/// `--numstat` counts its lines, and git prints the raw block first. Asking
+/// twice would run the rename and copy detection twice, and on a large
+/// repository that pass alone costs about a second.
 pub async fn files(git: &Git, base: &str, target: &str, how: &How) -> Result<Vec<FileEntry>> {
     let mut call: Vec<&str> = vec!["diff-tree"];
     call.extend_from_slice(&DETECT);
     if how.ignore_ws {
         call.push("-w");
     }
-    call.extend_from_slice(&["--numstat", "-z", base, target]);
-    let numstat = git.text(&call).await?;
+    call.extend_from_slice(&["--raw", "--numstat", "-z", base, target]);
 
-    let mut call: Vec<&str> = vec!["diff-tree"];
-    call.extend_from_slice(&DETECT);
-    if how.ignore_ws {
-        call.push("-w");
-    }
-    call.extend_from_slice(&["--name-status", "-z", base, target]);
-    let status = git.text(&call).await?;
-
-    let mut entries = parse_numstat(&numstat);
-    let statuses = parse_name_status(&status);
-
-    for entry in &mut entries {
-        if let Some((status, old, _)) = statuses.iter().find(|(_, _, path)| *path == entry.path) {
-            entry.status = *status;
-            entry.old_path = old.clone();
-        }
-    }
-    Ok(entries)
+    Ok(parse_files(&git.text(&call).await?))
 }
 
 /// The diff of one file. `None` when the change does not touch it.
@@ -116,8 +103,56 @@ pub async fn file(
     Ok(found)
 }
 
-fn parse_numstat(out: &str) -> Vec<FileEntry> {
+/// The raw block, then the numstat block, out of one `-z` stream.
+fn parse_files(out: &str) -> Vec<FileEntry> {
     let mut fields = out.split('\0').filter(|f| !f.is_empty()).peekable();
+
+    // A raw record opens with its mode and hash line, which starts with a
+    // colon. The first field that does not is where the counts begin.
+    let statuses = parse_raw(&mut fields);
+    let mut entries = parse_numstat(&mut fields);
+
+    for entry in &mut entries {
+        if let Some((status, old, _)) = statuses.iter().find(|(_, _, path)| *path == entry.path) {
+            entry.status = *status;
+            entry.old_path = old.clone();
+        }
+    }
+    entries
+}
+
+/// `:100644 100644 <sha> <sha> R100`, then the paths of that file.
+fn parse_raw<'a>(
+    fields: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Vec<(FileStatus, Option<String>, String)> {
+    let mut out = Vec::new();
+
+    while let Some(info) = fields.next_if(|field| field.starts_with(':')) {
+        // The status is the last word of the line, `R` and `C` with a score.
+        let code = info.rsplit(' ').next().unwrap_or("");
+        let status = match code.as_bytes().first() {
+            Some(b'A') => FileStatus::Added,
+            Some(b'D') => FileStatus::Deleted,
+            Some(b'R') => FileStatus::Renamed,
+            Some(b'C') => FileStatus::Copied,
+            _ => FileStatus::Modified,
+        };
+
+        let first = fields.next().unwrap_or("").to_owned();
+        match status {
+            FileStatus::Renamed | FileStatus::Copied => {
+                let new = fields.next().unwrap_or("").to_owned();
+                out.push((status, Some(first), new));
+            }
+            _ => out.push((status, None, first)),
+        }
+    }
+    out
+}
+
+fn parse_numstat<'a>(
+    fields: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Vec<FileEntry> {
     let mut entries = Vec::new();
 
     while let Some(record) = fields.next() {
@@ -149,32 +184,6 @@ fn parse_numstat(out: &str) -> Vec<FileEntry> {
         });
     }
     entries
-}
-
-/// `A`, `M`, `D`, `R100`, `C75`, each followed by its paths.
-fn parse_name_status(out: &str) -> Vec<(FileStatus, Option<String>, String)> {
-    let mut fields = out.split('\0').filter(|f| !f.is_empty());
-    let mut out = Vec::new();
-
-    while let Some(code) = fields.next() {
-        let status = match code.as_bytes().first() {
-            Some(b'A') => FileStatus::Added,
-            Some(b'D') => FileStatus::Deleted,
-            Some(b'R') => FileStatus::Renamed,
-            Some(b'C') => FileStatus::Copied,
-            _ => FileStatus::Modified,
-        };
-
-        let first = fields.next().unwrap_or("").to_owned();
-        match status {
-            FileStatus::Renamed | FileStatus::Copied => {
-                let new = fields.next().unwrap_or("").to_owned();
-                out.push((status, Some(first), new));
-            }
-            _ => out.push((status, None, first)),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -284,6 +293,49 @@ mod tests {
         assert_eq!(entries[0].path, "new.txt");
         assert_eq!(entries[0].status, FileStatus::Renamed);
         assert_eq!(entries[0].old_path.as_deref(), Some("old.txt"));
+    }
+
+    /// The status of each file and the count of its lines come out of one
+    /// call, as two blocks of the same stream. They are matched by path, so
+    /// a change that renames one file and edits another must not swap them.
+    #[tokio::test]
+    async fn the_status_and_the_counts_land_on_the_right_file() {
+        let content = "one\ntwo\nthree\nfour\nfive\nsix\n";
+        let repo = build_repo(&[
+            commit("before")
+                .file("old.txt", content)
+                .file("kept.txt", "a\n")
+                .file("gone.txt", "g\n"),
+            commit("after")
+                .delete("old.txt")
+                .delete("gone.txt")
+                .file("new.txt", content)
+                .file("kept.txt", "a\nb\n"),
+        ])
+        .await;
+        let (_, entries) = head_files(&repo).await;
+
+        let of = |path: &str| {
+            entries
+                .iter()
+                .find(|e| e.path == path)
+                .unwrap_or_else(|| panic!("{path} is not in {entries:?}"))
+                .clone()
+        };
+
+        let renamed = of("new.txt");
+        assert_eq!(renamed.status, FileStatus::Renamed);
+        assert_eq!(renamed.old_path.as_deref(), Some("old.txt"));
+        assert_eq!((renamed.added, renamed.removed), (0, 0));
+
+        let kept = of("kept.txt");
+        assert_eq!(kept.status, FileStatus::Modified);
+        assert_eq!(kept.old_path, None);
+        assert_eq!((kept.added, kept.removed), (1, 0));
+
+        let gone = of("gone.txt");
+        assert_eq!(gone.status, FileStatus::Deleted);
+        assert_eq!((gone.added, gone.removed), (0, 1));
     }
 
     #[tokio::test]
