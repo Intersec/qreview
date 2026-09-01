@@ -144,7 +144,9 @@ fn write_changelog(root: &Path, version: &str, entries: &str) -> Result<()> {
     let mut out = String::with_capacity(text.len() + section.len());
     out.push_str(&text[..cut]);
     out.push_str(&section);
-    out.push('\n');
+    // A blank line before the version below. A heading that opens right
+    // under a bullet is a heading a Markdown reader has to squint at.
+    out.push_str("\n\n");
     out.push_str(text[cut..].trim_start_matches('\n'));
 
     std::fs::write(&path, out)?;

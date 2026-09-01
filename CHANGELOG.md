@@ -50,6 +50,7 @@ Changes that wait for a release are not written here. Each one is a file under
   once the button appears. The range was painted under the live selection,
   which replaced the text it was anchored on, and the browser spread it to
   the whole lines.
+
 ## [0.8.0]
 
 ### Added
@@ -90,6 +91,7 @@ Changes that wait for a release are not written here. Each one is a file under
 - Each version in the picker says whether the server knows it: `Patch set 3`
   when it does, `Local` when it does not. A version whose commit is not in
   this clone still says `· not fetched`.
+
 ## [0.7.0]
 
 ### Changed
@@ -136,6 +138,7 @@ Changes that wait for a release are not written here. Each one is a file under
   session reads first. The button says *Comment on the change* when the commit
   message is the file you are on. The remarks the old scope left are read as
   before, and shown on the commit message.
+
 ## [0.6.0]
 
 ### Added
@@ -176,6 +179,7 @@ Changes that wait for a release are not written here. Each one is a file under
 - A file opened while its change was still loading is no longer taken back.
   The change opened on its first file when the list landed, a moment after
   the reader had picked another one, and the click was lost.
+
 ## [0.5.4]
 
 ### Fixed
@@ -185,6 +189,7 @@ Changes that wait for a release are not written here. Each one is a file under
   once per column, and the button a selection offers stands at the edge of
   the pane rather than under the pointer, where it took the right click that
   was meant for the selection.
+
 ## [0.5.3]
 
 ### Fixed
@@ -193,6 +198,7 @@ Changes that wait for a release are not written here. Each one is a file under
   `git push --follow-tags` carries a tag only beside a branch it is already
   pushing, so a tag cut after the branch went up reached nobody and no
   release was ever built.
+
 ## [0.5.2]
 
 ### Changed
@@ -200,6 +206,7 @@ Changes that wait for a release are not written here. Each one is a file under
 - qreview lives on GitHub now, at `Intersec/qreview`. One command installs
   the newest build, with no account and no token, and the version check asks
   the same place by default. `{ "update": { "url": "" } }` turns it off.
+
 ## [0.5.1]
 
 ### Added
@@ -224,6 +231,7 @@ Changes that wait for a release are not written here. Each one is a file under
 
 - Pressing `c` no longer writes a `c` in the comment it opens. Every key the
   interface answers to is now kept out of the text under it.
+
 ## [0.5.0]
 
 ### Added
@@ -256,6 +264,7 @@ Changes that wait for a release are not written here. Each one is a file under
   its title, and the series above it kept all the room.
 - Pushing a release no longer starts two pipelines on the same commit, one
   for the branch and one for the tag.
+
 ## [0.4.3]
 
 ### Added
@@ -280,6 +289,7 @@ Changes that wait for a release are not written here. Each one is a file under
 
 - A click on a line puts the keyboard on it, so `c` writes there. The
   keyboard stayed where it was, and the remark opened on another line.
+
 ## [0.4.2]
 
 ### Added
@@ -306,6 +316,7 @@ Changes that wait for a release are not written here. Each one is a file under
 - The `/` key reaches the file filter. It moved nowhere before, and the box
   it moves to now says that the keyboard is in it. A change with more than
   one file always offers the box.
+
 ## [0.4.1]
 
 ### Fixed
@@ -314,6 +325,7 @@ Changes that wait for a release are not written here. Each one is a file under
   --follow-tags` carries it, and the pipeline that starts publishes the
   static Linux x86-64 binary through the GitLab server of the project, with
   no other host in the path.
+
 ## [0.4.0]
 
 ### Added
@@ -330,6 +342,7 @@ Changes that wait for a release are not written here. Each one is a file under
 
 - Opening a file right after changing the version, or a setting, no longer
   falls back to the first file of the change.
+
 ## [0.3.1]
 
 ### Fixed
@@ -339,6 +352,7 @@ Changes that wait for a release are not written here. Each one is a file under
 - A setting that only the browser reads no longer makes the diff load again.
   Choosing side by side, wrapping, a tab width, a font size or a theme now
   changes what is on the screen without a round trip.
+
 ## [0.3.0]
 
 ### Added
@@ -396,6 +410,7 @@ Changes that wait for a release are not written here. Each one is a file under
 
 - **The draft mark, the author name and replies** left with resolving, for
   the same reason: nobody else reads this review.
+
 ## [0.2.0]
 
 ### Added
@@ -447,6 +462,7 @@ Changes that wait for a release are not written here. Each one is a file under
 - **Resolving a thread** — it is a conversation with a reviewer, and a review
   of your own series before the push has none. Correct the code and delete
   the remark.
+
 ## [0.1.0]
 
 ### Added
@@ -475,6 +491,7 @@ Changes that wait for a release are not written here. Each one is a file under
 - **Load 5 older** — the start of a series is often impossible to compute, so
   the walk stops at a boundary that says why, and going further back is one
   click. A merge, a tag, the base, and a guessed start each say what they are.
+
 ## [0.0.0] — unreleased
 
 The project starts. Nothing is released yet. See
