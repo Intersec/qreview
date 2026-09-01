@@ -12,7 +12,7 @@ use crate::git::commit::{self, CommitInfo};
 use crate::git::exec::Git;
 use crate::model::{Boundary, BoundaryKind, ChangeSummary, MergeInfo, ParentInfo};
 
-pub use refs::{is_on_a_remote, name_of, tags_at};
+pub use refs::{is_on_a_remote, name_of, tags_by_commit};
 
 /// How the caller asked for the series.
 #[derive(Clone, Debug, Default)]
@@ -216,6 +216,9 @@ pub async fn walk(
     let base = plan.base.as_ref().map(|(b, _)| b.as_str());
     let mut changes = Vec::new();
     let mut current = Some(start.to_owned());
+    // Read on the first commit that can end on a tag, and not before: a
+    // walk that stops at once must not pay for them.
+    let mut tags = None;
 
     while let Some(hash) = current {
         // The base is the end of the series, whatever else the commit is.
@@ -256,18 +259,23 @@ pub async fn walk(
         }
 
         // The head itself may carry a tag. Only a tag under the series ends it.
-        if !changes.is_empty()
-            && let Some(tag) = tags_at(git, &hash).await.first()
-        {
-            let reason = format!("the tag {tag}");
-            return Ok(done(
-                changes,
-                BoundaryKind::Tag,
-                &hash,
-                &reason,
-                false,
-                None,
-            ));
+        if !changes.is_empty() {
+            let tags = match tags {
+                Some(ref tags) => tags,
+                None => tags.insert(tags_by_commit(git).await),
+            };
+
+            if let Some(tag) = tags.get(&hash) {
+                let reason = format!("the tag {tag}");
+                return Ok(done(
+                    changes,
+                    BoundaryKind::Tag,
+                    &hash,
+                    &reason,
+                    false,
+                    None,
+                ));
+            }
         }
 
         // Two signals that only ever end a guess. Both are wrong often
@@ -668,6 +676,31 @@ mod tests {
         assert_eq!(batch.boundary.kind, BoundaryKind::Tag);
         assert!(
             batch.boundary.reason.contains("v1.0"),
+            "{}",
+            batch.boundary.reason
+        );
+    }
+
+    /// An annotated tag names a tag object, not a commit. The map that ends
+    /// a walk is keyed by the commit, so the tag has to be peeled.
+    #[tokio::test]
+    async fn an_annotated_tag_under_the_series_ends_the_batch_too() {
+        let repo = build_repo(&[
+            commit("older").file("a", "1\n"),
+            commit("the release").file("a", "2\n"),
+            commit("mine").file("a", "3\n"),
+        ])
+        .await;
+        repo.git(&["tag", "-a", "v2.0", "-m", "the release", "HEAD^"])
+            .await;
+
+        let git = Git::discover(repo.path()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+
+        assert_eq!(subjects(&batch).await, ["mine"]);
+        assert_eq!(batch.boundary.kind, BoundaryKind::Tag);
+        assert!(
+            batch.boundary.reason.contains("v2.0"),
             "{}",
             batch.boundary.reason
         );

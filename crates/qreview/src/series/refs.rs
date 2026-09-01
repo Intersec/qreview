@@ -2,16 +2,42 @@
 
 use crate::git::exec::Git;
 
-/// The tags that point at a commit.
-pub async fn tags_at(git: &Git, hash: &str) -> Vec<String> {
-    let Ok(out) = git.text(&["tag", "--points-at", hash]).await else {
-        return Vec::new();
+/// The commits the tags point at, and the name of the first tag on each.
+///
+/// One call for the whole repository. `git tag --points-at` reads every tag
+/// to answer about one commit, so asking per commit reads them all again for
+/// every commit of a walk.
+pub async fn tags_by_commit(git: &Git) -> std::collections::HashMap<String, String> {
+    let mut out = std::collections::HashMap::new();
+    let Ok(text) = git
+        .text(&[
+            "for-each-ref",
+            "--format=%(objectname) %(*objectname) %(refname:short)",
+            "refs/tags",
+        ])
+        .await
+    else {
+        return out;
     };
-    out.lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(str::to_owned)
-        .collect()
+
+    for line in text.lines() {
+        let mut parts = line.splitn(3, ' ');
+        let object = parts.next().unwrap_or("");
+        // An annotated tag names a tag object. The commit is the peeled one.
+        let peeled = parts.next().unwrap_or("");
+        let Some(name) = parts.next().map(str::trim).filter(|n| !n.is_empty()) else {
+            continue;
+        };
+
+        let commit = match peeled.is_empty() {
+            true => object,
+            false => peeled,
+        };
+        // `for-each-ref` sorts by name, so the first one wins.
+        out.entry(commit.to_owned())
+            .or_insert_with(|| name.to_owned());
+    }
+    out
 }
 
 /// The first remote-tracking ref that reaches the commit, when one does.
