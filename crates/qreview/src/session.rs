@@ -689,7 +689,7 @@ impl Session {
             true => commitmsg::text(&self.git, rev)
                 .await
                 .map(|text| (text, crate::highlight::Lines::default())),
-            false => self.read_and_paint(rev, path, language.as_deref()).await,
+            false => self.read_blob(rev, path, language.as_deref(), path).await,
         };
         let Some((text, spans)) = painted else {
             return Ok(Vec::new());
@@ -716,23 +716,6 @@ impl Session {
         Ok(rows)
     }
 
-    /// The text of a file and its syntax spans, both from the object
-    /// database.
-    async fn read_and_paint(
-        &self,
-        rev: &str,
-        path: &str,
-        language: Option<&str>,
-    ) -> Option<(String, crate::highlight::Lines)> {
-        let spec = format!("{rev}:{path}");
-        let blob = self.git.text(&["rev-parse", &spec]).await.ok()?;
-        let blob = blob.trim().to_owned();
-        let text = self.git.text(&["cat-file", "blob", &blob]).await.ok()?;
-        let lines = self.highlighter.lines(&blob, &text, language, path);
-
-        Some((text, lines))
-    }
-
     /// Put the syntax spans on every row.
     ///
     /// A line is highlighted with the whole file around it, never alone: a
@@ -746,10 +729,13 @@ impl Session {
         language: Option<&str>,
     ) {
         let path = file.file.path.clone();
-        let new_side = self.blob(rev, &path, language, &path).await;
-        let old_side = self
-            .blob(base, old_path.unwrap_or(&path), language, &path)
-            .await;
+
+        // Both sides at once. Each one runs its git reads and then its own
+        // highlight thread, so a file costs one pass of waiting, not two.
+        let (new_side, old_side) = tokio::join!(
+            self.blob(rev, &path, language, &path),
+            self.blob(base, old_path.unwrap_or(&path), language, &path),
+        );
 
         file.line_count = new_side.as_ref().map(|(count, _)| *count);
         let new_side = new_side.map(|(_, lines)| lines);
@@ -780,13 +766,39 @@ impl Session {
         language: Option<&str>,
         for_path: &str,
     ) -> Option<(usize, crate::highlight::Lines)> {
+        let (text, lines) = self.read_blob(rev, path, language, for_path).await?;
+
+        Some((text.lines().count(), lines))
+    }
+
+    /// The text of a blob and its syntax spans.
+    ///
+    /// The highlight is plain computation, and on a file of a few hundred
+    /// kilobytes it runs for a second. A runtime thread must stay free to
+    /// answer the other requests, so that second is spent on the blocking
+    /// pool.
+    async fn read_blob(
+        &self,
+        rev: &str,
+        path: &str,
+        language: Option<&str>,
+        for_path: &str,
+    ) -> Option<(String, crate::highlight::Lines)> {
         let spec = format!("{rev}:{path}");
         let blob = self.git.text(&["rev-parse", &spec]).await.ok()?;
         let blob = blob.trim().to_owned();
         let text = self.git.text(&["cat-file", "blob", &blob]).await.ok()?;
-        let lines = self.highlighter.lines(&blob, &text, language, for_path);
 
-        Some((text.lines().count(), lines))
+        let highlighter = self.highlighter.clone();
+        let language = language.map(str::to_owned);
+        let for_path = for_path.to_owned();
+
+        tokio::task::spawn_blocking(move || {
+            let lines = highlighter.lines(&blob, &text, language.as_deref(), &for_path);
+            (text, lines)
+        })
+        .await
+        .ok()
     }
 
     /// The commit a change key names, inside the loaded series.
