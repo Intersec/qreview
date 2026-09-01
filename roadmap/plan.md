@@ -6,8 +6,12 @@ judge. Each task is one commit with `make check` green.
 Mark a task `[x]` when it is done. Add a task when you find one. Do not delete
 a task that was dropped: strike it and write why.
 
-**Status: v0.5.4 is cut, M12 is done.** Two tasks of M3 are still open.
-Everything after the milestones is in the GitHub issues.
+**Status: every milestone through M12 is done.** Two tasks of M3 are still
+open, both marked below. Everything after the milestones is in the GitHub
+issues.
+
+The version that is cut is in [`CHANGELOG.md`](../CHANGELOG.md). This file
+does not name one: it said `v0.5.4` for five releases.
 
 ---
 
