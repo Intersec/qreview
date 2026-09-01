@@ -680,6 +680,13 @@ The highlight of a file is computed once per patch set and cached in memory
 for the life of the process, keyed by the blob hash. Two patch sets that share
 a file therefore highlight it once.
 
+**A parse stops where the reader stops.** It always starts at line 1, because
+a block comment or a multi-line string needs the lines before it, but it goes
+no further than the deepest line a diff shows. The state where it stopped is
+kept beside the spans, so opening more context carries on instead of starting
+again. A change near the top of a file of ten thousand lines therefore costs
+the top of it and nothing else.
+
 ## 8. HTTP API
 
 All routes are under `/api`, all answers are JSON, all errors carry

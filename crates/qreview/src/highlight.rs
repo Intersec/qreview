@@ -4,6 +4,11 @@
 //! downloads a grammar and a large file costs it the text and nothing else.
 //! The output is a CSS class, never a color: a theme is a stylesheet, and the
 //! light and dark pair costs one pass, not two.
+//!
+//! A parse starts at line 1, because a block comment or a multi-line string
+//! needs the lines before it. It does not have to reach the end: a diff shows
+//! a few hunks, and the reader asks for the rest one piece at a time. So the
+//! parse stops where the caller stops, and keeps its state to go further.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -26,10 +31,41 @@ const GENERIC: [&str; 3] = ["source", "text", "meta"];
 /// One highlighted file: the spans of every line, in order.
 pub type Lines = Arc<Vec<Vec<Span>>>;
 
+/// A file that is painted down to some line, and can go further.
+#[derive(Default)]
+struct Painted {
+    lines: Vec<Vec<Span>>,
+    rest: Rest,
+    /// The last list handed out, kept while nothing has grown since.
+    handed: Option<Lines>,
+}
+
+/// How far a file is painted.
+#[derive(Default)]
+enum Rest {
+    /// Nothing is painted yet.
+    #[default]
+    Fresh,
+    /// The parser, frozen between two lines.
+    At(Box<Pending>),
+    /// The last line is painted. There is nothing left to do.
+    Done,
+}
+
+struct Pending {
+    state: ParseState,
+    stack: ScopeStack,
+    /// The byte the next line starts at.
+    offset: usize,
+}
+
 pub struct Highlighter {
     syntaxes: SyntaxSet,
     /// Keyed by blob hash. Two patch sets that share a file highlight it once.
-    cache: Mutex<HashMap<String, Lines>>,
+    ///
+    /// One lock per file, so painting a large one holds nothing that another
+    /// file needs.
+    cache: Mutex<HashMap<String, Arc<Mutex<Painted>>>>,
 }
 
 impl Default for Highlighter {
@@ -72,56 +108,120 @@ impl Highlighter {
     /// `blob` is the git hash of the content, which is what the cache is
     /// keyed by. `language` comes from the map, and `path` is the fallback.
     pub fn lines(&self, blob: &str, text: &str, language: Option<&str>, path: &str) -> Lines {
-        if let Some(hit) = self.cache.lock().unwrap().get(blob) {
+        self.lines_upto(blob, text, language, path, usize::MAX)
+    }
+
+    /// The same, painted no further than line `upto`.
+    ///
+    /// A diff of a large file shows a few hunks near the top and nothing
+    /// below, and painting the rest costs seconds that no reader waits for
+    /// on purpose. What is painted stays painted, and a later call for a
+    /// deeper line carries on from where this one stopped.
+    pub fn lines_upto(
+        &self,
+        blob: &str,
+        text: &str,
+        language: Option<&str>,
+        path: &str,
+        upto: usize,
+    ) -> Lines {
+        let entry = self.entry(blob);
+        let mut painted = entry.lock().unwrap();
+
+        if painted.lines.len() >= upto || matches!(painted.rest, Rest::Done) {
+            if painted.handed.is_none() {
+                painted.handed = Some(Arc::new(painted.lines.clone()));
+            }
             crate::trace::note(|| format!("highlight {path}, from the cache"));
-            return hit.clone();
+            return painted.handed.clone().unwrap_or_default();
         }
 
         let started = crate::trace::start();
-        let lines = Arc::new(self.compute(text, language, path));
+        let from = painted.lines.len();
+        self.paint(&mut painted, text, language, path, upto);
         crate::trace::since(started, || {
             format!(
-                "highlight {path}, {} bytes, {} lines",
-                text.len(),
-                lines.len()
+                "highlight {path}, lines {} to {}, of {} bytes",
+                from + 1,
+                painted.lines.len(),
+                text.len()
             )
         });
 
-        self.cache
-            .lock()
-            .unwrap()
-            .insert(blob.to_owned(), lines.clone());
+        let lines = Arc::new(painted.lines.clone());
+        painted.handed = Some(lines.clone());
 
         lines
     }
 
-    fn compute(&self, text: &str, language: Option<&str>, path: &str) -> Vec<Vec<Span>> {
+    /// The entry of a blob, made empty on the first ask.
+    fn entry(&self, blob: &str) -> Arc<Mutex<Painted>> {
+        self.cache
+            .lock()
+            .unwrap()
+            .entry(blob.to_owned())
+            .or_default()
+            .clone()
+    }
+
+    /// Carry the parse of one file down to line `upto`.
+    fn paint(
+        &self,
+        painted: &mut Painted,
+        text: &str,
+        language: Option<&str>,
+        path: &str,
+        upto: usize,
+    ) {
         if text.len() > MAX_BYTES {
-            return Vec::new();
+            painted.rest = Rest::Done;
+            return;
         }
 
-        let syntax = language
+        let mut rest = match std::mem::replace(&mut painted.rest, Rest::Done) {
+            Rest::At(rest) => rest,
+            Rest::Done => return,
+            Rest::Fresh => Box::new(Pending {
+                state: ParseState::new(self.syntax_of(text, language, path)),
+                stack: ScopeStack::new(),
+                offset: 0,
+            }),
+        };
+
+        // The blob hash is the hash of the text, so the offset always lands
+        // inside it. A slice that panicked would poison the lock of this
+        // file for the rest of the run, which is a high price for a rule
+        // that already holds.
+        let tail = text.get(rest.offset..).unwrap_or_default();
+
+        for line in LinesWithEndings::from(tail) {
+            if painted.lines.len() >= upto {
+                painted.rest = Rest::At(rest);
+                return;
+            }
+            match rest.state.parse_line(line, &self.syntaxes) {
+                Ok(ops) => painted.lines.push(spans_of(line, &ops, &mut rest.stack)),
+                // A grammar that fails on one line still colors the rest.
+                Err(_) => painted.lines.push(Vec::new()),
+            }
+            rest.offset += line.len();
+        }
+    }
+
+    fn syntax_of(
+        &self,
+        text: &str,
+        language: Option<&str>,
+        path: &str,
+    ) -> &syntect::parsing::SyntaxReference {
+        language
             .and_then(|name| self.syntaxes.find_syntax_by_token(name))
             .or_else(|| self.syntaxes.find_syntax_by_extension(extension(path)))
             .or_else(|| {
                 self.syntaxes
                     .find_syntax_by_first_line(text.lines().next()?)
             })
-            .unwrap_or_else(|| self.syntaxes.find_syntax_plain_text());
-
-        let mut state = ParseState::new(syntax);
-        let mut stack = ScopeStack::new();
-        let mut out = Vec::new();
-
-        for line in LinesWithEndings::from(text) {
-            let Ok(ops) = state.parse_line(line, &self.syntaxes) else {
-                // A grammar that fails on one line still colors the rest.
-                out.push(Vec::new());
-                continue;
-            };
-            out.push(spans_of(line, &ops, &mut stack));
-        }
-        out
+            .unwrap_or_else(|| self.syntaxes.find_syntax_plain_text())
     }
 }
 
@@ -295,6 +395,52 @@ mod tests {
         let out = spans(&text, Some("c"), "big.c");
 
         assert!(out.is_empty(), "a huge file is shown without colors");
+    }
+
+    /// A parse that stops and carries on must paint what one pass paints.
+    ///
+    /// The state matters most: the block comment opens before the first
+    /// stop and closes after it, so a second call that started over would
+    /// paint line 5 as code.
+    #[test]
+    fn a_stop_and_a_carry_on_paint_what_one_pass_paints() {
+        let text = "/* one\n two\n three\n four\n five */\nint x = 1;\n";
+        let step = Highlighter::new();
+
+        let short = step.lines_upto("blob-a", text, Some("c"), "a.c", 2);
+        assert_eq!(short.len(), 2, "a stop paints no further");
+
+        let whole = step.lines_upto("blob-a", text, Some("c"), "a.c", 6);
+        let once = Highlighter::new().lines("blob-a", text, Some("c"), "a.c");
+
+        assert_eq!(*whole, *once);
+        assert!(
+            classes(&whole[4], " five */")
+                .iter()
+                .any(|(cls, _)| cls.starts_with("tok-comment")),
+            "the comment must still be open on line 5: {:?}",
+            whole[4]
+        );
+    }
+
+    /// A line that is painted is never painted again.
+    #[test]
+    fn a_deeper_ask_only_paints_what_is_missing() {
+        let text = "int a;
+int b;
+int c;
+int d;
+";
+        let h = Highlighter::new();
+
+        assert_eq!(h.lines_upto("blob-a", text, Some("c"), "a.c", 1).len(), 1);
+        assert_eq!(h.lines_upto("blob-a", text, Some("c"), "a.c", 3).len(), 3);
+        assert_eq!(
+            h.lines_upto("blob-a", text, Some("c"), "a.c", 2).len(),
+            3,
+            "a shallower ask paints nothing back out"
+        );
+        assert_eq!(h.lines("blob-a", text, Some("c"), "a.c").len(), 4);
     }
 
     #[test]

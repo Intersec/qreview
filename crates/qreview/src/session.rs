@@ -689,7 +689,10 @@ impl Session {
             true => commitmsg::text(&self.git, rev)
                 .await
                 .map(|text| (text, crate::highlight::Lines::default())),
-            false => self.read_blob(rev, path, language.as_deref(), path).await,
+            false => {
+                self.read_blob(rev, path, language.as_deref(), path, to)
+                    .await
+            }
         };
         let Some((text, spans)) = painted else {
             return Ok(Vec::new());
@@ -729,12 +732,15 @@ impl Session {
         language: Option<&str>,
     ) {
         let path = file.file.path.clone();
+        let (last_old, last_new) = last_lines(file);
 
         // Both sides at once. Each one runs its git reads and then its own
         // highlight thread, so a file costs one pass of waiting, not two.
+        // Neither goes past the last line the hunks reach: the rest of a
+        // large file costs seconds and no row shows it.
         let (new_side, old_side) = tokio::join!(
-            self.blob(rev, &path, language, &path),
-            self.blob(base, old_path.unwrap_or(&path), language, &path),
+            self.blob(rev, &path, language, &path, last_new),
+            self.blob(base, old_path.unwrap_or(&path), language, &path, last_old),
         );
 
         file.line_count = new_side.as_ref().map(|(count, _)| *count);
@@ -758,15 +764,16 @@ impl Session {
         }
     }
 
-    /// Read one side of a file and highlight it, keyed by its blob hash.
+    /// Read one side of a file and highlight it down to line `upto`.
     async fn blob(
         &self,
         rev: &str,
         path: &str,
         language: Option<&str>,
         for_path: &str,
+        upto: usize,
     ) -> Option<(usize, crate::highlight::Lines)> {
-        let (text, lines) = self.read_blob(rev, path, language, for_path).await?;
+        let (text, lines) = self.read_blob(rev, path, language, for_path, upto).await?;
 
         Some((text.lines().count(), lines))
     }
@@ -783,6 +790,7 @@ impl Session {
         path: &str,
         language: Option<&str>,
         for_path: &str,
+        upto: usize,
     ) -> Option<(String, crate::highlight::Lines)> {
         let spec = format!("{rev}:{path}");
         let blob = self.git.text(&["rev-parse", &spec]).await.ok()?;
@@ -794,7 +802,7 @@ impl Session {
         let for_path = for_path.to_owned();
 
         tokio::task::spawn_blocking(move || {
-            let lines = highlighter.lines(&blob, &text, language.as_deref(), &for_path);
+            let lines = highlighter.lines_upto(&blob, &text, language.as_deref(), &for_path, upto);
             (text, lines)
         })
         .await
@@ -1111,6 +1119,25 @@ impl Session {
     }
 }
 
+/// The deepest line each side of a diff shows, old first.
+///
+/// A row of the old side is a removal, and every other row belongs to the
+/// new one. Nothing below these two lines is painted.
+fn last_lines(file: &FileDiff) -> (usize, usize) {
+    let mut old = 0;
+    let mut new = 0;
+
+    for hunk in &file.hunks {
+        for row in &hunk.rows {
+            match row.kind {
+                RowKind::Remove => old = old.max(row.old_line.unwrap_or(0)),
+                _ => new = new.max(row.new_line.unwrap_or(0)),
+            }
+        }
+    }
+    (old, new)
+}
+
 /// Where the Gerrit server is, when the remote names one.
 async fn coords_of(git: &Git, rev: &str, branch: Option<&str>) -> Option<Coordinates> {
     gerrit::coords::of_repo(git, rev, branch).await
@@ -1165,6 +1192,47 @@ mod tests {
         assert!(
             kept.iter().all(|entry| entry.language.is_empty()),
             "the kept list must carry nothing a reader added: {kept:?}"
+        );
+    }
+
+    /// A diff paints the file only as far as its hunks reach. The lines the
+    /// reader opens afterwards must still carry their colors, and the parse
+    /// must carry the state of the lines above them.
+    #[tokio::test]
+    async fn the_lines_opened_after_the_diff_are_painted_too() {
+        let mut before = String::from("int a = 0;\n");
+        let mut after = String::from("int a = 1;\n");
+        for text in [&mut before, &mut after] {
+            for number in 2..30 {
+                text.push_str(&format!("int x{number};\n"));
+            }
+            text.push_str("/* a comment\n   that runs on\n   and on */\n");
+        }
+
+        let repo = build_repo(&[
+            commit("before").file("a.c", &before),
+            commit("after").file("a.c", &after),
+        ])
+        .await;
+        let session = Session::open(repo.path(), &Options::new(), Languages::new())
+            .await
+            .unwrap();
+        let head = session.series.head.clone();
+
+        // The hunk stops around line 11, well above the comment.
+        session
+            .diff(&head, "a.c", &Against::Parent, &diff::How::default())
+            .await
+            .unwrap()
+            .expect("the change touches the file");
+
+        let rows = session.lines(&head, "a.c", 30, 32).await.unwrap();
+        let classes: Vec<&str> = rows[1].tokens.iter().map(|s| s.cls.as_str()).collect();
+
+        assert_eq!(rows[1].text, "   that runs on");
+        assert!(
+            classes.iter().any(|cls| cls.starts_with("tok-comment")),
+            "the comment opened on the line above: {classes:?}"
         );
     }
 }
