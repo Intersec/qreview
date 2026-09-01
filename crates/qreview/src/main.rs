@@ -69,7 +69,12 @@ async fn main() -> Result<()> {
         None => {}
     }
 
-    print!("{}", text_report(&session).await?);
+    // The series and its files cost a diff per change, and the reader who
+    // opens the browser never reads them. `--verbose` still prints them.
+    if cli.verbose {
+        print!("{}", text_report(&session).await?);
+        println!();
+    }
 
     let token = auth::new_token();
     let state = AppState::new(session, token.clone()).with_config(config.clone(), root.clone());
@@ -101,7 +106,9 @@ fn list(session: &Session) -> String {
     out
 }
 
-/// The series as text. The interface arrives in M2, see `roadmap/plan.md`.
+/// The series as text, for `--verbose`.
+///
+/// It costs one diff per change, so nothing calls it unless the reader asks.
 async fn text_report(session: &Session) -> Result<String> {
     let mut files = Vec::new();
 
@@ -128,7 +135,6 @@ async fn serve(port: u16, app: Router, token: &str, no_open: bool) -> Result<()>
     let addr = listener.local_addr()?;
 
     let url = format!("http://{addr}/?t={token}");
-    println!();
     println!("qreview is at {url}");
     println!("Press Ctrl-C to stop.");
 

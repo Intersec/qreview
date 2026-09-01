@@ -51,6 +51,7 @@ qreview list                                     # what this repository holds
 | `--no-worktree` | Leave out the changes that are not committed |
 | `--no-open` | Print the URL, open no browser |
 | `--port <n>` | Use a fixed port |
+| `-v, --verbose` | Print the series and the files of every change |
 
 What the browser shows:
 

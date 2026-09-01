@@ -902,6 +902,7 @@ qreview --base <rev>          set the base of the series
 qreview --no-gerrit           skip the Gerrit query
 qreview --no-open             start the server, print the URL, open nothing
 qreview --port <n>            use a fixed port
+qreview -v                    print the series and the files before the URL
 qreview export [--key <id>]   print the export text to stdout
 qreview list                  list the stored reviews of this repository
 ```

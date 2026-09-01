@@ -31,6 +31,10 @@ pub struct Cli {
     #[arg(long)]
     pub no_open: bool,
 
+    /// Print the series and the files of every change before the URL.
+    #[arg(short, long)]
+    pub verbose: bool,
+
     /// The port to listen on. 0 asks the system for a free one.
     #[arg(long, default_value_t = 0)]
     pub port: u16,
