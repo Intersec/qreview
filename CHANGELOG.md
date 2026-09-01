@@ -12,6 +12,37 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.10.0]
+
+### Added
+
+- **A trace mode** — `--trace`, or `QREVIEW_TRACE=1`, prints on standard
+  error what every piece of work costs: each child process, git, `ssh` to
+  Gerrit and `curl` alike, each highlight pass, each diff parse, and each
+  request with the status it answered.
+
+### Changed
+
+- qreview is much faster on a large repository. The file list of a change is
+  read with one git call instead of two and is kept for the run, the two
+  sides of a diff are highlighted at the same time, a file is highlighted
+  only as far as its hunks reach, the tags are read once per walk instead of
+  once per commit, and a commit named by its hash is read once per run. A
+  file that took 2.7 s to open now takes 0.6 s, and 0.03 s the second time.
+- The start asks Gerrit about the whole series in one query instead of one
+  per change. A round trip to the server is what a query costs, so a series
+  of five changes spent five of them before the browser opened.
+- qreview now prints the address and nothing else at start. The series and
+  the files of every change moved behind `-v, --verbose`. That listing cost
+  one diff per change, which was most of the time a start took.
+- The server reads the file list of the other changes of the series while
+  you read the first one, so opening the next change is instant instead of
+  a second of rename and copy detection. It only reads while nothing is
+  being answered, so it never takes the git a click is waiting on.
+- The page title now opens with `qreview`, before the repository and the
+  subject of the change: `qreview · myproject · net: retry the read`. A tab
+  is the tool at a glance, and still says which review it holds.
+
 ## [0.9.0]
 
 ### Added
