@@ -65,14 +65,30 @@ impl CommitInfo {
 }
 
 /// Read one commit.
+///
+/// A revision that is a full hash is read once for the whole run. Every pane
+/// of the interface asks about the commits of the series, and a page load
+/// asked git for the same one a dozen times.
 pub async fn info(git: &Git, rev: &str) -> Result<CommitInfo> {
-    let out = git.text(&["log", "-1", FORMAT, rev, "--"]).await?;
+    let call = ["log", "-1", FORMAT, rev, "--"];
+    let out = match is_object_name(rev) {
+        true => git.text_of_object(&call).await?,
+        false => git.text(&call).await?,
+    };
     let mut commits = parse(&out);
 
     match commits.len() {
         1 => Ok(commits.remove(0)),
         _ => bail!("{rev} does not name one commit"),
     }
+}
+
+/// Whether a revision names an object outright, rather than reaching one.
+///
+/// A full hash names content, and content never moves. `HEAD`, a branch, a
+/// tag or `rev^` all reach a commit that can be another one a moment later.
+pub fn is_object_name(rev: &str) -> bool {
+    rev.len() == 40 && rev.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 /// Read a range of commits, newest first.
@@ -182,6 +198,33 @@ mod tests {
         assert_eq!(head.date, "2026-01-01T00:00:00Z");
         assert!(head.parents.is_empty());
         assert!(!head.is_merge());
+    }
+
+    #[test]
+    fn only_a_full_hash_names_an_object() {
+        assert!(is_object_name("4888eaa8f1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6"));
+        assert!(!is_object_name("HEAD"));
+        assert!(!is_object_name("main"));
+        assert!(!is_object_name("4888eaa8"));
+        assert!(!is_object_name("4888eaa8f1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6^"));
+        assert!(!is_object_name("zzzzeaa8f1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6"));
+    }
+
+    /// A hash names content, so a commit read by hash is read once. A ref
+    /// reaches whatever it points at now, so it goes to git every time.
+    #[tokio::test]
+    async fn a_ref_is_read_again_and_a_hash_is_not() {
+        let repo = build_repo(&[commit("first").file("a.txt", "a\n")]).await;
+        let git = Git::discover(repo.path()).await.unwrap();
+        let first = info(&git, "HEAD").await.unwrap();
+
+        repo.add(&commit("second").file("a.txt", "b\n")).await;
+
+        let now = info(&git, "HEAD").await.unwrap();
+        assert_eq!(now.subject, "second", "a ref must not answer from memory");
+
+        let by_hash = info(&git, &first.hash).await.unwrap();
+        assert_eq!(by_hash, first);
     }
 
     #[tokio::test]

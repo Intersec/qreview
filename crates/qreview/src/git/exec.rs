@@ -3,9 +3,11 @@
 //! git runs as a child process, never as a library. The tool must agree with
 //! what the developer sees in the terminal, `diff.algorithm` included.
 
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -16,9 +18,15 @@ use tokio::process::Command;
 const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A repository, addressed by its top level directory.
+///
+/// A clone of it is the same repository, and shares what it has already
+/// read. This is what lets a background task hold one.
 #[derive(Clone, Debug)]
 pub struct Git {
     root: PathBuf,
+    /// The answers of the calls that can only ever answer one thing. See
+    /// `text_of_object`.
+    answers: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl Git {
@@ -35,6 +43,7 @@ impl Git {
         }
         Ok(Self {
             root: PathBuf::from(root),
+            answers: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -45,6 +54,34 @@ impl Git {
     /// Run git and return its standard output as text.
     pub async fn text<S: AsRef<OsStr>>(&self, args: &[S]) -> Result<String> {
         self.text_with(args, &[]).await
+    }
+
+    /// The same, answered from memory when this run made the call before.
+    ///
+    /// Only for a call that asks about an object named by its full hash. A
+    /// hash names content, so such a call has one answer for as long as the
+    /// process lives. Anything else — a ref, `HEAD`, the working tree —
+    /// must go to git every time.
+    ///
+    /// A call that failed is never kept. `cat-file -e` on a commit this
+    /// clone does not hold is the case that matters: the reader can fetch
+    /// it, and then the answer is yes.
+    pub async fn text_of_object<S: AsRef<OsStr>>(&self, args: &[S]) -> Result<String> {
+        let key = args
+            .iter()
+            .map(|arg| arg.as_ref().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("\0");
+
+        if let Some(hit) = self.answers.lock().unwrap().get(&key) {
+            crate::trace::note(|| format!("git {}, from the cache", describe(args)));
+            return Ok(hit.clone());
+        }
+
+        let text = self.text(args).await?;
+        self.answers.lock().unwrap().insert(key, text.clone());
+
+        Ok(text)
     }
 
     /// The same, with a few variables added to the environment.

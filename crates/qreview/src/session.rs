@@ -951,10 +951,15 @@ impl Session {
     }
 
     async fn has_commit(&self, rev: &str) -> bool {
-        self.git
-            .text(&["cat-file", "-e", &format!("{rev}^{{commit}}")])
-            .await
-            .is_ok()
+        let call = ["cat-file", "-e", &format!("{rev}^{{commit}}")];
+
+        // A commit this clone holds, it keeps. One it does not can arrive
+        // with a fetch, and a failed call is never kept, so the answer is
+        // asked again until it is yes.
+        match commit::is_object_name(rev) {
+            true => self.git.text_of_object(&call).await.is_ok(),
+            false => self.git.text(&call).await.is_ok(),
+        }
     }
 
     /// Fetch one Gerrit patch set into this clone.
