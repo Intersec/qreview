@@ -4,6 +4,8 @@
 // a recorded file and serves the fetch from a bare repository next door, so
 // the tool runs exactly the code it runs against a real server.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { openChange } from './act.ts';
 import { start, type Running } from './server.ts';
@@ -65,4 +67,29 @@ test('the version being reviewed is the last one in the list', async ({ page }) 
   // Every version says when it was pushed or written, the server's included.
   await expect(options.nth(0)).toContainText(/\d{4}-\d{2}-\d{2}/);
   await expect(options.nth(1)).toContainText(/\d{4}-\d{2}-\d{2}/);
+});
+
+test.describe('the query the start sends', () => {
+  // Its own server: this suite reads the queries a start sends, and nothing
+  // must have opened a change on it first. `--prev` names an older version,
+  // which is what makes a change worth asking the server about.
+  let batched: Running;
+
+  test.beforeAll(async () => {
+    batched = await start({ gerrit: true, prev: true });
+  });
+  test.afterAll(() => batched?.stop());
+
+  test('the whole series is asked for in one query', () => {
+    // The round trip is what a query costs, not the question. Asking per
+    // change spent it on every change of the series.
+    const log = readFileSync(join(batched.fixture.bin!, 'queries.log'), 'utf8');
+    const asked = log.split('\n').filter((line) => line.trim() !== '');
+
+    expect(asked).toHaveLength(1);
+    // The three changes of the series, in one group, so the project still
+    // holds for every one of them.
+    expect(asked[0]).toMatch(/\(change:[^\s)]+( OR change:[^\s)]+){2}\)/);
+    expect(asked[0]).toContain('project:myproject');
+  });
 });

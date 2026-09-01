@@ -1013,12 +1013,23 @@ impl Session {
             .iter()
             .map(|c| (c.key.clone(), c.commit.clone()))
             .collect();
-        let mut counts = Vec::with_capacity(keys.len());
 
-        for (key, commit) in &keys {
-            // Asking costs a Gerrit query. A change that cannot have a
-            // second version is not worth one.
-            if self.prevs.is_empty() && self.reviewed_versions(key, commit).is_empty() {
+        // Which changes are worth asking the server about. Asking costs a
+        // round trip, and a change that cannot have a second version is not
+        // worth one.
+        let asked: Vec<_> = keys
+            .iter()
+            .filter(|(key, commit)| {
+                !self.prevs.is_empty() || !self.reviewed_versions(key, commit).is_empty()
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+
+        self.prime_gerrit(&asked).await;
+
+        let mut counts = Vec::with_capacity(keys.len());
+        for (key, _) in &keys {
+            if !asked.contains(key) {
                 counts.push(1);
                 continue;
             }
@@ -1026,6 +1037,63 @@ impl Session {
         }
         for (change, count) in self.series.changes.iter_mut().zip(counts) {
             change.patch_set_count = count;
+        }
+    }
+
+    /// Ask Gerrit about a set of changes at once, and keep every answer.
+    ///
+    /// The round trip is the cost, not the query, so the whole series is
+    /// asked for together. Every change asked about is written into the
+    /// answers, the ones the server never heard of as `None`, so nothing
+    /// below asks a second time.
+    async fn prime_gerrit(&self, keys: &[String]) {
+        let Some(coords) = self.gerrit.as_ref() else {
+            return;
+        };
+
+        let mut wanted = Vec::new();
+        for key in keys {
+            let Some(rev) = self.commit_of(key) else {
+                continue;
+            };
+            let Ok(info) = commit::info(&self.git, &rev).await else {
+                continue;
+            };
+            if let Some(change_id) = info.change_id() {
+                wanted.push(change_id.to_owned());
+            }
+        }
+
+        let mut answers = self.gerrit_answers.lock().await;
+        wanted.retain(|id| !answers.contains_key(id));
+        if wanted.is_empty() {
+            return;
+        }
+
+        let ids: Vec<&str> = wanted.iter().map(String::as_str).collect();
+        let found = match gerrit::query_many(coords, &ids).await {
+            Ok(found) => found,
+            // The server said no. It may still answer about one change at a
+            // time, so nothing is written down and the reader who opens a
+            // change asks again for that one.
+            Err(gerrit::Failed::Refused(error)) => {
+                eprintln!("qreview: {error}");
+                return;
+            }
+            // Nothing answered. Asking once per change would only make the
+            // reader wait once per change, so the answer is no for all.
+            Err(gerrit::Failed::Unreachable(error)) => {
+                eprintln!("qreview: {error}");
+                for id in wanted {
+                    answers.insert(id, None);
+                }
+                return;
+            }
+        };
+
+        for id in &wanted {
+            let answer = found.iter().find(|change| change.id == *id).cloned();
+            answers.insert(id.clone(), answer);
         }
     }
 

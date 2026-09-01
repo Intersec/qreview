@@ -146,7 +146,9 @@ function fakeGerrit(base: string, repo: string): { bin: string; served: string }
       '#!/bin/sh',
       '# A Gerrit that is a shell script. See e2e/fixture.ts.',
       'case "$*" in',
-      `  *"gerrit query"*) cat ${JSON.stringify(join(bin, 'query.json'))} ;;`,
+      // Every query is written down, so a test can say how many were asked
+      // and what each one carried.
+      `  *"gerrit query"*) echo "$*" >> ${JSON.stringify(join(bin, 'queries.log'))}; cat ${JSON.stringify(join(bin, 'query.json'))} ;;`,
       `  *git-upload-pack*) exec git-upload-pack ${JSON.stringify(bare)} ;;`,
       '  *) echo "fake ssh: $*" >&2; exit 1 ;;',
       'esac',

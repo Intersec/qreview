@@ -122,6 +122,25 @@ mod tests {
         assert_eq!(change.patch_sets[2].git_ref, "refs/changes/21/12321/3");
     }
 
+    /// One query carries the whole series, so one answer carries every
+    /// change of it, in the order the server listed them.
+    #[test]
+    fn one_answer_holds_every_change_the_query_asked_about() {
+        let changes = parse(&recorded("three-changes.json"));
+
+        let ids: Vec<&str> = changes.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "I8f3ac21b4e0d9f1a2c3d4e5f60718293a4b5c6d7",
+                "Ibb11cc22dd33ee44ff5566778899aabbccddeeff",
+                "Icc99887766554433221100ffeeddccbbaa998877",
+            ]
+        );
+        let counts: Vec<usize> = changes.iter().map(|c| c.patch_sets.len()).collect();
+        assert_eq!(counts, [2, 1, 3]);
+    }
+
     #[test]
     fn the_remarks_of_a_patch_set_are_read_with_their_author() {
         let changes = parse(&recorded("with-comments.json"));
