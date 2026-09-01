@@ -49,6 +49,12 @@ pub struct Session {
     linked: std::collections::HashMap<String, Vec<String>>,
     /// One query per change, kept for the life of the run.
     gerrit_answers: tokio::sync::Mutex<std::collections::HashMap<String, Option<gerrit::Change>>>,
+    /// The file list of a pair of trees, kept for the life of the run.
+    ///
+    /// Rename and copy detection is the expensive half of a diff, and the
+    /// answer never moves: a commit is immutable, and the synthetic commit
+    /// of the working tree gets a new hash whenever the tree changes.
+    file_lists: std::sync::Mutex<std::collections::HashMap<String, Arc<Vec<FileEntry>>>>,
 }
 
 /// What a diff is read against.
@@ -130,6 +136,7 @@ impl Session {
             extends: Vec::new(),
             linked: std::collections::HashMap::new(),
             gerrit_answers: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            file_lists: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
         session.make_keys_unique();
         session.link_versions().await;
@@ -526,6 +533,29 @@ impl Session {
         }
     }
 
+    /// The file list of a pair of trees, from the cache or from git.
+    ///
+    /// Every read of a file asks for it, only to learn the old path of a
+    /// rename. Asking git again would run the rename and copy detection
+    /// again, which on a large repository is most of what a read costs.
+    async fn entries(&self, base: &str, rev: &str, how: &diff::How) -> Result<Vec<FileEntry>> {
+        // Of the three options, only `-w` changes which files differ.
+        let key = format!("{base} {rev} {}", how.ignore_ws);
+
+        if let Some(hit) = self.file_lists.lock().unwrap().get(&key) {
+            crate::trace::note(|| format!("file list of {rev}, from the cache"));
+            return Ok(hit.as_ref().clone());
+        }
+
+        let entries = diff::files(&self.git, base, rev, how).await?;
+        self.file_lists
+            .lock()
+            .unwrap()
+            .insert(key, Arc::new(entries.clone()));
+
+        Ok(entries)
+    }
+
     pub async fn files(
         &self,
         rev: &str,
@@ -533,7 +563,7 @@ impl Session {
         how: &diff::How,
     ) -> Result<Vec<FileEntry>> {
         let base = self.base_of(rev, against).await?;
-        let mut entries = diff::files(&self.git, &base, rev, how).await?;
+        let mut entries = self.entries(&base, rev, how).await?;
 
         // Two versions of one change, read against each other. Between them
         // sits everything the rebase brought, and none of it is the work.
@@ -572,7 +602,7 @@ impl Session {
                 .cloned()
                 .unwrap_or_else(|| diff::EMPTY_TREE.to_owned());
 
-            for entry in diff::files(&self.git, &parent, rev, how).await.ok()? {
+            for entry in self.entries(&parent, rev, how).await.ok()? {
                 if let Some(old) = entry.old_path {
                     touched.insert(old);
                 }
@@ -595,7 +625,8 @@ impl Session {
         }
 
         let base = self.base_of(rev, against).await?;
-        let old = diff::files(&self.git, &base, rev, how)
+        let old = self
+            .entries(&base, rev, how)
             .await?
             .into_iter()
             .find(|e| e.path == path)
@@ -1071,4 +1102,57 @@ impl Session {
 /// Where the Gerrit server is, when the remote names one.
 async fn coords_of(git: &Git, rev: &str, branch: Option<&str>) -> Option<Coordinates> {
     gerrit::coords::of_repo(git, rev, branch).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lang::Languages;
+    use crate::series::Options;
+    use crate::testutil::{build_repo, commit};
+
+    /// The file list is kept for the run, and every reader gets its own copy.
+    ///
+    /// `files` fills in the language of each entry and, between two patch
+    /// sets, drops the rows the rebase brought. A cache that handed out the
+    /// stored list itself would keep those edits and answer the next reader
+    /// with them.
+    #[tokio::test]
+    async fn the_kept_file_list_is_the_same_on_the_second_read() {
+        let repo = build_repo(&[
+            commit("before").file("src/a.c", "int a;\n"),
+            commit("after")
+                .file("src/a.c", "int b;\n")
+                .file("src/new.py", "x = 1\n"),
+        ])
+        .await;
+
+        let mut langs = Languages::new();
+        langs.extend(&std::collections::HashMap::from([(
+            "c".to_owned(),
+            "c".to_owned(),
+        )]));
+        let session = Session::open(repo.path(), &Options::new(), langs)
+            .await
+            .unwrap();
+
+        let head = session.series.head.clone();
+        let how = diff::How::default();
+        let first = session.files(&head, &Against::Parent, &how).await.unwrap();
+        let second = session.files(&head, &Against::Parent, &how).await.unwrap();
+
+        assert_eq!(first.len(), 2, "{first:?}");
+        assert_eq!(first, second);
+        assert!(
+            first.iter().any(|entry| entry.language == "c"),
+            "the reader gets the language: {first:?}"
+        );
+
+        let base = session.base_of(&head, &Against::Parent).await.unwrap();
+        let kept = session.entries(&base, &head, &how).await.unwrap();
+        assert!(
+            kept.iter().all(|entry| entry.language.is_empty()),
+            "the kept list must carry nothing a reader added: {kept:?}"
+        );
+    }
 }
