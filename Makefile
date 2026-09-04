@@ -9,7 +9,7 @@ MUSL_TARGET := x86_64-unknown-linux-musl
 # What the release file is called. No version in it: the release page and
 # the package registry both carry that, and a name that never changes is
 # what a permanent link can point at.
-DIST_NAME := qreview-linux-x86_64.xz
+DIST_NAME := qreview-linux-x86_64.gz
 DEV_PORT := 7420
 
 .PHONY: all setup web build check test e2e shots fmt lint install dist musl-target dev clean
@@ -64,7 +64,7 @@ dist: web musl-target
 	$(CARGO) build --release --target $(MUSL_TARGET)
 	@rm -rf dist && mkdir dist
 	@cp target/$(MUSL_TARGET)/release/qreview dist/
-	@xz -9 -c dist/qreview > dist/$(DIST_NAME)
+	@gzip -9 -c dist/qreview > dist/$(DIST_NAME)
 	@ls -lh dist/
 
 # A target belongs to rustup, not to asdf: `.tool-versions` pins a Rust

@@ -75,4 +75,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "qreview $GITHUB_REF_NAME" \
             --notes-file notes.md \
-            dist/qreview-linux-x86_64.xz
+            dist/qreview-linux-x86_64.gz

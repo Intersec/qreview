@@ -10,8 +10,8 @@ One binary, no runtime to install, nothing leaves your machine.
 One link, always the newest build:
 
 ```sh
-curl -fLO https://github.com/Intersec/qreview/releases/latest/download/qreview-linux-x86_64.xz
-xz -d qreview-linux-x86_64.xz
+curl -fLO https://github.com/Intersec/qreview/releases/latest/download/qreview-linux-x86_64.gz
+gzip -d qreview-linux-x86_64.gz
 install -m 755 qreview-linux-x86_64 ~/.local/bin/qreview
 qreview --version
 ```

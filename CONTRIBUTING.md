@@ -122,7 +122,7 @@ runs the same gate on the same commit and is the one that publishes.
 binary itself. Use it to release locally: to hand a colleague a build before
 a tag, or when no pipeline is available.
 
-The name carries no version, on purpose: `qreview-linux-x86_64.xz`, the same
+The name carries no version, on purpose: `qreview-linux-x86_64.gz`, the same
 on your machine and on the server. The release page and the package registry
 both say which version it is, and a name that never changes is what the
 permanent link of the newest release points at. `qreview --version` says it
