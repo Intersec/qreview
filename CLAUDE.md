@@ -11,13 +11,13 @@ the release. This file holds what a session must do.
 
 ## Start of a session
 
-1. Read [`roadmap/plan.md`](./roadmap/plan.md). Take the first task that is
-   not `[x]`.
+1. Take the task the user names. The backlog is the
+   [GitHub issues](https://github.com/Intersec/qreview/issues).
 2. Read the part of [`roadmap/design.md`](./roadmap/design.md) that the task
    touches.
 3. Do the task.
 
-Do not start a task that is not the next one, unless the user names it.
+Do not start a task that the user did not ask for.
 
 ## Before you finish
 
@@ -48,9 +48,9 @@ The interface is built before every Rust step, because the binary embeds
 
 ## End of a task
 
-1. Commit the task alone.
-2. Mark the task `[x]` in [`roadmap/plan.md`](./roadmap/plan.md).
-3. Drop a changelog fragment when a user can see the change. See
+1. Commit the task alone. If an issue asked for it, name that issue in the
+   body: `Closes #12`.
+2. Drop a changelog fragment when a user can see the change. See
    [`changelog/README.md`](./changelog/README.md).
 
 ## The design is a contract
@@ -164,7 +164,8 @@ way the project does a thing. Keep each line short.
 
 ## Documentation
 
-`roadmap/` holds the plan and the design. `README.md` holds the use.
+`roadmap/` holds the design, the decisions, and the test policy. The work
+itself is in the GitHub issues. `README.md` holds the use.
 `CONTRIBUTING.md` holds the process.
 
 **This is an open-source project.** Write for a reader who has never seen your

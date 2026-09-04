@@ -1,6 +1,6 @@
 # Roadmap
 
-This directory holds the plan for qreview. It is the memory of the project
+This directory holds the design of qreview. It is the memory of the project
 across sessions. Read it before you write code.
 
 | Document | What it holds |
@@ -8,21 +8,14 @@ across sessions. Read it before you write code.
 | [`concept.md`](./concept.md) | The problem, the users, the non-goals, the prior art |
 | [`stack.md`](./stack.md) | The technology decisions and the rejected alternatives |
 | [`design.md`](./design.md) | The architecture, the data model, the storage format, the API |
-| [`features.md`](./features.md) | Where the backlog went: the GitHub issues |
-| [`plan.md`](./plan.md) | The milestones, the tasks, and the session protocol |
 | [`testing.md`](./testing.md) | The test policy. It is strict on purpose |
 
-## How to work a session
+The work itself is not here. The backlog is the
+[GitHub issues](https://github.com/Intersec/qreview/issues), because an issue
+carries a discussion that a line of Markdown cannot.
 
-1. Read [`plan.md`](./plan.md). Take the first task that is not done.
-2. Read the part of [`design.md`](./design.md) that the task touches.
-3. Write the code and the tests together.
-4. Run `make check`. The task is not done while the command is red.
-5. Commit the task alone.
-6. Mark the task done in `plan.md`.
-
-If a task contradicts the design, stop and report. Do not change the design in
-silence.
+`design.md` and `stack.md` are a contract. If a change contradicts the design,
+stop and report. Do not change the design in silence.
 
 ## Outside this directory
 

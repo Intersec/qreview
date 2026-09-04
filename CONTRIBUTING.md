@@ -81,8 +81,8 @@ entry, named after the change. See
   person.
 - **Minor** (`0.1` → `0.2`) — a notable feature. Most releases.
 - **Patch** (`0.1.0` → `0.1.1`) — fixes only.
-- **`1.0`** — the milestones of `roadmap/plan.md` are done and a second person
-  uses the tool.
+- **`1.0`** — no open issue blocks daily use, and a second person uses the
+  tool.
 - **Major** — a change of storage format that the tool cannot migrate, or a
   change of direction.
 

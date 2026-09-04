@@ -156,7 +156,7 @@ left it. See `examples/config.json`.
 |---|---|
 | [`roadmap/concept.md`](./roadmap/concept.md) | The problem, the users, the non-goals, the prior art |
 | [`roadmap/design.md`](./roadmap/design.md) | The architecture, the data model, the API |
-| [`roadmap/plan.md`](./roadmap/plan.md) | The milestones and the tasks |
+| [`roadmap/stack.md`](./roadmap/stack.md) | The technology decisions, with a date each |
 | [`examples/`](./examples/) | Configuration files to copy |
 | [`roadmap/testing.md`](./roadmap/testing.md) | The test policy |
 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) | The branch model, the commits, the release |
