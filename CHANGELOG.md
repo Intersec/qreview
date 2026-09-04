@@ -12,6 +12,14 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.11.0]
+
+### Changed
+
+- The release file is now `qreview-linux-x86_64.gz`, not `.xz`. `gzip` is on
+  every machine, while `xz` often needs an extra package. Unpack it with
+  `gzip -d qreview-linux-x86_64.gz`.
+
 ## [0.10.0]
 
 ### Added
