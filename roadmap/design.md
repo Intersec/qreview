@@ -146,9 +146,14 @@ A batch ends at a boundary card that names the reason:
 | Batch | The number loaded. Nothing is wrong, there is simply more |
 | Root | The history has no parent left |
 
-Every card carries **Load 5 older**. A merge card also carries **Review the
-merge** and, when the second parent is not a remote branch, **Follow the other
-parent**.
+The merge itself is loaded, and the walk stops **under** it. The card sits
+below the merge in the list, and `commit` names the first parent of the
+merge. The commits the merge brings in are another line of history, and
+nothing loads them.
+
+Every card carries **Load 5 older**, which follows the first parent. A merge
+card also carries, when the second parent is not a remote branch, **Follow
+the other parent**.
 
 #### The work that is not committed
 
@@ -270,11 +275,12 @@ git diff-tree -p --no-color "$tree" <merge>
 output is the tree. The lines after it describe the conflicts, and the exit
 code is non-zero when there is one, which is normal here.
 
-The base selector of a merge offers:
+A merge is a change of the series like any other. Its bases sit in the base
+selector, beside the patch sets, the way Gerrit puts them there:
 
 | Base | What it shows |
 |---|---|
-| Auto-merge | The conflict resolution. The default |
+| The auto-merge | The conflict resolution. The default |
 | Parent 1 | Everything the merge brought in from the other side |
 | Parent 2 | The same, from the other direction |
 
@@ -326,6 +332,7 @@ type ChangeSummary = {
   subject: string;
   author: string;
   commit: string;          // the local commit hash
+  parents: string[];       // the parents of the commit, in order
   patchSetCount: number;
   commentCount: number;
   unresolvedCount: number;
@@ -721,7 +728,8 @@ Two static routes sit outside `/api`: `/` serves the interface, and
 `ws=ignore` leaves out what differs only by whitespace. `ps` names the patch
 set to read, and the last one is the default. `base`
 takes `parent` (the default), `ps:<n>` to read one patch set against another,
-and on a merge `automerge` (its default), `parent1` or `parent2`.
+and on a merge `automerge` (its default) or `parent<n>`, one for each parent
+the merge carries.
 
 One file at a time on the diff route. A change with 200 files must not build
 200 diffs to show the first one.

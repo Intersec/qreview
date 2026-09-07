@@ -15,10 +15,28 @@ test.beforeEach(async ({ page }) => {
   await page.goto(server.url);
 });
 
-test('the series stops at the merge and says so', async ({ page }) => {
+test('the merge is loaded, and the walk stops under it', async ({ page }) => {
   await expect(page.getByRole('button', { name: /net: retry the read/ })).toBeVisible();
-  await expect(page.getByText('Merge branch side into main')).toBeVisible();
+  // The merge is a change of the series, and the card sits under it.
+  await expect(page.getByRole('button', { name: /Merge branch side into main/ })).toBeVisible();
+  await expect(page.locator('.boundary')).toContainText('under the merge');
   await expect(page.getByRole('button', { name: 'Load 5 older' })).toBeVisible();
+});
+
+test('a merge shows its files, and reads against the base picked', async ({ page }) => {
+  await openChange(page, /Merge branch side into main/);
+
+  // The auto-merge is the default base, so the file the merge resolved is
+  // the work, and the conflict is on the old side of the diff.
+  await expect(page.locator('.patch-bar')).toContainText('the auto-merge');
+  await expect(page.locator('.file-row', { hasText: 'net.blk' })).toBeVisible();
+  await openFile(page, 'net.blk');
+  await expect(page.locator('tr', { hasText: '<<<<<<<' })).toBeVisible();
+
+  // Parent 1 shows everything the merge brought in from the other side.
+  await page.getByLabel('Read against').selectOption('parent1');
+  await expect(page.locator('.file-bar h2')).toContainText('net.blk');
+  await expect(page.locator('tr', { hasText: '<<<<<<<' })).toHaveCount(0);
 });
 
 test('the tab names the tool, the repository and the change', async ({ page }) => {

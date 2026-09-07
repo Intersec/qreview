@@ -409,3 +409,45 @@ is part of what the repository holds now; and the comment counts.
 
 Nothing is deleted. A change the walk no longer meets leaves the series, and
 its remarks stay in the store, so a rebase away and back finds them again.
+
+## 2026-09-07 — The merge is a change of the series
+
+`Review the merge` was a button on the boundary card. The walk stopped at a
+merge and left it out of the list, so the card was the only way in. Two
+things were wrong with that.
+
+The button was easy to miss, and it was not needed: `Load 5 older` already
+put the merge in the list, and the reader who clicked it got the merge as an
+ordinary change. So the tool had two doors to one room, and the file list was
+drawn behind one of them only.
+
+The walk now loads the merge and stops under it. On a merge boundary,
+`Boundary.commit` is the first parent of the merge rather than the merge
+itself, and the card below the merge reads `under the merge <sha>` with both
+parents on it. Nothing crosses the merge on its own: the commits it brings in
+are still another line of history, and `Load 5 older` follows the first
+parent.
+
+What this costs: a comment written on a merge through the old button was
+filed under the bare hash of the commit, because that is the key the card
+passed. A merge is keyed like every other change now, by its `Change-Id` or
+by `sha-<hash>`, so a file named after the bare hash is not read any more.
+Nothing migrates it. The file stays where it is, and a rename to the key of
+the change brings those remarks back.
+
+## 2026-09-07 — The bases of a merge live in the base selector
+
+Gerrit puts the auto-merge and each parent in the same dropdown as the patch
+sets, because all of them answer one question: what is this version read
+against. qreview had them on a strip of buttons of their own, and the strip
+appeared for the merge under the boundary alone. A merge opened from the list
+offered no parent at all.
+
+The base selector now offers the auto-merge, `parent 1` and `parent 2` when
+the change is a merge, above the patch sets. The auto-merge is the default,
+so it is the option the selector opens on, and it is the same value the
+server already answers to. `ChangeSummary` gains `parents`, the hashes of the
+parents of the commit, so the selector can name each one.
+
+The strip stays for what a dropdown cannot say: the note that explains what
+the auto-merge shows, and `What it brings in`.

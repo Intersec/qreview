@@ -243,15 +243,20 @@ pub async fn walk(
 
         let info = commit::info(git, &hash).await?;
 
-        // A merge is the boundary, not a change in the list. The reader can
-        // review it from the card, or continue on the first parent.
+        // A merge is a change like any other, and the walk stops under it.
+        // The commits it brings in are another line of history, so crossing
+        // the merge stays an explicit action of the reader.
         if info.is_merge() {
             let merge = merge_info(git, &info).await;
-            let reason = format!("the merge {}", short(&hash));
+            let reason = format!("under the merge {}", short(&hash));
+            // `is_merge` is two parents at least, so the first one is here.
+            let under = info.parents[0].clone();
+
+            changes.push(summary(info));
             return Ok(done(
                 changes,
                 BoundaryKind::Merge,
-                &hash,
+                &under,
                 &reason,
                 false,
                 merge,
@@ -352,6 +357,7 @@ pub(crate) fn summary(info: CommitInfo) -> ChangeSummary {
         subject: info.subject.clone(),
         author: info.author.clone(),
         commit: info.hash.clone(),
+        parents: info.parents.clone(),
         // The store fills these in. The walk knows nothing about comments.
         patch_set_count: 1,
         comment_count: 0,
@@ -614,7 +620,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_walk_stops_at_a_merge_and_never_crosses_it() {
+    async fn the_walk_loads_the_merge_and_stops_under_it() {
         let repo = build_repo(&[
             commit("base").file("f", "a\nb\nc\n"),
             commit("side work")
@@ -632,8 +638,18 @@ mod tests {
         let git = Git::discover(repo.path()).await.unwrap();
         let (_, batch) = first_batch(&git, &opts()).await.unwrap();
 
-        assert_eq!(subjects(&batch).await, ["after the merge"]);
+        assert_eq!(
+            subjects(&batch).await,
+            ["after the merge", "Merge side into main"],
+            "the merge is a change of the series"
+        );
         assert_eq!(batch.boundary.kind, BoundaryKind::Merge);
+
+        // Nothing under the merge is loaded, and the boundary names the
+        // commit the reader would go on with: the first parent.
+        let loaded = batch.changes.last().expect("the merge is loaded");
+        assert!(loaded.is_merge);
+        assert_eq!(batch.boundary.commit.as_ref(), loaded.parents.first());
 
         let merge = batch
             .boundary
@@ -646,7 +662,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_head_that_is_a_merge_gives_an_empty_batch_and_the_card() {
+    async fn a_head_that_is_a_merge_is_the_change_of_the_series() {
         let repo = build_repo(&[
             commit("base").file("f", "a\n"),
             commit("side work").on_branch("side").file("g", "1\n"),
@@ -657,7 +673,7 @@ mod tests {
         let git = Git::discover(repo.path()).await.unwrap();
         let (_, batch) = first_batch(&git, &opts()).await.unwrap();
 
-        assert!(batch.changes.is_empty());
+        assert_eq!(subjects(&batch).await, ["Merge side into main"]);
         assert_eq!(batch.boundary.kind, BoundaryKind::Merge);
     }
 

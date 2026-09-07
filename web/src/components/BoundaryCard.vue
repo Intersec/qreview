@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import type { Boundary } from '@/api/types';
 
 const props = defineProps<{ boundary: Boundary; busy: boolean }>();
-const emit = defineEmits<{ more: []; reviewMerge: [] }>();
+const emit = defineEmits<{ more: [] }>();
 
 const title = computed(() => {
   switch (props.boundary.kind) {
@@ -40,14 +40,6 @@ const title = computed(() => {
     </template>
 
     <p class="mt-2 flex flex-wrap gap-2">
-      <button
-        v-if="boundary.merge"
-        type="button"
-        class="context-button"
-        @click="emit('reviewMerge')"
-      >
-        Review the merge
-      </button>
       <button
         v-if="boundary.commit"
         type="button"

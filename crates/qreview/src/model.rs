@@ -41,6 +41,10 @@ pub struct ChangeSummary {
     pub subject: String,
     pub author: String,
     pub commit: String,
+    /// The parents of the commit, in order. Two or more mean a merge, and
+    /// the base selector names each one.
+    #[serde(default)]
+    pub parents: Vec<String>,
     pub patch_set_count: usize,
     pub comment_count: usize,
     /// The reader marked this change read.

@@ -202,15 +202,17 @@ mod tests {
     async fn an_empty_series_says_so() {
         let repo = build_repo(&[
             commit("base").file("f", "a\n"),
-            commit("side").on_branch("side").file("g", "1\n"),
-            commit("main").on_branch("main").file("h", "1\n"),
-            merge("Merge side into main").from("side"),
+            commit("work").file("g", "1\n"),
         ])
         .await;
+        let mut options = Options::new();
+        // The base is the end of the series, so a base on the head itself
+        // loads nothing.
+        options.base = Some("HEAD".to_owned());
 
-        let out = rendered(&repo, Options::new()).await;
+        let out = rendered(&repo, options).await;
 
         assert!(out.contains("No change is loaded."), "{out}");
-        assert!(out.contains("boundary: merge"), "{out}");
+        assert!(out.contains("boundary: base"), "{out}");
     }
 }

@@ -404,20 +404,30 @@ fn parse_base(value: Option<&str>) -> Result<Option<Against>, ApiError> {
     match value {
         None | Some("") | Some("default") | Some("parent") => Ok(None),
         Some("automerge") => Ok(Some(Against::Merge(Base::AutoMerge))),
-        Some("parent1") => Ok(Some(Against::Merge(Base::Parent(1)))),
-        Some("parent2") => Ok(Some(Against::Merge(Base::Parent(2)))),
-        Some(other) => match other
-            .strip_prefix("ps:")
-            .and_then(|n| n.parse::<usize>().ok())
-        {
+        Some(other) => {
+            // `parent<n>` for any n: an octopus merge has more than two, and
+            // the selector offers what the commit carries.
+            if let Some(number) = number_after(other, "parent") {
+                return Ok(Some(Against::Merge(Base::Parent(number))));
+            }
             // The number is turned into a commit by the caller, which is the
             // only place that knows the patch sets of this change.
-            Some(number) => Ok(Some(Against::Tree(format!("ps:{number}")))),
-            None => Err(ApiError::bad_request(format!(
-                "base {other} is not one of parent, automerge, parent1, parent2, ps:<n>"
-            ))),
-        },
+            if let Some(number) = number_after(other, "ps:") {
+                return Ok(Some(Against::Tree(format!("ps:{number}"))));
+            }
+            Err(ApiError::bad_request(format!(
+                "base {other} is not one of parent, automerge, parent<n>, ps:<n>"
+            )))
+        }
     }
+}
+
+/// The number in `parent2` or `ps:3`, when the word is that one.
+fn number_after(value: &str, word: &str) -> Option<usize> {
+    value
+        .strip_prefix(word)
+        .and_then(|rest| rest.parse::<usize>().ok())
+        .filter(|number| *number > 0)
 }
 
 /// Turn a `ps:<n>` placeholder into the commit of that patch set.
@@ -1385,18 +1395,32 @@ mod tests {
         .await
     }
 
+    /// The merge of `merged()`, which is the change the series ends on.
+    fn merge_key(session: &serde_json::Value) -> String {
+        let changes = session["series"]["changes"].as_array().unwrap();
+        let last = changes.last().expect("the merge is a change of the series");
+
+        assert_eq!(last["isMerge"], true);
+        last["key"].as_str().unwrap().to_owned()
+    }
+
     #[tokio::test]
-    async fn the_merge_under_the_boundary_can_be_opened() {
+    async fn the_merge_is_a_change_and_reads_against_the_auto_merge() {
         let repo = merged().await;
         let server = server(&repo).await;
         let (_, session) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
 
-        let merge_commit = session["series"]["boundary"]["commit"].as_str().unwrap();
+        let key = merge_key(&session);
+        // The walk stops under the merge, on its first parent.
         assert_eq!(session["series"]["boundary"]["kind"], "merge");
+        assert_eq!(
+            session["series"]["boundary"]["commit"],
+            session["series"]["changes"][0]["parents"][0]
+        );
 
         let (status, files) = json(
             server,
-            get_with_cookie(&format!("/api/changes/{merge_commit}/files"), TOKEN),
+            get_with_cookie(&format!("/api/changes/{key}/files"), TOKEN),
         )
         .await;
 
@@ -1413,10 +1437,7 @@ mod tests {
         let repo = merged().await;
         let server = server(&repo).await;
         let (_, session) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
-        let m = session["series"]["boundary"]["commit"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let m = merge_key(&session);
 
         let (_, first) = json(
             server.clone(),
@@ -1441,10 +1462,7 @@ mod tests {
         let repo = merged().await;
         let server = server(&repo).await;
         let (_, session) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
-        let m = session["series"]["boundary"]["commit"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let m = merge_key(&session);
 
         let (status, body) = json(
             server,
@@ -2471,7 +2489,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_more_walks_past_a_merge_and_keeps_it() {
+    async fn loading_more_under_a_merge_follows_the_first_parent() {
         let repo = merged().await;
         let repo = {
             // One commit above the merge, so the first batch is not empty.
@@ -2486,7 +2504,13 @@ mod tests {
         ));
 
         let (_, first) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
-        assert_eq!(first["series"]["changes"].as_array().unwrap().len(), 1);
+        let changes = first["series"]["changes"].as_array().unwrap();
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[1]["subject"], "Merge side into main");
+        assert_eq!(
+            changes[1]["isMerge"], true,
+            "the merge comes with the batch"
+        );
         assert_eq!(first["series"]["boundary"]["kind"], "merge");
 
         let request = Request::builder()
@@ -2500,12 +2524,11 @@ mod tests {
 
         assert_eq!(status, StatusCode::OK);
         let changes = after["changes"].as_array().unwrap();
-        assert_eq!(changes[1]["subject"], "Merge side into main");
-        assert_eq!(changes[1]["isMerge"], true, "the merge joins the list");
         assert_eq!(
             changes[2]["subject"], "main work",
-            "and the walk goes on down the first parent"
+            "the walk goes on down the first parent of the merge"
         );
+        assert_eq!(changes[3]["subject"], "base");
     }
 
     #[tokio::test]
@@ -2611,9 +2634,9 @@ mod tests {
         let server = server(&repo).await;
 
         let (_, first) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
-        assert_eq!(first["series"]["changes"].as_array().unwrap().len(), 1);
+        assert_eq!(first["series"]["changes"].as_array().unwrap().len(), 2);
 
-        // The merge, and the two commits under it.
+        // The two commits under the merge.
         let (_, after) = json(server.clone(), post("/api/series/extend", r#"{"count":2}"#)).await;
         assert_eq!(after["changes"].as_array().unwrap().len(), 4);
 

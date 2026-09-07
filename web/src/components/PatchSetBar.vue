@@ -7,8 +7,17 @@ const props = defineProps<{
   current: number | undefined;
   against: string | undefined;
   gerrit: GerritChange | null;
+  /// The parents of the commit. Two or more mean a merge, and each one is
+  /// a base the reader can pick, the way Gerrit offers them.
+  parents: string[];
 }>();
 const emit = defineEmits<{ open: [ps: number | undefined, base?: string]; fetch: [ps: number] }>();
+
+const merge = computed(() => props.parents.length > 1);
+
+/// What the default base reads as. On a merge it is the auto-merge, which
+/// is the conflict resolution and nothing that was reviewed elsewhere.
+const first = computed(() => (merge.value ? 'Base | the auto-merge' : 'Base | its parent'));
 
 const last = computed(() => props.sets[props.sets.length - 1]?.number);
 const reading = computed(() => props.current ?? last.value);
@@ -63,7 +72,7 @@ function pickTarget(value: string) {
 </script>
 
 <template>
-  <div v-if="sets.length > 1 || gerrit" class="patch-bar">
+  <div v-if="sets.length > 1 || gerrit || merge" class="patch-bar">
     <label class="sr-only" for="base-of">Read against</label>
     <select
       id="base-of"
@@ -71,7 +80,15 @@ function pickTarget(value: string) {
       :value="against ?? 'parent'"
       @change="pickBase(($event.target as HTMLSelectElement).value)"
     >
-      <option value="parent">Base | its parent</option>
+      <option value="parent">{{ first }}</option>
+      <option
+        v-for="(parent, i) in parents"
+        :key="parent"
+        :value="`parent${i + 1}`"
+        :title="parent"
+      >
+        Base | parent {{ i + 1 }} | {{ parent.slice(0, 7) }}
+      </option>
       <option
         v-for="set in sets.filter((s) => s.number !== reading)"
         :key="`b${set.number}`"

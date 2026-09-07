@@ -120,6 +120,7 @@ mod tests {
             subject: subject.to_owned(),
             author: "T".to_owned(),
             commit: commit.to_owned(),
+            parents: Vec::new(),
             patch_set_count: 1,
             comment_count: 0,
             reviewed: false,

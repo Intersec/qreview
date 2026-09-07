@@ -35,7 +35,6 @@ const {
   readingOlder,
   currentSha,
   onMerge,
-  mergeBase,
   mergeList,
   split,
   wrap,
@@ -328,7 +327,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         @go="goToComment"
         @mark="review.markChange"
         @more="review.loadMore(5)"
-        @review-merge="review.openMerge()"
       />
 
       <PaneSplit
@@ -352,14 +350,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           :current="patchSet"
           :against="against"
           :gerrit="gerrit"
+          :parents="change?.parents ?? []"
           @open="(ps, base) => review.openPatchSet(ps, base)"
           @fetch="review.fetchPatchSet"
         />
         <MergeBar
           v-if="onMerge"
-          :base="mergeBase"
+          :base="against"
           :list="mergeList"
-          @pick="review.openMerge($event)"
           @show-list="review.loadMergeList()"
         />
         <div class="diff-slot">

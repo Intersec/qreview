@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import BoundaryCard from './BoundaryCard.vue';
-import { group } from '@/diff/tree';
 import CommentList from './CommentList.vue';
+import FileList from './FileList.vue';
 import PaneSplit from './PaneSplit.vue';
-import LoadingVeil from './LoadingVeil.vue';
 import type { ChangeComments, ChangeSummary, FileEntry, Series, Side } from '@/api/types';
 
-const props = defineProps<{
+defineProps<{
   series: Series;
   selected: string | null;
   files: FileEntry[];
@@ -28,13 +27,11 @@ const emit = defineEmits<{
   go: [key: string, file: string, side: Side, line: number | null];
   mark: [key: string, reviewed: boolean];
   more: [];
-  reviewMerge: [];
 }>();
 
-const filter = ref('');
 // A ref inside a `v-for` is a list, even when one element carries it. Only
-// the open change draws the filter, so the list holds one input at most.
-const boxes = ref<HTMLInputElement[]>([]);
+// the open change draws its files, so the list holds one at most.
+const inChange = ref<InstanceType<typeof FileList>[]>([]);
 
 /// How tall the list of comments is. Its title must stay on the screen,
 /// and so must a line or two of the series above it.
@@ -50,33 +47,11 @@ function keepHeight() {
   localStorage.setItem('qreview.comments.height', String(Math.round(listHeight.value)));
 }
 
-const MARK: Record<FileEntry['status'], string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  copied: 'C',
-};
-
-const groups = computed(() => group(shown.value));
-
-const shown = computed(() => {
-  const needle = filter.value.trim().toLowerCase();
-  if (needle === '') {
-    return props.files;
-  }
-  return props.files.filter(
-    (file) =>
-      file.path.toLowerCase().includes(needle) ||
-      (file.oldPath ?? '').toLowerCase().includes(needle),
-  );
-});
-
 function short(change: ChangeSummary): string {
   return change.commit.slice(0, 8);
 }
 
-defineExpose({ focusFilter: () => boxes.value[0]?.focus() });
+defineExpose({ focusFilter: () => inChange.value[0]?.focusFilter() });
 </script>
 
 <template>
@@ -133,58 +108,19 @@ defineExpose({ focusFilter: () => boxes.value[0]?.focus() });
           </span>
 
           <!-- The files of the change being read, and of no other. -->
-          <div v-if="change.key === selected" class="files">
-            <!-- `/` moves here, so the box is there whenever it can filter
-               anything. One file needs no filter. -->
-            <input
-              v-if="files.length > 1"
-              ref="boxes"
-              v-model="filter"
-              type="search"
-              placeholder="Filter the files"
-              aria-label="Filter the files"
-              class="file-filter"
-            />
-            <template v-for="folder in groups" :key="folder.dir">
-              <p v-if="folder.dir" class="dir">{{ folder.dir }}/</p>
-              <button
-                v-for="file in folder.files"
-                :key="file.entry.path"
-                type="button"
-                class="row-button file-row"
-                :class="file.entry.path === filePath ? 'is-picked' : ''"
-                :disabled="file.entry.binary"
-                :title="
-                  file.entry.oldPath
-                    ? `${file.entry.oldPath} → ${file.entry.path}`
-                    : file.entry.path
-                "
-                @click="emit('openFile', file.entry.path)"
-              >
-                <span class="mark">{{ MARK[file.entry.status] }}</span>
-                <span class="file-path">{{ file.name }}</span>
-                <span v-if="inFile.get(file.entry.path)" class="count"
-                  >{{ inFile.get(file.entry.path) }} ✎</span
-                >
-                <span v-if="file.entry.binary" class="quiet">bin</span>
-                <span v-else class="stat">
-                  <span class="added">+{{ file.entry.added }}</span
-                  ><span class="removed">−{{ file.entry.removed }}</span>
-                </span>
-              </button>
-            </template>
-            <p v-if="shown.length === 0" class="quiet pad">No file matches.</p>
-            <LoadingVeil :when="loadingFiles" label="Reading the files" />
-          </div>
+          <FileList
+            v-if="change.key === selected"
+            ref="inChange"
+            :files="files"
+            :file-path="filePath"
+            :loading="loadingFiles"
+            :in-file="inFile"
+            @open-file="emit('openFile', $event)"
+          />
         </li>
       </ul>
 
-      <BoundaryCard
-        :boundary="series.boundary"
-        :busy="busy"
-        @more="emit('more')"
-        @review-merge="emit('reviewMerge')"
-      />
+      <BoundaryCard :boundary="series.boundary" :busy="busy" @more="emit('more')" />
     </div>
 
     <PaneSplit

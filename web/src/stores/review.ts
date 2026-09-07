@@ -12,7 +12,6 @@ import type {
   EditComment,
   FileDiff,
   FileEntry,
-  MergeBase,
   MergeListItem,
   GerritChange,
   NewComment,
@@ -58,13 +57,14 @@ export const useReview = defineStore('review', () => {
   /// nothing. Every read checks that what it was asked for is still what is
   /// being read, rather than counting the reads: opening a change opens a
   /// file too, and a counter cannot tell those two apart.
-  const mergeBase = ref<MergeBase | undefined>(undefined);
   const review = ref<Review | null>(null);
   const patchSets = ref<PatchSet[]>([]);
   const gerrit = ref<GerritChange | null>(null);
   /// The patch set being read. The last one when it is not set.
   const patchSet = ref<number | undefined>(undefined);
-  /// What that patch set is read against.
+  /// What that patch set is read against: `parent<n>` of a merge, or
+  /// `ps:<n>` for an older version. Absent is the default base, which is
+  /// the first parent of a change and the auto-merge of a merge.
   const against = ref<string | undefined>(undefined);
   /// The view the reader last chose. The configuration decides the first
   /// time, and the choice sticks after that.
@@ -84,8 +84,12 @@ export const useReview = defineStore('review', () => {
   /// Every comment of the session, change by change, in reading order.
   const written = ref<ChangeComments[]>([]);
 
-  const onMerge = computed(
-    () => changeKey.value !== null && changeKey.value === series.value?.boundary.commit,
+  /// True when the change being read is a merge. Its bases are in the base
+  /// selector, and the strip above the diff says what the auto-merge shows.
+  const onMerge = computed(() =>
+    (series.value?.changes ?? []).some(
+      (change) => change.key === changeKey.value && change.isMerge,
+    ),
   );
   /// How many comments the session holds, and how many each change holds.
   ///
@@ -181,10 +185,9 @@ export const useReview = defineStore('review', () => {
   ///
   /// `prefer` names the file to open when the change has it. A refresh uses
   /// it to leave the reader on the file that was on the screen.
-  async function openChange(key: string, base?: MergeBase, prefer?: string) {
+  async function openChange(key: string, prefer?: string) {
     await guard(async () => {
       changeKey.value = key;
-      mergeBase.value = base;
       mergeList.value = [];
       patchSet.value = undefined;
       against.value = undefined;
@@ -216,7 +219,7 @@ export const useReview = defineStore('review', () => {
 
       const [comments, list] = await track(
         filesLoading,
-        Promise.all([api.comments(key), api.files(key, undefined, base, ignoreWs.value)]),
+        Promise.all([api.comments(key), api.files(key, undefined, undefined, ignoreWs.value)]),
       );
       if (changeKey.value !== key) {
         return;
@@ -267,7 +270,7 @@ export const useReview = defineStore('review', () => {
         diff.value = null;
         return;
       }
-      await openChange(here.key, undefined, was ?? undefined);
+      await openChange(here.key, was ?? undefined);
     });
   }
 
@@ -280,21 +283,12 @@ export const useReview = defineStore('review', () => {
       filePath.value = path;
       const read = await track(
         diffLoading,
-        api.diff(key, path, patchSet.value, against.value ?? mergeBase.value, ignoreWs.value),
+        api.diff(key, path, patchSet.value, against.value, ignoreWs.value),
       );
       if (changeKey.value === key && filePath.value === path) {
         diff.value = read;
       }
     });
-  }
-
-  /// Open the merge under the boundary, against the base the reader picked.
-  async function openMerge(base?: MergeBase) {
-    const commit = series.value?.boundary.commit;
-    if (!commit) {
-      return;
-    }
-    await openChange(commit, base);
   }
 
   async function loadMergeList() {
@@ -522,7 +516,7 @@ export const useReview = defineStore('review', () => {
       if (!key || !touchesTheDiff(patch)) {
         return;
       }
-      const base = against.value ?? mergeBase.value;
+      const base = against.value;
       const was = filePath.value;
       files.value = await track(filesLoading, api.files(key, patchSet.value, base, ignoreWs.value));
 
@@ -591,7 +585,6 @@ export const useReview = defineStore('review', () => {
     inFile,
     loadingFiles,
     loadingDiff,
-    mergeBase,
     mergeList,
     onMerge,
     load,
@@ -599,7 +592,6 @@ export const useReview = defineStore('review', () => {
     refresh,
     openChange,
     openFile,
-    openMerge,
     loadMergeList,
   };
 });

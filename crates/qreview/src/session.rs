@@ -16,7 +16,7 @@ use crate::git::exec::Git;
 use crate::git::merge::{self, Base};
 use crate::highlight::Highlighter;
 use crate::lang::Languages;
-use crate::model::{BoundaryKind, ChangeSummary, FileDiff, FileEntry, RepoInfo, RowKind, Series};
+use crate::model::{ChangeSummary, FileDiff, FileEntry, RepoInfo, RowKind, Series};
 use crate::patchset::{self, PatchSet};
 use crate::repo;
 use crate::series::{self, Options, Plan};
@@ -166,24 +166,9 @@ impl Session {
     /// Loading more only appends. It never changes a diff already shown,
     /// because every change is diffed against its own parent.
     pub async fn extend(&mut self, count: usize) -> Result<usize> {
-        let boundary = self.series.boundary.clone();
-        let Some(mut from) = boundary.commit.clone() else {
+        let Some(from) = self.series.boundary.commit.clone() else {
             return Ok(0);
         };
-
-        let mut changes = Vec::new();
-
-        // Past a merge, the merge itself joins the list: it is reviewable,
-        // and the card that held it is about to be replaced. The walk then
-        // continues on the first parent, never on the second.
-        if boundary.kind == BoundaryKind::Merge {
-            let info = commit::info(&self.git, &from).await?;
-            let Some(parent) = info.parents.first().cloned() else {
-                return Ok(0);
-            };
-            changes.push(series::summary(info));
-            from = parent;
-        }
 
         // The base is where the first batch stopped. Going further back is
         // exactly what the reader asked for, so it no longer applies.
@@ -193,7 +178,7 @@ impl Session {
         };
         let batch = series::extend(&self.git, &plan, &from, count).await?;
 
-        changes.extend(batch.changes);
+        let changes = batch.changes;
         let added = changes.len();
 
         if let Some(last) = changes.last() {
@@ -312,7 +297,7 @@ impl Session {
         let hash = worktree::commit_of(&self.git).await?;
         let info = commit::info(&self.git, &hash).await.ok()?;
 
-        Some(worktree::summary(&hash, &info.author))
+        Some(worktree::summary(&hash, &info.author, &info.parents))
     }
 
     /// Say which commits named with `--prev` belong to no change.
@@ -797,17 +782,11 @@ impl Session {
     /// A key that is not there is not a failure. It is a question with the
     /// answer "no", and the route turns it into a 404.
     pub fn commit_of(&self, key: &str) -> Option<String> {
-        if let Some(change) = self.series.changes.iter().find(|c| c.key == key) {
-            return Some(change.commit.clone());
-        }
-
-        // The merge under the boundary is reviewable, and it is not in the
-        // list: the card is where the reader opens it.
         self.series
-            .boundary
-            .commit
-            .clone()
-            .filter(|commit| key == commit || key == format!("sha-{commit}"))
+            .changes
+            .iter()
+            .find(|c| c.key == key)
+            .map(|change| change.commit.clone())
     }
 
     /// Make sure no two changes answer to the same key.

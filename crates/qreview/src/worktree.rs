@@ -75,13 +75,14 @@ pub async fn commit_of(git: &Git) -> Option<String> {
 }
 
 /// The entry the series pane shows for it.
-pub fn summary(hash: &str, author: &str) -> ChangeSummary {
+pub fn summary(hash: &str, author: &str, parents: &[String]) -> ChangeSummary {
     ChangeSummary {
         key: KEY.to_owned(),
         change_id: None,
         subject: SUBJECT.to_owned(),
         author: author.to_owned(),
         commit: hash.to_owned(),
+        parents: parents.to_vec(),
         patch_set_count: 1,
         comment_count: 0,
         reviewed: false,

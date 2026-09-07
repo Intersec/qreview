@@ -88,6 +88,12 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.keyboard.press('/');
   await page.screenshot({ path: join(OUT, `${scheme}-filter.png`) });
 
+  // A merge, read against the auto-merge, with each parent one line down
+  // the base selector.
+  await openChange(page, /Merge branch side into main/);
+  await openFile(page, 'net.blk');
+  await page.screenshot({ path: join(OUT, `${scheme}-merge.png`) });
+
   // A range picked with the keyboard, and the comment it offers.
   await openChange(page, /long: touch two places/);
   await openFile(page, 'long.c');

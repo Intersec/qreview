@@ -36,6 +36,8 @@ export interface ChangeSummary {
   subject: string;
   author: string;
   commit: string;
+  /// The parents of the commit, in order. Two or more mean a merge.
+  parents: string[];
   patchSetCount: number;
   commentCount: number;
   reviewed: boolean;
@@ -146,9 +148,6 @@ export interface MergeListItem {
   author: string;
   date: string;
 }
-
-/** What a merge is read against. Absent means the auto-merge. */
-export type MergeBase = 'automerge' | 'parent1' | 'parent2';
 
 export type Scope = 'line' | 'range' | 'file' | 'change';
 export type Side = 'old' | 'new';
