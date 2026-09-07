@@ -19,7 +19,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "e2e": "playwright test",
-    "shots": "node --experimental-strip-types e2e/shots.ts"
+    "shots": "node --experimental-strip-types e2e/shots.ts",
+    "demo": "node --experimental-strip-types e2e/demo.ts"
   },
   "dependencies": {
     "dompurify": "^3.4.14",

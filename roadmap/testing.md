@@ -141,6 +141,14 @@ only to make testing easier would test something else than what ships.
 not a test. They are how a person, or an agent with no eyes on the screen,
 sees what the interface looks like.
 
+`make demo REPO=<a repository>` is the same idea, in motion: it drives a tour
+of a real repository and writes `docs/demo.webp`, the recording the README
+shows. Neither one passes or fails. Both drive the real binary.
+
+The recording needs two things the gate does not. Run `npx playwright install
+ffmpeg` once, for the browser to write a video, and keep an `ffmpeg` on the
+PATH that can write WebP.
+
 ## Before the CI exists
 
 Run `make check` before every commit. The day the pipeline lands, it is the

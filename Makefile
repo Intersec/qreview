@@ -11,8 +11,14 @@ MUSL_TARGET := x86_64-unknown-linux-musl
 # what a permanent link can point at.
 DIST_NAME := qreview-linux-x86_64.gz
 DEV_PORT := 7420
+# What the recording of `make demo` is turned into. An animated WebP: a
+# README plays it like an image, where a video file needs a player the page
+# may not have, and it weighs a quarter of the same seconds in a GIF.
+DEMO_FPS := 10
+DEMO_WIDTH := 900
+DEMO_QUALITY := 60
 
-.PHONY: all setup web build check test e2e shots fmt lint install dist musl-target dev clean
+.PHONY: all setup web build check test e2e shots demo fmt lint install dist musl-target dev clean
 
 all: build
 
@@ -44,6 +50,28 @@ e2e: build
 ## Screenshots of the interface, into web/e2e/.shots.
 shots: build
 	cd web && $(NPM) run shots
+
+## The recording the README shows. `make demo REPO=~/dev/myproject`.
+##
+## It drives a tour of a real repository and writes docs/demo.gif. Add
+## arguments for qreview with DEMO_ARGS, for example DEMO_ARGS=--base=HEAD~5.
+##
+## It needs two things the gate does not: `npx playwright install ffmpeg`,
+## once, for the browser to write a video, and an ffmpeg on the PATH that can
+## write WebP.
+demo: build
+	@test -n "$(REPO)" || { echo "usage: make demo REPO=<a repository>"; exit 1; }
+	@ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libwebp_anim || { \
+		echo "ffmpeg with the libwebp encoder is missing. It writes docs/demo.webp."; \
+		exit 1; \
+	}
+	cd web && $(NPM) run demo -- $(REPO) $(DEMO_ARGS)
+	@mkdir -p docs
+	@ffmpeg -v error -y -i web/e2e/.demo/demo.webm \
+		-vf "fps=$(DEMO_FPS),scale=$(DEMO_WIDTH):-1:flags=lanczos" \
+		-c:v libwebp_anim -lossless 0 -q:v $(DEMO_QUALITY) -compression_level 6 \
+		-loop 0 -an docs/demo.webp
+	@ls -lh docs/demo.webp
 
 ## Correct the format of everything.
 fmt:

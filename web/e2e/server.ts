@@ -54,16 +54,34 @@ export async function start(
     args.push('--prev', fixture.previous);
   }
 
-  const child: ChildProcess = spawn(BINARY, args, {
-    cwd: fixture.repo,
-    env: {
-      ...process.env,
-      XDG_STATE_HOME: fixture.state,
-      XDG_CONFIG_HOME: fixture.config,
-      NO_COLOR: '1',
-      // The fake ssh answers the query and serves the fetch.
-      PATH: options.gerrit ? `${fixture.bin}:${process.env.PATH}` : process.env.PATH,
+  const { child, url } = await spawnOn(fixture.repo, args, {
+    XDG_STATE_HOME: fixture.state,
+    XDG_CONFIG_HOME: fixture.config,
+    NO_COLOR: '1',
+    // The fake ssh answers the query and serves the fetch.
+    PATH: options.gerrit ? `${fixture.bin}:${process.env.PATH}` : process.env.PATH,
+  });
+
+  return {
+    url,
+    fixture,
+    stop: () => {
+      child.kill('SIGTERM');
+      fixture.remove();
     },
+    kill: () => child.kill('SIGTERM'),
+  };
+}
+
+/// Start the binary on a repository and wait for the address it prints.
+export async function spawnOn(
+  repo: string,
+  args: string[],
+  env: Record<string, string | undefined>,
+): Promise<{ child: ChildProcess; url: string }> {
+  const child: ChildProcess = spawn(BINARY, args, {
+    cwd: repo,
+    env: { ...process.env, ...env },
   });
 
   const url = await new Promise<string>((resolve, reject) => {
@@ -87,15 +105,7 @@ export async function start(
     });
   });
 
-  return {
-    url,
-    fixture,
-    stop: () => {
-      child.kill('SIGTERM');
-      fixture.remove();
-    },
-    kill: () => child.kill('SIGTERM'),
-  };
+  return { child, url };
 }
 
 /// Change a tracked file, stage another, and leave one untracked.
