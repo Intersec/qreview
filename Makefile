@@ -13,10 +13,14 @@ DIST_NAME := qreview-linux-x86_64.gz
 DEV_PORT := 7420
 # What the recording of `make demo` is turned into. An animated WebP: a
 # README plays it like an image, where a video file needs a player the page
-# may not have, and it weighs a quarter of the same seconds in a GIF.
+# may not have, and the same seconds cost several times more as a GIF.
+#
+# The width is the one the browser recorded. Shrinking the picture before
+# the encoder reads it blurs the code, and a page that shows it narrower
+# scales it down better than a filter here does.
 DEMO_FPS := 10
-DEMO_WIDTH := 900
-DEMO_QUALITY := 60
+DEMO_WIDTH := 1280
+DEMO_QUALITY := 65
 
 .PHONY: all setup web build check test e2e shots demo fmt lint install dist musl-target dev clean
 
