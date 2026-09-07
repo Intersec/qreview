@@ -12,6 +12,27 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.12.0]
+
+### Added
+
+- **Back and forward walk the review** — the address bar carries the change,
+  the file and the version being read, so the browser holds a history of
+  where you have been. A reload comes back to the place you left, and a link
+  to it opens there.
+- **The bases of a merge are in the base selector** — the auto-merge, which
+  stays the default, and one line for each parent, beside the patch sets.
+  Gerrit keeps them in that same place, because all of them answer one
+  question: what is this version read against.
+
+### Changed
+
+- A merge is a change of the series now, and `Review the merge` is gone from
+  the boundary card. The walk loads the merge and stops under it, so the
+  merge opens from the list like every other change, with its files and its
+  file counter. The card under it reads `under the merge <sha>`, and `Load 5
+  older` still follows the first parent: nothing crosses a merge on its own.
+
 ## [0.11.0]
 
 ### Changed
