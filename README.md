@@ -56,9 +56,11 @@ qreview list                                     # what this repository holds
 
 What the browser shows:
 
-- The series on the left, one line per commit, ending in a card that says why
-  the walk stopped there and offers **Load 5 older**. What you have changed
-  and not committed stands above the newest commit, as one more change.
+- The series on the left, one line per commit. qreview walks back through the
+  history and stops on its own. The card at the end of the list says what
+  stopped it: a merge, a tag, or the base of your branch. **Load 5 older**
+  goes further back. What you have changed and not committed stands above the
+  newest commit, as one more change.
 - The files of the change, then the diff, unified or side by side, with the
   changed words marked inside a line.
 - Comments on a line, on a range of lines, on a part of a line, on a file,
@@ -133,18 +135,9 @@ every reader of that repository gets the map with no setup:
 A grammar is data too. Drop a `.sublime-syntax` or `.tmLanguage` file in
 `~/.config/qreview/grammars/` and name it in the map. No rebuild.
 
-qreview says when a newer release is out, beside the version it runs. It
-asks GitHub once per run, with `curl`, after the page is on the screen, and
-a failure to reach it says nothing at all. To ask somewhere else, or to ask
-nowhere:
-
-```json
-{ "update": { "url": "" } }
-```
-
-An address must answer with JSON holding `tag_name`, the way the releases
-API of GitHub does. `token` is sent as `Authorization: Bearer`, for a fork
-that is not public.
+qreview says when a newer release is out, beside the version it runs. It asks
+the releases page of the project once per run, after the diff is on the
+screen.
 
 Personal settings go in `~/.config/qreview/config.json`. The preferences
 panel behind `,` writes that same file, so the next run starts the way you
