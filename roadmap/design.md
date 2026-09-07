@@ -751,6 +751,36 @@ numbers that end up disagreeing.
 It also means a count is right the moment a remark is written, which a
 number the server put in the file list would not be.
 
+### 8.2 The place in the fragment
+
+The address bar says where the reader is:
+
+```
+#change=<key>&file=<path>&ps=<n>&base=<base>
+```
+
+`file`, `ps` and `base` are there only when they say something. A path keeps
+its slashes and `ps:2` its colon, because neither one means anything in a
+fragment; every other character is escaped, so a file with a `&` in its name
+comes back whole.
+
+The browser then owns the history of the review. Back and forward walk the
+changes, the files and the versions that were read, and a reload comes back
+to the last place rather than to the newest change.
+
+The fragment, not the path, for two reasons. The query already carries the
+session token, and the server answers one address: a path of its own would
+need a route for every place, and a reload would ask the server for a page it
+does not have.
+
+A move writes twice. The place the reader is going to is pushed when they
+click, so Back answers at once, and the place the move landed on replaces
+that entry. Opening a change lands on a file of it, and that is one place,
+not two.
+
+A fragment that names a change the series does not hold is not a failure. The
+newest change opens, the way a run with no fragment starts.
+
 ## 9. Export for a Claude session
 
 Two ways out: a button in the interface that copies to the clipboard, and

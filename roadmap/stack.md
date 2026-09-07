@@ -451,3 +451,31 @@ parents of the commit, so the selector can name each one.
 
 The strip stays for what a dropdown cannot say: the note that explains what
 the auto-merge shows, and `What it brings in`.
+
+## 2026-09-07 — The place of the reader is in the URL
+
+The interface had one address for the whole review. The back and the forward
+arrow of the browser did nothing, and a reload came back to the newest change
+whatever the reader had open. Reading a series of eight changes means walking
+away from a file and back to it, and the tool had no way back.
+
+The place is now in the fragment: `#change=<key>&file=<path>&ps=<n>&base=<b>`.
+`place.ts` maps it both ways, and `Session` needs no route: the browser holds
+the history, the server answers the same one address, and the token stays in
+the query where it was.
+
+Two rules make the entries match what the reader did.
+
+A move writes twice. The place the reader is going to is pushed when they
+click, so Back answers at once and does not wait for a diff to arrive; the
+place the move landed on then replaces that same entry. Opening a change
+lands on a file of it, and a reader who counts their clicks counts one.
+
+Only the newest move writes what it landed on. Picking a file while the
+change is still loading is two moves that overlap, and the older one must not
+put its place over the newer one. The store already works that way for the
+pane, and the URL now agrees with it.
+
+A fragment that names a change the series does not hold opens the newest
+change instead, which is where a run with no fragment starts. An old link and
+a commit deeper than this batch are the same case, and neither is an error.

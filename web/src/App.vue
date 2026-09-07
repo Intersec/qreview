@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { format, parse, same, type Place } from '@/place';
 import { storeToRefs } from 'pinia';
 import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
@@ -43,6 +44,7 @@ const {
   patchSet,
   against,
   gerrit,
+  place,
 } = storeToRefs(review);
 
 const comments = computed(() => review.comments());
@@ -56,28 +58,93 @@ const codeStyle = computed(() => ({
 
 const change = computed(() => series.value?.changes.find((c) => c.key === changeKey.value) ?? null);
 
-/// Move to the file before or after the one being read.
+/// A move of the reader, in the browser history.
+///
+/// The place the reader is going to is written first, so Back answers the
+/// moment they click. What the move landed on is written over that entry,
+/// because opening a change lands on a file of it, and the reader made one
+/// move rather than two.
+///
+/// Only the newest move writes what it landed on. Picking a file while the
+/// change is still loading is two moves that overlap, and the older one
+/// must not put its place over the newer one.
+let moves = 0;
+
+async function goTo(intent: Place | null, move: Promise<unknown>) {
+  const mine = (moves += 1);
+  write(intent, 'push');
+  await move;
+
+  if (mine === moves) {
+    write(place.value, 'replace');
+  }
+}
+
+function write(at: Place | null, how: 'push' | 'replace') {
+  const shown = parse(location.hash);
+  if (!at || same(at, shown)) {
+    return;
+  }
+
+  // The first place of a run takes the address the browser opened, so going
+  // back from it leaves the page instead of landing on a bare URL.
+  if (how === 'push' && shown !== null) {
+    history.pushState(null, '', format(at));
+  } else {
+    history.replaceState(null, '', format(at));
+  }
+}
+
+/// The other way round: the browser hands a place back, and the reader is
+/// put there. Nothing is written, because that entry is already the one the
+/// history is on.
+function onPop() {
+  const at = parse(location.hash);
+  if (at) {
+    void review.openPlace(at);
+  }
+}
+
+function goToChange(key: string) {
+  return goTo({ change: key }, review.openChange(key));
+}
+
+function goToFile(path: string) {
+  const at = place.value;
+  return goTo(at && { ...at, file: path }, review.openFile(path));
+}
+
+function goToVersion(ps: number | undefined, base: string | undefined) {
+  const at = place.value;
+  return goTo(at && { ...at, ps, base }, review.openPatchSet(ps, base));
+}
+
 /// Open the place a comment speaks of: the change, then the file, then the
 /// line the keyboard lands on.
 async function goToComment(key: string, file: string, side: Side, line: number | null) {
-  if (key !== changeKey.value) {
-    await review.openChange(key);
-  }
-  if (file !== '' && file !== filePath.value) {
-    await review.openFile(file);
-  }
+  const move = async () => {
+    if (key !== changeKey.value) {
+      await review.openChange(key);
+    }
+    if (file !== '' && file !== filePath.value) {
+      await review.openFile(file);
+    }
+  };
+  await goTo({ change: key, file: file === '' ? undefined : file }, move());
+
   if (line !== null) {
     await nextTick();
     diffView.value?.revealLine(side, line);
   }
 }
 
+/// Move to the file before or after the one being read.
 function stepFile(by: number) {
   const paths = files.value.filter((f) => !f.binary).map((f) => f.path);
   const at = filePath.value === null ? -1 : paths.indexOf(filePath.value);
   const next = paths[Math.min(Math.max(at + by, 0), paths.length - 1)];
   if (next) {
-    review.openFile(next);
+    void goToFile(next);
   }
 }
 const stranded = computed(() => review.stranded());
@@ -160,7 +227,7 @@ function onKey(event: KeyboardEvent) {
       const at = changeKey.value === null ? -1 : keys.indexOf(changeKey.value);
       const next = keys[Math.min(Math.max(at + (event.key === 'J' ? 1 : -1), 0), keys.length - 1)];
       if (next) {
-        review.openChange(next);
+        void goToChange(next);
       }
       break;
     }
@@ -230,11 +297,15 @@ watch(
 );
 
 onMounted(() => {
-  review.load();
+  void goTo(null, review.load(parse(location.hash)));
   window.addEventListener('keydown', onKey);
+  window.addEventListener('popstate', onPop);
 });
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey);
+  window.removeEventListener('popstate', onPop);
+});
 </script>
 
 <template>
@@ -278,7 +349,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           aria-label="Read the repository again"
           title="Read the repository again"
           :disabled="busy"
-          @click="review.refresh()"
+          @click="goTo(null, review.refresh())"
         >
           ⟳
         </button>
@@ -322,8 +393,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         :counts="countOf"
         :written="written"
         :in-file="inFile"
-        @open-change="review.openChange"
-        @open-file="review.openFile"
+        @open-change="goToChange"
+        @open-file="goToFile"
         @go="goToComment"
         @mark="review.markChange"
         @more="review.loadMore(5)"
@@ -351,7 +422,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           :against="against"
           :gerrit="gerrit"
           :parents="change?.parents ?? []"
-          @open="(ps, base) => review.openPatchSet(ps, base)"
+          @open="goToVersion"
           @fetch="review.fetchPatchSet"
         />
         <MergeBar

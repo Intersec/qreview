@@ -5,6 +5,7 @@ import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
 import { isCurrent, rounds } from '@/diff/versions';
+import type { Place } from '@/place';
 import type {
   ChangeComments,
   Comment,
@@ -84,6 +85,19 @@ export const useReview = defineStore('review', () => {
   /// Every comment of the session, change by change, in reading order.
   const written = ref<ChangeComments[]>([]);
 
+  /// Where the reader is, as the URL carries it. The browser keeps the
+  /// history of these, so back and forward walk the review.
+  const place = computed<Place | null>(() =>
+    changeKey.value === null
+      ? null
+      : {
+          change: changeKey.value,
+          file: filePath.value ?? undefined,
+          ps: patchSet.value,
+          base: against.value,
+        },
+  );
+
   /// True when the change being read is a merge. Its bases are in the base
   /// selector, and the strip above the diff says what the auto-merge shows.
   const onMerge = computed(() =>
@@ -150,7 +164,12 @@ export const useReview = defineStore('review', () => {
     }
   }
 
-  async function load() {
+  /// Read the session, then open where the reader asked to be.
+  ///
+  /// `at` comes from the URL. A change it names that the series does not
+  /// hold is not a failure: an old link, or a commit further back than this
+  /// batch. The newest change opens instead, which is where a run starts.
+  async function load(at?: Place | null) {
     await guard(async () => {
       const body = await api.session();
       version.value = body.version;
@@ -167,11 +186,31 @@ export const useReview = defineStore('review', () => {
         })
         .catch(() => undefined);
 
+      const wanted = at && body.series.changes.some((c) => c.key === at.change) ? at : null;
       const first = body.series.changes[0];
-      if (first) {
+
+      if (wanted) {
+        await openPlace(wanted);
+      } else if (first) {
         await openChange(first.key);
       }
     });
+  }
+
+  /// Open a place: its change, its file, and the version it was read at.
+  ///
+  /// Each step is skipped when the reader is already there, so walking the
+  /// history inside one change reads one diff and no file list.
+  async function openPlace(at: Place) {
+    if (at.change !== changeKey.value) {
+      await openChange(at.change, at.file);
+    } else if (at.file && at.file !== filePath.value) {
+      await openFile(at.file);
+    }
+
+    if (at.ps !== patchSet.value || at.base !== against.value) {
+      await openPatchSet(at.ps, at.base);
+    }
   }
 
   /** Load the next batch. It only appends, so nothing already read moves. */
@@ -583,11 +622,13 @@ export const useReview = defineStore('review', () => {
     total,
     countOf,
     inFile,
+    place,
     loadingFiles,
     loadingDiff,
     mergeList,
     onMerge,
     load,
+    openPlace,
     loadMore,
     refresh,
     openChange,
