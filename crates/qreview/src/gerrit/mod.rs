@@ -24,9 +24,9 @@ pub const TIMEOUT: Duration = Duration::from_secs(5);
 ///
 /// `None` when the server knows nothing about it, which is the normal answer
 /// for a change that was never pushed.
-pub async fn query(coords: &Coordinates, change_id: &str) -> Result<Option<Change>> {
+pub async fn query(coords: &Coordinates, change_id: &str, commit: &str) -> Result<Option<Change>> {
     match query_many(coords, &[change_id]).await {
-        Ok(found) => Ok(found.into_iter().next()),
+        Ok(found) => Ok(pick(&found, change_id, commit).cloned()),
         Err(failed) => Err(failed.error()),
     }
 }
@@ -60,10 +60,17 @@ pub async fn query_many(coords: &Coordinates, change_ids: &[&str]) -> Result<Vec
     Ok(answer::parse(&text))
 }
 
-/// What one query asks: the changes, and where they live.
+/// What one query asks: the changes, and the project they live in.
 ///
-/// The changes are one `OR` group of their own, so the project and the
-/// branch still apply to every one of them.
+/// The changes are one `OR` group of their own, so the project applies to
+/// every one of them.
+///
+/// The branch is **not** asked for. A clone cannot read the branch a change
+/// was pushed to: `.gerrit-branch` names the integration branch, and work
+/// pushed to a feature branch under it carries the same file. A query
+/// filtered on the wrong branch matches nothing, and a change that is on the
+/// server reads as one that was never pushed. `pick` sorts out the rare
+/// answer that holds a change twice.
 fn terms_of(coords: &Coordinates, change_ids: &[&str]) -> String {
     let ids = change_ids
         .iter()
@@ -71,11 +78,28 @@ fn terms_of(coords: &Coordinates, change_ids: &[&str]) -> String {
         .collect::<Vec<_>>()
         .join(" OR ");
 
-    let mut terms = vec![format!("({ids})"), format!("project:{}", coords.project)];
-    if let Some(branch) = &coords.branch {
-        terms.push(format!("branch:{branch}"));
+    format!("({ids}) project:{}", coords.project)
+}
+
+/// The change an answer means, out of the ones that carry a `Change-Id`.
+///
+/// A cherry-pick keeps the `Change-Id`, so one project can hold the same one
+/// on two branches. The change that holds the commit under review is the
+/// right one. Failing that, one still open beats one that is closed: a
+/// cherry-pick that landed elsewhere is not what the reader has in front of
+/// them.
+pub fn pick<'a>(changes: &'a [Change], change_id: &str, commit: &str) -> Option<&'a Change> {
+    let mine: Vec<&Change> = changes.iter().filter(|c| c.id == change_id).collect();
+    if mine.len() < 2 {
+        return mine.first().copied();
     }
-    terms.join(" ")
+
+    let holds_it = mine
+        .iter()
+        .find(|c| c.patch_sets.iter().any(|set| set.revision == commit));
+    let open = mine.iter().find(|c| c.status == "NEW");
+
+    holds_it.or(open).or(mine.first()).copied()
 }
 
 /// Why a query gave nothing.
@@ -171,22 +195,44 @@ mod tests {
         }
     }
 
-    #[test]
-    fn one_change_asks_for_that_change_on_that_branch() {
-        let terms = terms_of(&coords(Some("main")), &["I1111"]);
-
-        assert_eq!(terms, "(change:I1111) project:myproject branch:main");
+    fn change(id: &str, branch: &str, status: &str, revision: &str) -> Change {
+        Change {
+            project: "myproject".to_owned(),
+            branch: branch.to_owned(),
+            id: id.to_owned(),
+            number: 1,
+            subject: "a change".to_owned(),
+            url: String::new(),
+            status: status.to_owned(),
+            patch_sets: vec![PatchSet {
+                number: 1,
+                revision: revision.to_owned(),
+                git_ref: "refs/changes/01/1/1".to_owned(),
+                created_on: 0,
+                kind: String::new(),
+                comments: Vec::new(),
+            }],
+        }
     }
 
-    /// The whole series goes in one query, and the project and the branch
-    /// must still hold for every change of it. So the changes are a group.
+    #[test]
+    fn one_change_asks_for_that_change_in_that_project() {
+        let terms = terms_of(&coords(Some("main")), &["I1111"]);
+
+        // The branch is never a term of the query. A clone cannot read the
+        // branch a change was pushed to, and a wrong one matches nothing.
+        assert_eq!(terms, "(change:I1111) project:myproject");
+    }
+
+    /// The whole series goes in one query, and the project must still hold
+    /// for every change of it. So the changes are a group.
     #[test]
     fn a_series_is_one_group_of_changes() {
         let terms = terms_of(&coords(Some("main")), &["I1111", "I2222", "I3333"]);
 
         assert_eq!(
             terms,
-            "(change:I1111 OR change:I2222 OR change:I3333) project:myproject branch:main"
+            "(change:I1111 OR change:I2222 OR change:I3333) project:myproject"
         );
     }
 
@@ -195,5 +241,42 @@ mod tests {
         let terms = terms_of(&coords(None), &["I1111"]);
 
         assert_eq!(terms, "(change:I1111) project:myproject");
+    }
+
+    #[test]
+    fn one_answer_is_the_answer() {
+        let found = [change("I1111", "main", "NEW", "aaa")];
+
+        assert_eq!(pick(&found, "I1111", "zzz").unwrap().branch, "main");
+        assert!(pick(&found, "I2222", "aaa").is_none());
+    }
+
+    #[test]
+    fn the_change_that_holds_the_commit_wins() {
+        let found = [
+            change("I1111", "rel-3.0", "MERGED", "aaa"),
+            change("I1111", "f/rel-3.0/work", "NEW", "bbb"),
+        ];
+
+        assert_eq!(
+            pick(&found, "I1111", "bbb").unwrap().branch,
+            "f/rel-3.0/work"
+        );
+        assert_eq!(pick(&found, "I1111", "aaa").unwrap().branch, "rel-3.0");
+    }
+
+    /// A local amend is on no patch set yet, so nothing matches the commit.
+    /// A cherry-pick that landed elsewhere is not what the reader has open.
+    #[test]
+    fn an_open_change_beats_a_closed_one() {
+        let found = [
+            change("I1111", "rel-3.0", "MERGED", "aaa"),
+            change("I1111", "f/rel-3.0/work", "NEW", "bbb"),
+        ];
+
+        assert_eq!(
+            pick(&found, "I1111", "zzz").unwrap().branch,
+            "f/rel-3.0/work"
+        );
     }
 }

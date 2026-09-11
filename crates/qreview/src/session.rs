@@ -870,7 +870,7 @@ impl Session {
             return known.clone();
         }
 
-        let answer = match gerrit::query(coords, change_id).await {
+        let answer = match gerrit::query(coords, change_id, &info.hash).await {
             Ok(answer) => answer,
             Err(error) => {
                 // Say it once, and go on. The local review is what matters.
@@ -884,7 +884,18 @@ impl Session {
     }
 
     /// The name of the branch being reviewed, for a person to read.
+    ///
+    /// Gerrit knows it and nothing else does: `.gerrit-branch` names the
+    /// integration branch, and work pushed to a feature branch under it
+    /// carries that same file. So the answer for the newest change wins, and
+    /// the rest is a fallback for a series the server never heard of.
     pub async fn branch(&self) -> String {
+        if let Some(change) = self.series.changes.first()
+            && let Some(answer) = self.gerrit_change(&change.key).await
+        {
+            return answer.branch;
+        }
+
         if let Some(coords) = &self.gerrit
             && let Some(branch) = &coords.branch
         {
@@ -1032,17 +1043,17 @@ impl Session {
                 continue;
             };
             if let Some(change_id) = info.change_id() {
-                wanted.push(change_id.to_owned());
+                wanted.push((change_id.to_owned(), info.hash.clone()));
             }
         }
 
         let mut answers = self.gerrit_answers.lock().await;
-        wanted.retain(|id| !answers.contains_key(id));
+        wanted.retain(|(id, _)| !answers.contains_key(id));
         if wanted.is_empty() {
             return;
         }
 
-        let ids: Vec<&str> = wanted.iter().map(String::as_str).collect();
+        let ids: Vec<&str> = wanted.iter().map(|(id, _)| id.as_str()).collect();
         let found = match gerrit::query_many(coords, &ids).await {
             Ok(found) => found,
             // The server said no. It may still answer about one change at a
@@ -1056,15 +1067,15 @@ impl Session {
             // reader wait once per change, so the answer is no for all.
             Err(gerrit::Failed::Unreachable(error)) => {
                 eprintln!("qreview: {error}");
-                for id in wanted {
+                for (id, _) in wanted {
                     answers.insert(id, None);
                 }
                 return;
             }
         };
 
-        for id in &wanted {
-            let answer = found.iter().find(|change| change.id == *id).cloned();
+        for (id, commit) in &wanted {
+            let answer = gerrit::pick(&found, id, commit).cloned();
             answers.insert(id.clone(), answer);
         }
     }
