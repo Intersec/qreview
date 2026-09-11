@@ -60,9 +60,10 @@ What the browser shows:
 
 - The series on the left, one line per commit. qreview walks back through the
   history and stops on its own. The card at the end of the list says what
-  stopped it: a merge, a tag, or the base of your branch. **Load 5 older**
-  goes further back. What you have changed and not committed stands above the
-  newest commit, as one more change.
+  stopped it: a merge, a tag, or the base of your branch. It names the next
+  commit too, and **Load up to 5 older** goes further back. What you have
+  changed and not committed stands above the newest commit, as one more
+  change.
 - The files of the change, then the diff, unified or side by side, with the
   changed words marked inside a line.
 - Comments on a line, on a range of lines, on a part of a line, on a file,

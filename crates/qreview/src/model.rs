@@ -78,6 +78,10 @@ pub struct Boundary {
     pub kind: BoundaryKind,
     /// The commit under the boundary. It is not loaded yet.
     pub commit: Option<String>,
+    /// The subject of that commit, so the card says what comes next rather
+    /// than a hash alone. Absent at the root, which has no commit.
+    #[serde(default)]
+    pub subject: Option<String>,
     /// Shown on the card, for example "on origin/rel-3.0".
     pub reason: String,
     /// True when a guess produced this stop.

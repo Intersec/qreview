@@ -224,7 +224,7 @@ pub async fn walk(
         // The base is the end of the series, whatever else the commit is.
         if Some(hash.as_str()) == base {
             let rule = plan.base.as_ref().map(|(_, r)| *r).unwrap_or("the base");
-            return Ok(done(changes, BoundaryKind::Base, &hash, rule, false, None));
+            return Ok(done(git, changes, BoundaryKind::Base, &hash, rule, false, None).await);
         }
 
         if changes.len() == limit {
@@ -238,7 +238,7 @@ pub async fn walk(
             } else {
                 format!("{limit} commits loaded")
             };
-            return Ok(done(changes, kind, &hash, &reason, plan.guessing, None));
+            return Ok(done(git, changes, kind, &hash, &reason, plan.guessing, None).await);
         }
 
         let info = commit::info(git, &hash).await?;
@@ -254,13 +254,15 @@ pub async fn walk(
 
             changes.push(summary(info));
             return Ok(done(
+                git,
                 changes,
                 BoundaryKind::Merge,
                 &under,
                 &reason,
                 false,
                 merge,
-            ));
+            )
+            .await);
         }
 
         // The head itself may carry a tag. Only a tag under the series ends it.
@@ -272,14 +274,9 @@ pub async fn walk(
 
             if let Some(tag) = tags.get(&hash) {
                 let reason = format!("the tag {tag}");
-                return Ok(done(
-                    changes,
-                    BoundaryKind::Tag,
-                    &hash,
-                    &reason,
-                    false,
-                    None,
-                ));
+                return Ok(
+                    done(git, changes, BoundaryKind::Tag, &hash, &reason, false, None).await,
+                );
             }
         }
 
@@ -290,13 +287,15 @@ pub async fn walk(
             if let Some(name) = is_on_a_remote(git, &hash).await {
                 let reason = format!("on {name}");
                 return Ok(done(
+                    git,
                     changes,
                     BoundaryKind::Guess,
                     &hash,
                     &reason,
                     true,
                     None,
-                ));
+                )
+                .await);
             }
             if let Some(me) = me
                 && !me.is_empty()
@@ -304,13 +303,15 @@ pub async fn walk(
             {
                 let reason = format!("written by {}", info.author);
                 return Ok(done(
+                    git,
                     changes,
                     BoundaryKind::Guess,
                     &hash,
                     &reason,
                     true,
                     None,
-                ));
+                )
+                .await);
             }
         }
 
@@ -323,6 +324,7 @@ pub async fn walk(
         boundary: Boundary {
             kind: BoundaryKind::Root,
             commit: None,
+            subject: None,
             reason: "the history has no parent left".to_owned(),
             guessed: false,
             merge: None,
@@ -330,7 +332,12 @@ pub async fn walk(
     })
 }
 
-fn done(
+/// A boundary on `commit`, the commit the card names and the button loads.
+///
+/// The subject comes with it. A hash alone says nothing, and the reader
+/// decides whether to go further from what is written there.
+async fn done(
+    git: &Git,
     changes: Vec<ChangeSummary>,
     kind: BoundaryKind,
     commit: &str,
@@ -343,6 +350,7 @@ fn done(
         boundary: Boundary {
             kind,
             commit: Some(commit.to_owned()),
+            subject: commit::info(git, commit).await.ok().map(|it| it.subject),
             reason: reason.to_owned(),
             guessed,
             merge,
@@ -753,6 +761,30 @@ mod tests {
             ["change 5", "change 4", "change 3"]
         );
         assert_eq!(second.boundary.kind, BoundaryKind::Guess);
+    }
+
+    #[tokio::test]
+    async fn a_boundary_names_the_commit_it_stops_above() {
+        let repo = line(9).await;
+        let git = Git::discover(repo.path()).await.unwrap();
+
+        let mut o = opts();
+        o.guess_max = 4;
+        let (_, batch) = first_batch(&git, &o).await.unwrap();
+
+        // The card says what the button would load, so the reader decides
+        // from what is written there rather than from a hash.
+        assert_eq!(batch.boundary.subject.as_deref(), Some("change 5"));
+    }
+
+    #[tokio::test]
+    async fn the_root_names_no_commit_and_no_subject() {
+        let repo = line(2).await;
+        let git = Git::discover(repo.path()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+
+        assert!(batch.boundary.commit.is_none());
+        assert!(batch.boundary.subject.is_none());
     }
 
     #[tokio::test]

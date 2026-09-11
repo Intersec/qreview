@@ -136,6 +136,9 @@ export const useReview = defineStore('review', () => {
     return counts;
   });
 
+  /// How many commits one click of the boundary card asks for.
+  const batchSize = computed(() => config.value?.series.batchSize ?? 5);
+
   const loadingFiles = computed(() => filesLoading.value > 0);
   const loadingDiff = computed(() => diffLoading.value > 0);
 
@@ -214,7 +217,7 @@ export const useReview = defineStore('review', () => {
   }
 
   /** Load the next batch. It only appends, so nothing already read moves. */
-  async function loadMore(count = 5) {
+  async function loadMore(count = batchSize.value) {
     await guard(async () => {
       series.value = await api.extend(count);
     });
@@ -621,6 +624,7 @@ export const useReview = defineStore('review', () => {
     release,
     total,
     countOf,
+    batchSize,
     inFile,
     place,
     loadingFiles,

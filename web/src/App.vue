@@ -28,6 +28,7 @@ const {
   written,
   total,
   countOf,
+  batchSize,
   inFile,
   release,
   version,
@@ -389,6 +390,7 @@ onBeforeUnmount(() => {
         :files="files"
         :file-path="filePath"
         :busy="busy"
+        :batch="batchSize"
         :loading-files="loadingFiles"
         :counts="countOf"
         :written="written"
@@ -397,7 +399,7 @@ onBeforeUnmount(() => {
         @open-file="goToFile"
         @go="goToComment"
         @mark="review.markChange"
-        @more="review.loadMore(5)"
+        @more="review.loadMore()"
       />
 
       <PaneSplit

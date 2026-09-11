@@ -121,9 +121,10 @@ and a colleague's commit can sit inside your series.
 
 #### Loading more
 
-Every stop carries a **Load 5 older** action. The batch size after the first
-is `series.batchSize`, 5 by default. The count is in the label, so the batch
-size is never a surprise.
+Every stop carries a **Load up to 5 older** action. The batch size after the
+first is `series.batchSize`, 5 by default, and the label carries the number
+that is configured. The walk can still meet a boundary before it reaches the
+count, so the label says **up to**.
 
 Loading more is purely additive. It appends older changes to the list and it
 never changes a diff that is already shown, because every change is diffed
@@ -146,14 +147,18 @@ A batch ends at a boundary card that names the reason:
 | Batch | The number loaded. Nothing is wrong, there is simply more |
 | Root | The history has no parent left |
 
+Every card but the root also names the commit the button would load first:
+its short hash and its subject. `boundary.commit` is that commit, and it is
+not loaded yet.
+
 The merge itself is loaded, and the walk stops **under** it. The card sits
 below the merge in the list, and `commit` names the first parent of the
 merge. The commits the merge brings in are another line of history, and
 nothing loads them.
 
-Every card carries **Load 5 older**, which follows the first parent. A merge
-card also carries, when the second parent is not a remote branch, **Follow
-the other parent**.
+Every card carries **Load up to 5 older**, which follows the first parent. A
+merge card also carries, when the second parent is not a remote branch,
+**Follow the other parent**.
 
 #### The work that is not committed
 
@@ -318,6 +323,7 @@ type RepoInfo = {
 type Boundary = {
   kind: 'merge' | 'tag' | 'base' | 'guess' | 'root';
   commit: string;          // the commit under the boundary, not loaded yet
+  subject: string | null;  // its subject, so the card says what comes next
   reason: string;          // shown on the card, for example "on origin/rel-3.0"
   guessed: boolean;        // true when a guess produced this stop
   merge?: {

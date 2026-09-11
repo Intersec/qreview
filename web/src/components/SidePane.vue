@@ -12,6 +12,8 @@ defineProps<{
   files: FileEntry[];
   filePath: string | null;
   busy: boolean;
+  /// How many commits one click of the boundary card asks for.
+  batch: number;
   /// True while the file list of the open change is being read.
   loadingFiles: boolean;
   /// How many comments each change of the series carries.
@@ -120,7 +122,7 @@ defineExpose({ focusFilter: () => inChange.value[0]?.focusFilter() });
         </li>
       </ul>
 
-      <BoundaryCard :boundary="series.boundary" :busy="busy" @more="emit('more')" />
+      <BoundaryCard :boundary="series.boundary" :batch="batch" :busy="busy" @more="emit('more')" />
     </div>
 
     <PaneSplit

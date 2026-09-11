@@ -20,7 +20,11 @@ test('the merge is loaded, and the walk stops under it', async ({ page }) => {
   // The merge is a change of the series, and the card sits under it.
   await expect(page.getByRole('button', { name: /Merge branch side into main/ })).toBeVisible();
   await expect(page.locator('.boundary')).toContainText('under the merge');
-  await expect(page.getByRole('button', { name: 'Load 5 older' })).toBeVisible();
+
+  // The card names the commit the button would load first, which is the
+  // first parent of the merge.
+  await expect(page.locator('.boundary')).toContainText('main: read with readv');
+  await expect(page.getByRole('button', { name: 'Load up to 5 older' })).toBeVisible();
 });
 
 test('a merge shows its files, and reads against the base picked', async ({ page }) => {

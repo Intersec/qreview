@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { Boundary } from '@/api/types';
 
-const props = defineProps<{ boundary: Boundary; busy: boolean }>();
+const props = defineProps<{ boundary: Boundary; batch: number; busy: boolean }>();
 const emit = defineEmits<{ more: [] }>();
 
 const title = computed(() => {
@@ -39,6 +39,13 @@ const title = computed(() => {
       </p>
     </template>
 
+    <!-- What the button would load first. It stands last, under everything
+       that says why the walk stopped: a hash alone says nothing, and the
+       reader decides whether to go on from what is written there. -->
+    <p v-if="boundary.commit" class="quiet mt-1">
+      next <code>{{ boundary.commit.slice(0, 12) }}</code> {{ boundary.subject }}
+    </p>
+
     <p class="mt-2 flex flex-wrap gap-2">
       <button
         v-if="boundary.commit"
@@ -47,7 +54,7 @@ const title = computed(() => {
         :disabled="busy"
         @click="emit('more')"
       >
-        Load 5 older
+        Load up to {{ batch }} older
       </button>
     </p>
   </section>

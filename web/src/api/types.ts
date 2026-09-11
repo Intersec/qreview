@@ -25,6 +25,8 @@ export interface MergeInfo {
 export interface Boundary {
   kind: BoundaryKind;
   commit: string | null;
+  /// The subject of that commit. Absent at the root, which has no commit.
+  subject: string | null;
   reason: string;
   guessed: boolean;
   merge: MergeInfo | null;
