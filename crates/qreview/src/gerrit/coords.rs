@@ -42,13 +42,22 @@ pub fn from_remote(url: &str) -> Option<Coordinates> {
     })
 }
 
+/// Where the Gerrit of the repository is, with no branch.
+///
+/// This is all a query needs: it asks by `Change-Id` and project. The series
+/// uses it before it has a plan, so it cannot wait for a head.
+pub async fn of_remote(git: &Git) -> Option<Coordinates> {
+    let url = git.text(&["remote", "get-url", "origin"]).await.ok()?;
+
+    from_remote(url.trim())
+}
+
 /// The coordinates of a repository, with the target branch filled in.
 ///
 /// The branch comes from the `.gerrit-branch` file of the reviewed commit,
 /// then from the configuration, then from the upstream branch name.
 pub async fn of_repo(git: &Git, rev: &str, configured: Option<&str>) -> Option<Coordinates> {
-    let url = git.text(&["remote", "get-url", "origin"]).await.ok()?;
-    let mut coords = from_remote(url.trim())?;
+    let mut coords = of_remote(git).await?;
 
     coords.branch = match commit::gerrit_branch(git, rev).await {
         Some(branch) => Some(branch),

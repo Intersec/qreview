@@ -27,6 +27,9 @@ export interface Boundary {
   commit: string | null;
   /// The subject of that commit. Absent at the root, which has no commit.
   subject: string | null;
+  /// How many commits still stand between here and the base, when a base is
+  /// known and the batch stopped short of it.
+  remaining: number | null;
   reason: string;
   guessed: boolean;
   merge: MergeInfo | null;

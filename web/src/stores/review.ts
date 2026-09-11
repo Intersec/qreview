@@ -217,9 +217,9 @@ export const useReview = defineStore('review', () => {
   }
 
   /** Load the next batch. It only appends, so nothing already read moves. */
-  async function loadMore(count = batchSize.value) {
+  async function loadMore(count?: number) {
     await guard(async () => {
-      series.value = await api.extend(count);
+      series.value = await api.extend(count ?? batchSize.value);
     });
   }
 

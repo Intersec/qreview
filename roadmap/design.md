@@ -94,11 +94,23 @@ history, and following it drags a whole branch into the review.
 5. The merge base with the integration branch. The name comes from the
    `.gerrit-branch` file **of the reviewed commit** when it has one, then from
    the configuration, then from `origin/HEAD`.
-6. No base resolves. The tool guesses. See below.
+6. The merge base with the branch **Gerrit** says the change is on. Asked
+   only when rules 4 and 5 answered nothing, or answered further than
+   `series.maxCommits`.
+7. No base resolves. The tool guesses. See below.
 
-A resolved base of `series.maxCommits` commits or fewer (50 by default) is
-loaded whole. A longer one falls back to the guess, because a base that gives
-200 commits is a wrong base.
+Rule 6 exists because `.gerrit-branch` names the *integration* branch. Work
+pushed to a feature branch under it carries that same file, so rule 5 lands
+far below the start of the series, and nothing in a clone can tell which
+branch a change was pushed to. Gerrit can. A base within `maxCommits` is
+trusted as it is, so a repository whose local rules work pays no round trip,
+and a server that says nothing leaves the base rule 5 found.
+
+A resolved base is never thrown away. The first batch loads at most
+`series.maxCommits` commits of it (50 by default) and stops on a `batch`
+boundary when the base is further, with the number of commits left on the
+card. A base is where the series ends; a long one is read in pieces, and it
+is always worth more than a guess.
 
 #### The guess, when no base resolves
 
@@ -154,12 +166,17 @@ A batch ends at a boundary card that names the reason:
 | Tag | The tag name and the commit |
 | Resolved base | The base and the rule that found it |
 | Guess cap | The number loaded and the signal that stopped the guess |
-| Batch | The number loaded. Nothing is wrong, there is simply more |
+| Batch | The number loaded, and how far the base still is when one is known |
 | Root | The history has no parent left |
 
 Every card but the root also names the commit the button would load first:
 its short hash and its subject. `boundary.commit` is that commit, and it is
 not loaded yet.
+
+A `batch` card under a known base carries `remaining`, and a second button,
+**Load the rest (N)**. The end is a number there, not a walk, so reaching it
+is one click. The number is on the button because a base that is wrong is a
+base that is far, and the reader sees that before clicking.
 
 The merge itself is loaded, and the walk stops **under** it. The card sits
 below the merge in the list, and `commit` names the first parent of the
@@ -334,6 +351,7 @@ type Boundary = {
   kind: 'merge' | 'tag' | 'base' | 'guess' | 'root';
   commit: string;          // the commit under the boundary, not loaded yet
   subject: string | null;  // its subject, so the card says what comes next
+  remaining: number | null;// commits left to the base, on a short batch
   reason: string;          // shown on the card, for example "on origin/rel-3.0"
   guessed: boolean;        // true when a guess produced this stop
   merge?: {

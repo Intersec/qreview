@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import type { Boundary } from '@/api/types';
 
 const props = defineProps<{ boundary: Boundary; batch: number; busy: boolean }>();
-const emit = defineEmits<{ more: [] }>();
+const emit = defineEmits<{ more: [count?: number] }>();
 
 const title = computed(() => {
   switch (props.boundary.kind) {
@@ -55,6 +55,19 @@ const title = computed(() => {
         @click="emit('more')"
       >
         Load up to {{ batch }} older
+      </button>
+
+      <!-- The base is known, so the end of the series is a number rather
+         than a walk. One click reaches it, and the number is on the button
+         because a base that is wrong is a base that is far. -->
+      <button
+        v-if="boundary.remaining && boundary.remaining > batch"
+        type="button"
+        class="context-button"
+        :disabled="busy"
+        @click="emit('more', boundary.remaining)"
+      >
+        Load the rest ({{ boundary.remaining }})
       </button>
     </p>
   </section>

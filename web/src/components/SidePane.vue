@@ -28,7 +28,7 @@ const emit = defineEmits<{
   openFile: [path: string];
   go: [key: string, file: string, side: Side, line: number | null];
   mark: [key: string, reviewed: boolean];
-  more: [];
+  more: [count?: number];
 }>();
 
 // A ref inside a `v-for` is a list, even when one element carries it. Only

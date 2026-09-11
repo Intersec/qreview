@@ -86,10 +86,26 @@ test.describe('the query the start sends', () => {
     const log = readFileSync(join(batched.fixture.bin!, 'queries.log'), 'utf8');
     const asked = log.split('\n').filter((line) => line.trim() !== '');
 
-    expect(asked).toHaveLength(1);
     // The three changes of the series, in one group, so the project still
     // holds for every one of them.
-    expect(asked[0]).toMatch(/\(change:[^\s)]+( OR change:[^\s)]+){2}\)/);
-    expect(asked[0]).toContain('project:myproject');
+    const group = asked.filter((line) => /\(change:[^\s)]+( OR change:[^\s)]+){2}\)/.test(line));
+    expect(group).toHaveLength(1);
+    expect(group[0]).toContain('project:myproject');
+
+    // The other query the start may send is rule 6 of the series: no base
+    // resolved in the clone, so Gerrit is asked which branch the newest
+    // change is on. It asks about that change and no other.
+    for (const line of asked.filter((line) => !group.includes(line))) {
+      expect(line).toMatch(/\(change:[^\s)]+\)/);
+    }
+    expect(asked.length).toBeLessThanOrEqual(2);
+  });
+
+  test('no query names a branch', () => {
+    // A clone cannot read the branch a change was pushed to, and a query
+    // filtered on the wrong one matches nothing at all.
+    const log = readFileSync(join(batched.fixture.bin!, 'queries.log'), 'utf8');
+
+    expect(log).not.toContain('branch:');
   });
 });

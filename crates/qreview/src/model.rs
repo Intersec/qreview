@@ -82,6 +82,10 @@ pub struct Boundary {
     /// than a hash alone. Absent at the root, which has no commit.
     #[serde(default)]
     pub subject: Option<String>,
+    /// How many commits still stand between the boundary and the base, when
+    /// a base is known and the batch stopped short of it.
+    #[serde(default)]
+    pub remaining: Option<usize>,
     /// Shown on the card, for example "on origin/rel-3.0".
     pub reason: String,
     /// True when a guess produced this stop.

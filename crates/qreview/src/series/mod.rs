@@ -8,6 +8,7 @@ mod refs;
 
 use anyhow::{Result, bail};
 
+use crate::gerrit::{self, Coordinates};
 use crate::git::commit::{self, CommitInfo};
 use crate::git::exec::Git;
 use crate::model::{Boundary, BoundaryKind, ChangeSummary, MergeInfo, ParentInfo};
@@ -75,7 +76,7 @@ pub struct Plan {
 }
 
 /// Work out the head and the base, by the rules of `design.md` section 3.1.
-pub async fn plan(git: &Git, opts: &Options) -> Result<Plan> {
+pub async fn plan(git: &Git, opts: &Options, gerrit: Option<&Coordinates>) -> Result<Plan> {
     // Rule 2: a range argument names both ends.
     if let Some(rev) = &opts.rev
         && let Some((from, to)) = rev.split_once("..")
@@ -121,29 +122,80 @@ pub async fn plan(git: &Git, opts: &Options) -> Result<Plan> {
         });
     }
 
-    // Rules 4 and 5, then rule 6.
-    let found = match upstream_base(git, &head).await {
+    // Rules 4 and 5.
+    let local = match upstream_base(git, &head).await {
         Some(base) => Some((base, "the upstream of the branch")),
         None => integration_base(git, opts, &head)
             .await
             .map(|base| (base, "the merge base with the integration branch")),
     };
 
+    // Rule 6: Gerrit, when the clone answered nothing or answered far.
+    //
+    // `.gerrit-branch` names the integration branch, and work pushed to a
+    // feature branch under it carries that same file. So a base that far is
+    // usually the wrong branch, and Gerrit is the only place that knows
+    // which branch the change was pushed to. A near answer is trusted as it
+    // is, and that repository pays no round trip.
+    let found = match &local {
+        Some((base, _)) if near(git, base, &head, opts.max_commits).await => local,
+        _ => match gerrit_base(git, gerrit, &head).await {
+            Some(base) => Some((base, "the branch Gerrit has the change on")),
+            None => local,
+        },
+    };
+
     match found {
-        Some((base, rule)) if fits(git, &base, &head, opts.max_commits).await => Ok(Plan {
+        // A base is never thrown away for its length. It is where the series
+        // ends, and a first batch that does not reach it stops on a count,
+        // which the card names along with what is left.
+        Some((base, rule)) => Ok(Plan {
             head,
             base: Some((base, rule)),
             guessing: false,
             limit: opts.max_commits,
         }),
-        // A base that gives 200 commits is a wrong base. Guess instead.
-        _ => Ok(Plan {
+        None => Ok(Plan {
             head,
             base: None,
             guessing: true,
             limit: opts.guess_max,
         }),
     }
+}
+
+/// Rule 6: the merge base with the branch Gerrit has the change on.
+///
+/// Gerrit is the only place that knows that branch. `.gerrit-branch` names
+/// the integration branch, and work pushed to a feature branch under it
+/// carries that same file, so rule 7 reads it as the integration branch and
+/// lands far too low.
+///
+/// It is asked after the upstream and before the file, so a repository whose
+/// upstream answers pays no round trip. Gerrit stays optional: no answer
+/// falls through to the rule below.
+async fn gerrit_base(git: &Git, gerrit: Option<&Coordinates>, head: &str) -> Option<String> {
+    let coords = gerrit?;
+    let info = commit::info(git, head).await.ok()?;
+    let change_id = info.change_id()?;
+    let change = gerrit::query(coords, change_id, &info.hash).await.ok()??;
+
+    base_on_branch(git, &change.branch, head).await
+}
+
+/// The merge base with a branch of the server, named without the remote.
+///
+/// A branch that is the head itself is no base: a series read on the branch
+/// it was pushed to would be empty.
+async fn base_on_branch(git: &Git, branch: &str, head: &str) -> Option<String> {
+    let other = commit::resolve(git, &format!("origin/{branch}"))
+        .await
+        .ok()?;
+    if other == head {
+        return None;
+    }
+
+    merge_base(git, &other, head).await
 }
 
 /// Rule 4: the upstream of the current branch.
@@ -186,19 +238,23 @@ async fn merge_base(git: &Git, a: &str, b: &str) -> Option<String> {
     (!base.is_empty()).then_some(base)
 }
 
-/// Is the range short enough to be a real series?
-async fn fits(git: &Git, base: &str, head: &str, max: usize) -> bool {
-    let range = format!("{base}..{head}");
-    let Ok(out) = git
+/// Is the base close enough to be the start of a series on its own?
+///
+/// Not a refusal: a base further than this is kept when nothing better
+/// answers. It only says when to spend a round trip on Gerrit.
+async fn near(git: &Git, base: &str, head: &str, max: usize) -> bool {
+    count_between(git, base, head).await.unwrap_or(0) <= max
+}
+
+/// How many commits of the first-parent line stand in `from..to`.
+async fn count_between(git: &Git, from: &str, to: &str) -> Option<usize> {
+    let range = format!("{from}..{to}");
+    let out = git
         .text(&["rev-list", "--count", "--first-parent", &range])
         .await
-    else {
-        return false;
-    };
-    out.trim()
-        .parse::<usize>()
-        .map(|n| n <= max)
-        .unwrap_or(false)
+        .ok()?;
+
+    out.trim().parse::<usize>().ok().filter(|n| *n > 0)
 }
 
 /// Walk backwards from `start`, following the first parent, and stop at the
@@ -239,12 +295,21 @@ pub async fn walk(
             } else {
                 BoundaryKind::Batch
             };
-            let reason = if guess {
-                format!("the guess stopped at its cap of {limit}")
-            } else {
-                format!("{limit} commits loaded")
+            // A known base says how much is left, so the count on the card
+            // is a distance rather than a cliff.
+            let left = match base {
+                Some(base) if !guess => count_between(git, base, &hash).await,
+                _ => None,
             };
-            return Ok(done(git, changes, kind, &hash, &reason, guess, None).await);
+            let reason = match (guess, left) {
+                (true, _) => format!("the guess stopped at its cap of {limit}"),
+                (false, Some(left)) => format!("{limit} commits loaded, {left} to the base"),
+                (false, None) => format!("{limit} commits loaded"),
+            };
+            let mut batch = done(git, changes, kind, &hash, &reason, guess, None).await;
+            batch.boundary.remaining = left;
+
+            return Ok(batch);
         }
 
         let info = commit::info(git, &hash).await?;
@@ -338,6 +403,7 @@ pub async fn walk(
             kind: BoundaryKind::Root,
             commit: None,
             subject: None,
+            remaining: None,
             reason: "the history has no parent left".to_owned(),
             guessed: false,
             merge: None,
@@ -364,6 +430,7 @@ async fn done(
             kind,
             commit: Some(commit.to_owned()),
             subject: commit::info(git, commit).await.ok().map(|it| it.subject),
+            remaining: None,
             reason: reason.to_owned(),
             guessed,
             merge,
@@ -418,8 +485,12 @@ fn short(hash: &str) -> &str {
 ///
 /// This is the only batch the guess bounds, so it is the only one that reads
 /// the author of the head.
-pub async fn first_batch(git: &Git, opts: &Options) -> Result<(Plan, Batch)> {
-    let plan = plan(git, opts).await?;
+pub async fn first_batch(
+    git: &Git,
+    opts: &Options,
+    gerrit: Option<&Coordinates>,
+) -> Result<(Plan, Batch)> {
+    let plan = plan(git, opts, gerrit).await?;
     let head = plan.head.clone();
     let author = match plan.guessing {
         true => author_of(git, &head).await,
@@ -485,7 +556,7 @@ mod tests {
 
         let mut o = opts();
         o.base = Some("HEAD~2".to_owned());
-        let (plan, batch) = first_batch(&git, &o).await.unwrap();
+        let (plan, batch) = first_batch(&git, &o, None).await.unwrap();
 
         assert_eq!(plan.base.as_ref().unwrap().1, "--base");
         assert_eq!(subjects(&batch).await, ["change 4", "change 3"]);
@@ -499,7 +570,7 @@ mod tests {
 
         let mut o = opts();
         o.rev = Some("HEAD~3..HEAD~1".to_owned());
-        let (_, batch) = first_batch(&git, &o).await.unwrap();
+        let (_, batch) = first_batch(&git, &o, None).await.unwrap();
 
         assert_eq!(subjects(&batch).await, ["change 4", "change 3"]);
         assert_eq!(batch.boundary.kind, BoundaryKind::Base);
@@ -512,7 +583,7 @@ mod tests {
 
         let mut o = opts();
         o.rev = Some("HEAD~1".to_owned());
-        let (_, batch) = first_batch(&git, &o).await.unwrap();
+        let (_, batch) = first_batch(&git, &o, None).await.unwrap();
 
         assert_eq!(subjects(&batch).await, ["change 4"]);
     }
@@ -525,7 +596,7 @@ mod tests {
         repo.track("main", "origin", "HEAD~2").await;
 
         let git = Git::discover(repo.path()).await.unwrap();
-        let (plan, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (plan, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(plan.base.as_ref().unwrap().1, "the upstream of the branch");
         assert_eq!(subjects(&batch).await, ["change 4", "change 3"]);
@@ -547,7 +618,7 @@ mod tests {
             .await;
 
         let git = Git::discover(repo.path()).await.unwrap();
-        let (plan, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (plan, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(
             plan.base.as_ref().unwrap().1,
@@ -560,7 +631,7 @@ mod tests {
     async fn rule_6_no_base_means_a_guess() {
         let repo = line(3).await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let (plan, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (plan, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert!(plan.guessing);
         assert_eq!(batch.changes.len(), 3);
@@ -568,7 +639,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_resolved_base_that_is_too_long_falls_back_to_the_guess() {
+    async fn a_base_further_than_the_cap_is_kept_and_the_card_says_so() {
         let repo = line(12).await;
         repo.remote("origin", "ssh://review.example.com:29418/myproject")
             .await;
@@ -577,20 +648,77 @@ mod tests {
         let git = Git::discover(repo.path()).await.unwrap();
         let mut o = opts();
         o.max_commits = 5;
-        let (plan, batch) = first_batch(&git, &o).await.unwrap();
+        let (plan, batch) = first_batch(&git, &o, None).await.unwrap();
 
-        assert!(
-            plan.guessing,
-            "a base of 11 commits with a cap of 5 is a wrong base"
+        // A base is where the series ends. A long one is loaded in pieces;
+        // it is never thrown away for a guess that knows less.
+        assert!(!plan.guessing);
+        assert_eq!(batch.changes.len(), 5);
+        assert_eq!(batch.boundary.kind, BoundaryKind::Batch);
+        assert_eq!(batch.boundary.remaining, Some(6));
+        assert_eq!(batch.boundary.reason, "5 commits loaded, 6 to the base");
+    }
+
+    #[tokio::test]
+    async fn the_last_batch_of_a_long_base_lands_on_the_base() {
+        let repo = line(12).await;
+        repo.remote("origin", "ssh://review.example.com:29418/myproject")
+            .await;
+        repo.track("main", "origin", "HEAD~11").await;
+
+        let git = Git::discover(repo.path()).await.unwrap();
+        let mut o = opts();
+        o.max_commits = 5;
+        let (plan, first) = first_batch(&git, &o, None).await.unwrap();
+
+        let from = first.boundary.commit.clone().unwrap();
+        let rest = extend(&git, &plan, &from, first.boundary.remaining.unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(rest.changes.len(), 6);
+        assert_eq!(rest.boundary.kind, BoundaryKind::Base);
+        assert_eq!(rest.boundary.remaining, None);
+    }
+
+    /// Rule 6 in two halves. The query is covered by the browser tests,
+    /// which run against a fake `ssh`; this is the half that reads git.
+    #[tokio::test]
+    async fn the_branch_gerrit_names_gives_the_base() {
+        let repo = line(6).await;
+        let feature = repo.sha("HEAD~2").await;
+        repo.git(&["update-ref", "refs/remotes/origin/f/rel/work", &feature])
+            .await;
+        let head = repo.sha("HEAD").await;
+
+        let git = Git::discover(repo.path()).await.unwrap();
+
+        assert_eq!(
+            base_on_branch(&git, "f/rel/work", &head).await,
+            Some(feature)
         );
-        assert_eq!(batch.changes.len(), 10, "the guess loads its cap");
+        // A branch the clone does not have answers nothing, and the rule
+        // below takes over.
+        assert_eq!(base_on_branch(&git, "no/such/branch", &head).await, None);
+    }
+
+    #[tokio::test]
+    async fn a_branch_that_is_the_head_is_no_base() {
+        let repo = line(4).await;
+        let head = repo.sha("HEAD").await;
+        repo.git(&["update-ref", "refs/remotes/origin/mine", &head])
+            .await;
+
+        let git = Git::discover(repo.path()).await.unwrap();
+
+        assert_eq!(base_on_branch(&git, "mine", &head).await, None);
     }
 
     #[tokio::test]
     async fn the_guess_stops_at_its_cap() {
         let repo = line(14).await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(batch.changes.len(), 10);
         assert_eq!(batch.boundary.kind, BoundaryKind::Guess);
@@ -610,7 +738,7 @@ mod tests {
             .await;
 
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(subjects(&batch).await, ["change 6", "change 5"]);
         assert_eq!(batch.boundary.kind, BoundaryKind::Guess);
@@ -632,7 +760,7 @@ mod tests {
         ])
         .await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(subjects(&batch).await, ["mine two", "mine one"]);
         assert!(
@@ -659,7 +787,7 @@ mod tests {
         let git = Git::discover(repo.path()).await.unwrap();
         let mut o = opts();
         o.base = Some("HEAD~2".to_owned());
-        let (_, batch) = first_batch(&git, &o).await.unwrap();
+        let (_, batch) = first_batch(&git, &o, None).await.unwrap();
 
         assert_eq!(subjects(&batch).await, ["mine two", "mine one"]);
         assert_eq!(batch.boundary.kind, BoundaryKind::Base);
@@ -682,7 +810,7 @@ mod tests {
         ])
         .await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(
             subjects(&batch).await,
@@ -717,7 +845,7 @@ mod tests {
         ])
         .await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(subjects(&batch).await, ["Merge side into main"]);
         assert_eq!(batch.boundary.kind, BoundaryKind::Merge);
@@ -732,7 +860,7 @@ mod tests {
         ])
         .await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(subjects(&batch).await, ["mine"]);
         assert_eq!(batch.boundary.kind, BoundaryKind::Tag);
@@ -757,7 +885,7 @@ mod tests {
             .await;
 
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(subjects(&batch).await, ["mine"]);
         assert_eq!(batch.boundary.kind, BoundaryKind::Tag);
@@ -776,7 +904,7 @@ mod tests {
         ])
         .await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(subjects(&batch).await, ["mine", "older"]);
     }
@@ -788,7 +916,7 @@ mod tests {
 
         let mut o = opts();
         o.guess_max = 4;
-        let (plan, first) = first_batch(&git, &o).await.unwrap();
+        let (plan, first) = first_batch(&git, &o, None).await.unwrap();
 
         assert_eq!(first.changes.len(), 4);
         let from = first.boundary.commit.clone().unwrap();
@@ -812,7 +940,7 @@ mod tests {
             .await;
 
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         // That ref holds every commit of the series, so it says nothing
         // about where the series starts.
@@ -831,7 +959,7 @@ mod tests {
             .await;
 
         let git = Git::discover(repo.path()).await.unwrap();
-        let (plan, first) = first_batch(&git, &opts()).await.unwrap();
+        let (plan, first) = first_batch(&git, &opts(), None).await.unwrap();
 
         // `origin/main` does not hold the head, so it still ends the guess.
         assert_eq!(first.changes.len(), 1);
@@ -857,7 +985,7 @@ mod tests {
         ])
         .await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         // The series belongs to whoever wrote its head. Comparing against
         // `user.email` ended this one under its first commit.
@@ -872,7 +1000,7 @@ mod tests {
 
         let mut o = opts();
         o.guess_max = 4;
-        let (_, batch) = first_batch(&git, &o).await.unwrap();
+        let (_, batch) = first_batch(&git, &o, None).await.unwrap();
 
         // The card says what the button would load, so the reader decides
         // from what is written there rather than from a hash.
@@ -883,7 +1011,7 @@ mod tests {
     async fn the_root_names_no_commit_and_no_subject() {
         let repo = line(2).await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert!(batch.boundary.commit.is_none());
         assert!(batch.boundary.subject.is_none());
@@ -893,7 +1021,7 @@ mod tests {
     async fn the_walk_reaches_the_root() {
         let repo = line(2).await;
         let git = Git::discover(repo.path()).await.unwrap();
-        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts(), None).await.unwrap();
 
         assert_eq!(batch.boundary.kind, BoundaryKind::Root);
         assert!(batch.boundary.commit.is_none());
@@ -908,7 +1036,7 @@ mod tests {
         let mut o = opts();
         o.rev = Some("main".to_owned());
         o.base = Some("main~2".to_owned());
-        let (_, batch) = first_batch(&git, &o).await.unwrap();
+        let (_, batch) = first_batch(&git, &o, None).await.unwrap();
 
         assert_eq!(subjects(&batch).await, ["change 4", "change 3"]);
     }

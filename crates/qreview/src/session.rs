@@ -84,7 +84,13 @@ impl Session {
     ) -> Result<Self> {
         let git = Git::discover(cwd).await?;
         let repo = repo::info(&git).await?;
-        let (plan, batch) = series::first_batch(&git, opts).await?;
+        // The coordinates come before the plan: rule 6 asks Gerrit which
+        // branch the change is on, and only Gerrit knows.
+        let coords = match opts.gerrit {
+            true => gerrit::coords::of_remote(&git).await,
+            false => None,
+        };
+        let (plan, batch) = series::first_batch(&git, opts, coords.as_ref()).await?;
 
         let oldest = batch
             .changes
@@ -213,7 +219,8 @@ impl Session {
     /// and its remarks stay in the store: nothing but the reader deletes a
     /// remark, and a rebase away and back finds them again.
     pub async fn refresh(&mut self) -> Result<()> {
-        let (plan, batch) = series::first_batch(&self.git, &self.opts).await?;
+        let (plan, batch) =
+            series::first_batch(&self.git, &self.opts, self.gerrit.as_ref()).await?;
 
         let oldest = batch
             .changes

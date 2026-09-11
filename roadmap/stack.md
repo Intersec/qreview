@@ -525,3 +525,45 @@ again.
 release is a boundary a reader wants to see, the card names it, and one
 click crosses it. The cost is a short batch, and the card now says which
 commit comes next, so the reader sees what a click would bring.
+
+## 2026-09-11 — Gerrit names the branch, and a base is never thrown away
+
+Two faults met on one repository and made the series wrong in two ways.
+
+**The query filtered on a branch a clone cannot read.** Every Gerrit query
+carried `branch:<b>`, and `b` came from the `.gerrit-branch` file of the
+reviewed commit. That file names the *integration* branch. Work pushed to a
+feature branch under it carries the same file, so the filter named the wrong
+branch and the server matched nothing. The answer reads as `Ok(None)`, which
+is the normal answer for a change that was never pushed, so nothing was
+printed: a change that is on the server showed no patch set, no posted
+remark and no link.
+
+**Decision.** A query asks by `Change-Id` and project alone. Those two find
+the change. A cherry-pick can put the same `Change-Id` on two branches, and
+`gerrit::pick` sorts that out: the change that holds the commit under review
+wins, then one that is still open, then the first. The branch a person reads
+comes from the answer, the only place that knows it.
+
+**The base was computed from that same wrong branch.** Rule 5 read
+`.gerrit-branch` and found the integration branch, 120 commits below the
+head, where the real branch sat 75 below.
+
+**Decision.** A rule under the local ones: the merge base with the branch
+Gerrit says the change is on. It is asked only when the local rules answered
+nothing, or answered further than `series.maxCommits`. A base that near is
+trusted as it is, so a repository whose local rules work pays no round trip,
+and a server that says nothing leaves the local base standing.
+
+**A correct base was then thrown away for its length.** `series.maxCommits`
+was a rejection: a base further than 50 commits was called wrong and the
+guess took over. So the 75-commit base was dropped for a 10-commit guess,
+which knows less about the same repository.
+
+**Decision.** A base is never thrown away, and `series.maxCommits` stops
+being a rejection. It is where the series ends. The
+first batch loads at most `series.maxCommits` of it and stops on a `batch`
+boundary that says how far the base still is. The card carries `remaining`
+and a second button, **Load the rest (N)**: the end is a number there, not a
+walk. The number is on the button because a base that is wrong is a base
+that is far, and the reader sees that before clicking.

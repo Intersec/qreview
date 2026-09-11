@@ -399,7 +399,7 @@ onBeforeUnmount(() => {
         @open-file="goToFile"
         @go="goToComment"
         @mark="review.markChange"
-        @more="review.loadMore()"
+        @more="(count?: number) => review.loadMore(count)"
       />
 
       <PaneSplit
