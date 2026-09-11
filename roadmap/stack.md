@@ -479,3 +479,49 @@ pane, and the URL now agrees with it.
 A fragment that names a change the series does not hold opens the newest
 change instead, which is where a run with no fragment starts. An old link and
 a commit deeper than this batch are the same case, and neither is an error.
+
+## 2026-09-11 — The guess bounds itself the way Gerrit bounds a push
+
+The guess ended a series at the first commit that a remote-tracking ref
+reached, or that somebody else wrote. Both rules were wrong often enough to
+make the tool unusable on two ordinary cases.
+
+A branch pushed for review is itself a remote-tracking ref, and that ref
+reaches every commit of the series. So on a pushed branch the guess stopped
+under the head, and every click after it loaded one commit. A reader walked
+the history one commit at a time.
+
+A series written by somebody else stopped at its first commit, because the
+rule compared each author against `user.email`. Reviewing another person's
+work is the point of a review tool.
+
+**What Gerrit does.** `GetRelatedChangesUtil` answers with the changes that
+share a *group*. `GroupCollector` assigns the groups on a walk *between the
+branch tip and the tip of the push*: a commit whose parents are all merged
+into the branch opens a new group, and any other commit takes the group of
+its parent. `ReceiveCommits.markHeadsAsUninteresting` sets that bound to
+every ref under `refs/heads/`, plus the target branch.
+
+So a Gerrit series is every commit that the pushed tip reaches and that no
+branch head reaches. No tag ends it. No author ends it. There is no cap, and
+a merge is walked through rather than stopped under.
+
+**Decision, three parts.**
+
+A remote-tracking ref that reaches the head of the series is ignored. It
+reaches the whole series, so it says where nothing starts. Gerrit bounds a
+push with the branch heads and never with the ref being pushed, and this is
+the same rule. A ref that does not reach the head still ends the guess.
+
+The author signal compares against the author of the **head of the series**,
+not `user.email`. A series belongs to whoever wrote its newest commit.
+
+Both signals end the **first batch only**. `design.md` said so from the
+first day, and the code tested `plan.guessing`, which says that no base
+resolved, not that this is the first batch. Every later batch applied them
+again.
+
+**Kept: the tag.** Gerrit does not stop at a tag, and this tool does. A
+release is a boundary a reader wants to see, the card names it, and one
+click crosses it. The cost is a short batch, and the card now says which
+commit comes next, so the reader sees what a click would bring.

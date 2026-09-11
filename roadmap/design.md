@@ -110,14 +110,24 @@ signals:
 |---|---|---|
 | 1 | A merge commit | Another line of history starts here |
 | 2 | A tag points at the commit | A release is a history boundary |
-| 3 | The commit is on a remote-tracking ref | Pushed work is rarely the series you are about to review |
-| 4 | The author is not the user of `user.email` | The walk reached shared work |
+| 3 | A remote-tracking ref reaches the commit, and that ref does not reach the head | Work already on a branch of the server is rarely the series you are about to review |
+| 4 | The author is not the author of the head of the series | The walk reached shared work |
 | 5 | `series.guessMax` commits are loaded | The cap |
 
-Signals 3 and 4 apply to the guess only. They never end a batch later in the
-walk, and they never draw a boundary card of their own. The reason is that
-both are wrong often enough: a pushed commit can be yours and under review,
-and a colleague's commit can sit inside your series.
+A ref that reaches the head reaches the whole series, so signal 3 skips it.
+The branch a series is pushed to is exactly such a ref, and without this the
+guess ends under the head of every pushed branch. Gerrit bounds a push with
+the branch heads and never with the ref being pushed; this is the same rule.
+
+Signal 4 compares against the author of the head, not against `user.email`.
+A series belongs to whoever wrote its newest commit, and a reader reviews the
+work of other people.
+
+Signals 3 and 4 end the **first batch** only. They never end a later batch,
+and they never draw a boundary card of their own. The reason is that both are
+wrong often enough: a pushed commit can be under review, and a commit of
+somebody else can sit inside a series. Once the reader has asked for more,
+the count is the only bound left.
 
 #### Loading more
 

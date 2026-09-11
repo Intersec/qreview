@@ -12,7 +12,7 @@ use crate::git::commit::{self, CommitInfo};
 use crate::git::exec::Git;
 use crate::model::{Boundary, BoundaryKind, ChangeSummary, MergeInfo, ParentInfo};
 
-pub use refs::{is_on_a_remote, name_of, tags_by_commit};
+pub use refs::{is_on_a_remote, name_of, remotes_holding, tags_by_commit};
 
 /// How the caller asked for the series.
 #[derive(Clone, Debug, Default)]
@@ -206,19 +206,25 @@ async fn fits(git: &Git, base: &str, head: &str, max: usize) -> bool {
 ///
 /// `start` is the newest commit that is not loaded yet. The walk never
 /// crosses a merge: a merge becomes the boundary, and the reader decides.
+///
+/// `guess` is true for the first batch of a plan that found no base. It is
+/// the only batch that ends on the two soft signals, and `author` is the
+/// address they compare against.
 pub async fn walk(
     git: &Git,
     plan: &Plan,
     start: &str,
     limit: usize,
-    me: Option<&str>,
+    guess: bool,
+    author: Option<&str>,
 ) -> Result<Batch> {
     let base = plan.base.as_ref().map(|(b, _)| b.as_str());
     let mut changes = Vec::new();
     let mut current = Some(start.to_owned());
-    // Read on the first commit that can end on a tag, and not before: a
+    // Both read on the first commit that can end on them, and not before: a
     // walk that stops at once must not pay for them.
     let mut tags = None;
+    let mut on_head = None;
 
     while let Some(hash) = current {
         // The base is the end of the series, whatever else the commit is.
@@ -228,17 +234,17 @@ pub async fn walk(
         }
 
         if changes.len() == limit {
-            let kind = if plan.guessing {
+            let kind = if guess {
                 BoundaryKind::Guess
             } else {
                 BoundaryKind::Batch
             };
-            let reason = if plan.guessing {
+            let reason = if guess {
                 format!("the guess stopped at its cap of {limit}")
             } else {
                 format!("{limit} commits loaded")
             };
-            return Ok(done(git, changes, kind, &hash, &reason, plan.guessing, None).await);
+            return Ok(done(git, changes, kind, &hash, &reason, guess, None).await);
         }
 
         let info = commit::info(git, &hash).await?;
@@ -247,7 +253,7 @@ pub async fn walk(
         // The commits it brings in are another line of history, so crossing
         // the merge stays an explicit action of the reader.
         if info.is_merge() {
-            let merge = merge_info(git, &info).await;
+            let merge = merge_info(git, &info, &plan.head).await;
             let reason = format!("under the merge {}", short(&hash));
             // `is_merge` is two parents at least, so the first one is here.
             let under = info.parents[0].clone();
@@ -280,11 +286,18 @@ pub async fn walk(
             }
         }
 
-        // Two signals that only ever end a guess. Both are wrong often
-        // enough to make a bad boundary: a pushed commit can be under
-        // review, and a colleague's commit can sit inside a series.
-        if plan.guessing && !changes.is_empty() {
-            if let Some(name) = is_on_a_remote(git, &hash).await {
+        // Two signals that only ever end the guess, which is the first
+        // batch. Both are wrong often enough to make a bad hard stop: a
+        // pushed commit can be under review, and a commit of somebody else
+        // can sit inside a series. Once the reader has asked for more, the
+        // count is the only bound left.
+        if guess && !changes.is_empty() {
+            let on_head = match on_head {
+                Some(ref refs) => refs,
+                None => on_head.insert(remotes_holding(git, &plan.head).await),
+            };
+
+            if let Some(name) = is_on_a_remote(git, &hash, on_head).await {
                 let reason = format!("on {name}");
                 return Ok(done(
                     git,
@@ -297,9 +310,9 @@ pub async fn walk(
                 )
                 .await);
             }
-            if let Some(me) = me
-                && !me.is_empty()
-                && info.email != me
+            if let Some(author) = author
+                && !author.is_empty()
+                && info.email != author
             {
                 let reason = format!("written by {}", info.author);
                 return Ok(done(
@@ -375,14 +388,20 @@ pub(crate) fn summary(info: CommitInfo) -> ChangeSummary {
     }
 }
 
-async fn merge_info(git: &Git, info: &CommitInfo) -> Option<MergeInfo> {
+/// What a merge card shows about the merge and each of its parents.
+///
+/// A parent counts as remote only for a branch that does not hold the head.
+/// The branch the series itself was pushed to holds every parent, and
+/// following one of them drags nothing new in.
+async fn merge_info(git: &Git, info: &CommitInfo, head: &str) -> Option<MergeInfo> {
+    let on_head = remotes_holding(git, head).await;
     let mut parents = Vec::new();
 
     for parent in &info.parents {
         parents.push(ParentInfo {
             commit: parent.clone(),
             name: name_of(git, parent).await,
-            remote: is_on_a_remote(git, parent).await.is_some(),
+            remote: is_on_a_remote(git, parent, &on_head).await.is_some(),
         });
     }
     Some(MergeInfo {
@@ -396,25 +415,44 @@ fn short(hash: &str) -> &str {
 }
 
 /// The first batch: work out the plan, then walk it.
+///
+/// This is the only batch the guess bounds, so it is the only one that reads
+/// the author of the head.
 pub async fn first_batch(git: &Git, opts: &Options) -> Result<(Plan, Batch)> {
     let plan = plan(git, opts).await?;
-    let me = my_email(git).await;
-    let batch = walk(git, &plan, &plan.head.clone(), plan.limit, me.as_deref()).await?;
+    let head = plan.head.clone();
+    let author = match plan.guessing {
+        true => author_of(git, &head).await,
+        false => None,
+    };
+    let batch = walk(
+        git,
+        &plan,
+        &head,
+        plan.limit,
+        plan.guessing,
+        author.as_deref(),
+    )
+    .await?;
 
     Ok((plan, batch))
 }
 
 /// The next batch, from the commit the last boundary named.
+///
+/// The reader asked for it, so only a real boundary ends it: the base, a
+/// merge, a tag, the root, or the count.
 pub async fn extend(git: &Git, plan: &Plan, from: &str, count: usize) -> Result<Batch> {
-    let me = my_email(git).await;
-
-    walk(git, plan, from, count, me.as_deref()).await
+    walk(git, plan, from, count, false, None).await
 }
 
-/// The email git commits with, used by the guess to tell your work apart.
-pub async fn my_email(git: &Git) -> Option<String> {
-    let out = git.text(&["config", "--get", "user.email"]).await.ok()?;
-    let email = out.trim().to_owned();
+/// Who the series belongs to: the author of its newest commit.
+///
+/// Not `user.email`. A reader reviews the work of other people, and their
+/// own address would end every such series at its first commit.
+pub async fn author_of(git: &Git, head: &str) -> Option<String> {
+    let email = commit::info(git, head).await.ok()?.email;
+
     (!email.is_empty()).then_some(email)
 }
 
@@ -760,7 +798,71 @@ mod tests {
             subjects(&second).await,
             ["change 5", "change 4", "change 3"]
         );
-        assert_eq!(second.boundary.kind, BoundaryKind::Guess);
+        // The guess is the first batch. A later one is full, and nothing
+        // about a full batch is a guess.
+        assert_eq!(second.boundary.kind, BoundaryKind::Batch);
+        assert!(!second.boundary.guessed);
+    }
+
+    #[tokio::test]
+    async fn the_branch_the_series_is_pushed_to_ends_nothing() {
+        let repo = line(6).await;
+        let head = repo.sha("HEAD").await;
+        repo.git(&["update-ref", "refs/remotes/origin/mob/mine", &head])
+            .await;
+
+        let git = Git::discover(repo.path()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+
+        // That ref holds every commit of the series, so it says nothing
+        // about where the series starts.
+        assert_eq!(batch.changes.len(), 6);
+        assert_eq!(batch.boundary.kind, BoundaryKind::Root);
+    }
+
+    #[tokio::test]
+    async fn a_pushed_branch_still_loads_a_whole_batch() {
+        let repo = line(9).await;
+        let head = repo.sha("HEAD").await;
+        let older = repo.sha("HEAD~1").await;
+        repo.git(&["update-ref", "refs/remotes/origin/mob/mine", &head])
+            .await;
+        repo.git(&["update-ref", "refs/remotes/origin/main", &older])
+            .await;
+
+        let git = Git::discover(repo.path()).await.unwrap();
+        let (plan, first) = first_batch(&git, &opts()).await.unwrap();
+
+        // `origin/main` does not hold the head, so it still ends the guess.
+        assert_eq!(first.changes.len(), 1);
+
+        // The reader asked for five. A signal that only ends a guess must
+        // not end the batch, or the series loads one commit per click.
+        let from = first.boundary.commit.clone().unwrap();
+        let second = extend(&git, &plan, &from, 5).await.unwrap();
+
+        assert_eq!(second.changes.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn a_series_of_somebody_else_reads_to_its_start() {
+        let repo = build_repo(&[
+            commit("shared ground").file("a", "1\n"),
+            commit("theirs one")
+                .file("a", "2\n")
+                .author("Other Person", "other@example.com"),
+            commit("theirs two")
+                .file("a", "3\n")
+                .author("Other Person", "other@example.com"),
+        ])
+        .await;
+        let git = Git::discover(repo.path()).await.unwrap();
+        let (_, batch) = first_batch(&git, &opts()).await.unwrap();
+
+        // The series belongs to whoever wrote its head. Comparing against
+        // `user.email` ended this one under its first commit.
+        assert_eq!(subjects(&batch).await, ["theirs two", "theirs one"]);
+        assert!(batch.boundary.reason.contains("Test Author"));
     }
 
     #[tokio::test]
