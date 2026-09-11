@@ -92,3 +92,49 @@ test('a number is not a name', async ({ page }) => {
   await hover(page, 12, '12');
   await expect(page.locator('.same-word')).toHaveCount(0);
 });
+
+/// Drag a selection from the middle of one cell to the middle of another.
+async function drag(page: Page, from: string, to: string) {
+  const a = (await page.locator(from).first().boundingBox())!;
+  const b = (await page.locator(to).first().boundingBox())!;
+  await page.mouse.move(a.x + 4, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 60, b.y + b.height / 2, { steps: 10 });
+  await page.mouse.up();
+}
+
+test('a selection holds, and no word lights under it', async ({ page }) => {
+  await openFile(page, 'long.c');
+  await hover(page, 12, 'line');
+  await expect(page.locator('.same-word')).not.toHaveCount(0);
+
+  await drag(
+    page,
+    'td.code-cell[data-column="new"][data-line="5"]',
+    'td.code-cell[data-column="new"][data-line="7"]',
+  );
+
+  // Lighting a word splits the line into other spans, and the browser
+  // paints a selection from the spans it was made on. So the word gives
+  // way: the selection reads the same after the pointer crosses it.
+  await hover(page, 6, 'line');
+  await expect(page.locator('.same-word')).toHaveCount(0);
+  expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe(
+    'line 5\nline 6\nline 7',
+  );
+});
+
+test('the light comes back when the selection is dropped', async ({ page }) => {
+  await openFile(page, 'long.c');
+  await drag(
+    page,
+    'td.code-cell[data-column="new"][data-line="5"]',
+    'td.code-cell[data-column="new"][data-line="7"]',
+  );
+  await hover(page, 12, 'line');
+  await expect(page.locator('.same-word')).toHaveCount(0);
+
+  await page.locator('td.code-cell[data-line="12"]').first().click();
+  await hover(page, 12, 'line');
+  await expect(page.locator('.same-word')).not.toHaveCount(0);
+});

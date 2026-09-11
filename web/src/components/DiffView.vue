@@ -134,6 +134,10 @@ function onDown(event: MouseEvent) {
   const column = cell?.dataset.column;
 
   selecting.value = column === 'old' || column === 'new' ? column : null;
+  // The word marks split a line into spans, and the selection hangs from
+  // those spans. Put the line back together before the drag starts, so the
+  // pieces under the selection stay the same until the reader drops it.
+  hovered.value = null;
 }
 
 /// The word the pointer is on. Every row of the file lights it wherever it
@@ -631,6 +635,19 @@ function revealLine(side: Side, line: number) {
 
 defineExpose({ moveLine, moveHunk, commentHere, startRange, clearPicked, revealLine });
 
+/// True while the reader holds a selection that starts in the code.
+///
+/// A selection elsewhere on the page, in a remark box or in the series, is
+/// none of the concern of the rows.
+function selectionStands(): boolean {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+    return false;
+  }
+
+  return cellOf(selection.getRangeAt(0).startContainer) !== null;
+}
+
 /// What the reader selected with the mouse, as lines and characters.
 ///
 /// The cells carry the line they hold, so a selection in the page is read
@@ -695,6 +712,15 @@ function onMove(event: MouseEvent) {
   // Not while a button is down: the reader is dragging a selection, and a
   // word that lights under the drag fights what is being picked.
   if (event.buttons !== 0) {
+    return;
+  }
+
+  // Not while a selection stands either. Lighting a word splits the line it
+  // is on into other spans, and the browser paints a selection from the
+  // spans it was made on: the part the new span took would lose its blue,
+  // and a selection over several rows would go altogether. The selection is
+  // what the reader is holding, so it wins over the word.
+  if (selectionStands()) {
     return;
   }
 
