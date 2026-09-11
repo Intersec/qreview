@@ -340,8 +340,9 @@ async fn extend(
     State(state): State<AppState>,
     body: Option<Json<ExtendBody>>,
 ) -> Result<Json<Series>, ApiError> {
-    let count = body.and_then(|b| b.count).unwrap_or(5);
+    let asked = body.and_then(|b| b.count);
     let mut session = state.session.write().await;
+    let count = asked.unwrap_or_else(|| session.batch_size());
 
     session.extend(count).await?;
     let series = session.series.clone();

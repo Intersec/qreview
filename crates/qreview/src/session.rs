@@ -165,6 +165,11 @@ impl Session {
     ///
     /// Loading more only appends. It never changes a diff already shown,
     /// because every change is diffed against its own parent.
+    /// How many commits one batch loads, from the configuration.
+    pub fn batch_size(&self) -> usize {
+        self.opts.batch_size
+    }
+
     pub async fn extend(&mut self, count: usize) -> Result<usize> {
         let Some(from) = self.series.boundary.commit.clone() else {
             return Ok(0);
