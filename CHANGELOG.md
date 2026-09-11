@@ -12,6 +12,44 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.12.1]
+
+### Changed
+
+- **A resolved base is never thrown away.** A base further than
+  `series.maxCommits` used to be called wrong, and the guess took over with
+  less to go on. The first batch now loads that many commits of it and stops
+  on a card that says how far the base is, with a **Load the rest (N)**
+  button next to **Load up to 5 older**.
+- **The boundary card names the next commit**, with its short hash and its
+  subject, and its button reads **Load up to 5 older**. The walk can meet a
+  boundary before it reaches the count, so the label no longer promises one.
+  The number now follows `series.batchSize`.
+
+### Fixed
+
+- The series was computed from the wrong branch on a feature branch. The base
+  came from `.gerrit-branch`, which names the integration branch. A new rule
+  asks Gerrit which branch the change is on. It runs under the local rules,
+  and only when they answer nothing or answer further than
+  `series.maxCommits`.
+- Gerrit answered nothing for a change pushed to a feature branch. The query
+  filtered on the branch that `.gerrit-branch` names, which is the
+  integration branch, not the branch the change was pushed to. The query now
+  asks by `Change-Id` and project alone, and the branch shown comes from the
+  answer.
+- A series written by somebody else ended at its first commit. The guess
+  compared each author against `user.email`. It now compares against the
+  author of the head of the series.
+- The series loaded one commit per click on a branch that is pushed. The
+  guess ended at any commit a remote-tracking ref reached, and the branch
+  pushed for review reaches every commit of the series. A ref that reaches
+  the head of the series is now ignored, and the two soft signals end the
+  first batch only, which is what the design always said.
+- A selection of the code broke when the pointer crossed it. Lighting a word
+  splits the line into other spans, and the browser paints a selection from
+  the spans it was made on. The word gives way while a selection stands.
+
 ## [0.12.0]
 
 ### Added
