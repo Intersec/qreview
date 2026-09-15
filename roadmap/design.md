@@ -728,6 +728,15 @@ kept beside the spans, so opening more context carries on instead of starting
 again. A change near the top of a file of ten thousand lines therefore costs
 the top of it and nothing else.
 
+**A long run is read without colors.** A run of context of more than 2000
+lines comes back with no syntax spans, and the interface then drops the colors
+of the whole file, hunks included, for as long as such a run is open. The
+spans are most of what a row weighs on the wire and each one is a DOM node, so
+this is what lets a reader open a gap of any length at all. It covers the
+whole file because a table colored in patches reads as a defect rather than as
+a rule, and folding the gap back brings the colors straight back: they never
+left the browser.
+
 ## 8. HTTP API
 
 All routes are under `/api`, all answers are JSON, all errors carry
