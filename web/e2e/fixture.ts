@@ -180,9 +180,14 @@ export function build(): Fixture {
   // Long enough that ten lines of context around the two changes still
   // leave a gap between the hunks for the context bar to open.
   const long = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
+  const huge = Array.from({ length: 2500 }, (_, i) => `int a${i + 1};`).join('\n') + '\n';
 
   write(repo, 'src/net.blk', 'int connect_once(int fd)\n{\n    return read(fd);\n}\n');
   write(repo, 'src/long.c', long);
+  // Long enough that opening its gap in one click puts more rows on the
+  // screen than the interface paints in color. Nothing else is that big,
+  // and the plain state has to be reachable from a real repository.
+  write(repo, 'src/huge.c', huge);
   write(repo, 'src/spacing.c', 'int spaced(void)\n{\n    return 1;\n}\n');
   // A doc comment, because its scope is `comment.block.documentation` and
   // that once reached the page as a class that broke the line in two.
@@ -254,6 +259,7 @@ export function build(): Fixture {
   // A rename with a line of work in it. A rename alone has no diff to read,
   // and the newest change is the one a second round amends.
   write(repo, 'docs/new-name.md', '# A document\n\nIt has words in it.\nAnd one more line.\n');
+  write(repo, 'src/huge.c', huge.replace('int a2480;\n', 'int zzz;\n'));
   commit(repo, 'docs: rename the document', 'Change-Id: Irenamedocaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
   const gerrit = fakeGerrit(base, repo);
