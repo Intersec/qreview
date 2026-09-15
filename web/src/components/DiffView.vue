@@ -11,7 +11,7 @@ import { HOVERED, wordAt } from '@/diff/hover';
 import { COMMIT_MSG, label } from '@/diff/paths';
 import { pairs } from '@/diff/pairs';
 import { places, slot } from '@/diff/drafts';
-import type { Mark } from '@/diff/segments';
+import { PLAIN, type Mark } from '@/diff/segments';
 import type {
   Comment,
   FileDiff,
@@ -309,6 +309,23 @@ async function open(gap: Gap, from: number, to: number) {
 
 const total = computed(() => props.diff.hunks.reduce((n, h) => n + h.rows.length, 0));
 const capped = computed(() => total.value > MAX_ROWS);
+
+/// The rows on screen: what the diff carries, plus what the reader opened.
+const onScreen = computed(
+  () =>
+    shown.value.reduce((n, h) => n + h.rows.length, 0) +
+    [...opened.values()].reduce((n, rows) => n + rows.length, 0),
+);
+
+/// True once the table holds more rows than `MAX_ROWS`.
+///
+/// Every syntax span is a DOM node, and a reader who opened a whole file is
+/// looking for a line in it rather than reading it. The colors go for the
+/// file as a whole, hunks included: a table colored in patches reads as a
+/// bug, not as a rule. Folding the gap back brings them straight back,
+/// because the spans never left the browser.
+const plain = computed(() => onScreen.value > MAX_ROWS);
+provide(PLAIN, plain);
 
 const shown = computed(() => {
   if (!capped.value) {
@@ -949,6 +966,12 @@ function toggle(row: Row | null, column: Side) {
            here would be anchored on the newest one, at the line numbers of
            this one, which is a remark on a line nobody chose. -->
         <span v-if="readOnly" class="tag">reading an older version</span>
+        <!-- The colors leave when the table grows past what a browser paints
+           in a reasonable time. Said in the bar, which stays on screen: a
+           reader who just opened a gap is at the top of it. -->
+        <span v-if="plain" class="tag" title="Fold the context back to read it in color">
+          shown without color
+        </span>
         <!-- A remark about the whole change goes on the commit message,
            which is a file like any other. Gerrit has no useful place for one
            either, and that convention is what a session already reads. -->

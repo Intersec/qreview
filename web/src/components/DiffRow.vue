@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue';
 import { HOVERED, occurrences, type Run } from '@/diff/hover';
-import { segments, type Mark } from '@/diff/segments';
+import { PLAIN, segments, type Mark } from '@/diff/segments';
 import type { Row } from '@/api/types';
 
 /// The same empty array every time, so a row that does not carry the word
@@ -10,6 +10,9 @@ const NONE: Run[] = [];
 
 /// A row outside a diff pane is on no word.
 const NOTHING = ref<string | null>(null);
+
+/// A row outside a diff pane keeps its colors.
+const COLORED = ref(false);
 
 const props = defineProps<{
   row: Row | null;
@@ -23,6 +26,7 @@ const props = defineProps<{
 const emit = defineEmits<{ comment: [] }>();
 
 const hovered = inject(HOVERED, NOTHING);
+const plain = inject(PLAIN, COLORED);
 
 /// Where the word the pointer is on stands in this row.
 const same = computed<Run[]>(() => {
@@ -37,7 +41,9 @@ const same = computed<Run[]>(() => {
 
 /// The pieces to paint. A computed rather than a call in the template: it
 /// is what keeps a row still when the pointer moves over another one.
-const parts = computed(() => (props.row ? segments(props.row, props.mark, same.value) : []));
+const parts = computed(() =>
+  props.row ? segments(props.row, props.mark, same.value, plain.value) : [],
+);
 
 const kind = computed(() => props.row?.kind ?? 'empty');
 

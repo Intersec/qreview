@@ -5,8 +5,19 @@
 // freely, so the row is cut at every boundary of any of them and each piece
 // knows all three facts.
 
+import type { InjectionKey, Ref } from 'vue';
 import type { Run } from '@/diff/hover';
 import type { Row, Span, WordSpan } from '@/api/types';
+
+/// True while the file is read without its syntax colors.
+///
+/// Provided rather than passed: a row is drawn in eight places of the diff
+/// view, and this says the same thing to all of them.
+export const PLAIN: InjectionKey<Ref<boolean>> = Symbol('plain rows');
+
+/// The same empty array every time, so a plain row is not cut again on
+/// every paint.
+const NO_SPANS: Span[] = [];
 
 export interface Segment {
   text: string;
@@ -26,13 +37,15 @@ export interface Mark {
   end: number;
 }
 
-export function segments(row: Row, mark?: Mark, hovered: Run[] = []): Segment[] {
+export function segments(row: Row, mark?: Mark, hovered: Run[] = [], plain = false): Segment[] {
   const text = row.text;
   if (text === '') {
     return [];
   }
 
-  const tokens = clamp(row.tokens ?? [], text.length);
+  // The syntax spans are what a plain row leaves out. The intra-line marks
+  // stay: they say what changed, which is what the reader came for.
+  const tokens = plain ? NO_SPANS : clamp(row.tokens ?? [], text.length);
   const words = clamp(row.words ?? [], text.length);
   const marks = mark ? clamp([mark], text.length) : [];
   const same = clamp(hovered, text.length);

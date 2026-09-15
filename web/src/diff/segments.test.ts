@@ -33,6 +33,19 @@ describe('segments', () => {
     expect(out.map((s) => s.text).join('')).toBe('let a = 1;');
   });
 
+  it('drops the syntax classes when the row is read plain', () => {
+    expect(segments(row('int x;', [[0, 3, 'storage type']]), undefined, [], true)).toEqual([
+      { text: 'int x;', cls: '', changed: false, marked: false, same: false },
+    ]);
+  });
+
+  it('keeps what changed inside the line on a plain row', () => {
+    const out = segments(row('int x;', [[0, 3, 'storage type']], [[4, 5]]), undefined, [], true);
+    expect(out.map((s) => s.text).join('')).toBe('int x;');
+    expect(out.filter((s) => s.changed).map((s) => s.text)).toEqual(['x']);
+    expect(out.every((s) => s.cls === '')).toBe(true);
+  });
+
   it('carries the syntax class of the piece', () => {
     const out = segments(row('int x;', [[0, 3, 'storage type']]));
     expect(out[0]).toEqual({
