@@ -12,6 +12,21 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.12.2]
+
+### Changed
+
+- A file grown past 2000 rows on screen is read without its syntax colors,
+  which is what lets a whole gap open at once. The bar says so, and folding
+  the context back brings the colors straight back.
+
+### Fixed
+
+- **Opening a whole gap of context works again** — the button that opens every
+  line a diff left out refused any run longer than 2000 lines, and said
+  nothing at all. It opens a gap of any length now, and a run the server
+  refuses is reported instead of being swallowed.
+
 ## [0.12.1]
 
 ### Changed
