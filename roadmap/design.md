@@ -742,6 +742,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `PATCH /api/changes/:key` | Mark the change read, or unread |
 | `GET /api/changes/:key/files?ps=2&base=parent` | The file list with the statistics, the commit message first |
 | `GET /api/changes/:key/diff?ps=2&base=parent&file=...` | The hunks of one file |
+| `GET /api/changes/:key/lines?file=...&from=1&to=400` | A run of lines the diff left out, so the reader can open the context. A run of more than 2000 lines carries no syntax spans |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
 | `GET /api/changes/:key/posted` | The remarks already on Gerrit, placed |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |

@@ -24,6 +24,14 @@ use crate::store::Store;
 use crate::store::model::{ChangeFile, Comment};
 use crate::worktree;
 
+/// Above this many lines in one run, a context run comes back with no
+/// syntax spans.
+///
+/// The spans are most of what a row weighs on the wire, and every one of
+/// them is a DOM node in the browser. A reader who opens a whole file is
+/// looking for a line in it, not reading it in colour.
+const PLAIN_RUN: usize = 2000;
+
 pub struct Session {
     pub git: Git,
     pub repo: RepoInfo,
@@ -656,7 +664,8 @@ impl Session {
     /// A run of lines of a file, as context rows.
     ///
     /// The diff carries only what changed and the few lines around it. This
-    /// is how the reader opens the rest, a piece at a time.
+    /// is how the reader opens the rest, a piece at a time. A long run comes
+    /// back without its colors; see `PLAIN_RUN`.
     pub async fn lines(
         &self,
         rev: &str,
@@ -664,23 +673,41 @@ impl Session {
         from: usize,
         to: usize,
     ) -> Result<Vec<crate::model::Row>> {
-        let language = self.langs.of(path).map(str::to_owned);
-        let painted = match commitmsg::is(path) {
+        let message = commitmsg::is(path);
+        let read = match message {
             true => commitmsg::text(&self.git, rev)
                 .await
-                .map(|text| (text, crate::highlight::Lines::default())),
-            false => {
-                self.read_blob(rev, path, language.as_deref(), path, to)
-                    .await
-            }
+                .map(|text| (String::new(), text)),
+            false => self.blob_text(rev, path).await,
         };
-        let Some((text, spans)) = painted else {
+        let Some((blob, text)) = read else {
             return Ok(Vec::new());
         };
 
-        let all: Vec<&str> = text.lines().collect();
         let from = from.max(1);
-        let to = to.min(all.len());
+        let to = to.min(text.lines().count());
+        if to < from {
+            return Ok(Vec::new());
+        }
+
+        // The run that is really read, not the one that was asked for: a
+        // run that reaches past the end of the file is a short one.
+        let long = to - from + 1 > PLAIN_RUN;
+        let (text, spans) = match message || long {
+            true => (text, crate::highlight::Lines::default()),
+            false => {
+                let language = self.langs.of(path).map(str::to_owned);
+                match self
+                    .paint_text(blob, text, language, path.to_owned(), to)
+                    .await
+                {
+                    Some(painted) => painted,
+                    None => return Ok(Vec::new()),
+                }
+            }
+        };
+
+        let all: Vec<&str> = text.lines().collect();
         let mut rows = Vec::new();
 
         for number in from..=to {
@@ -772,14 +799,41 @@ impl Session {
         for_path: &str,
         upto: usize,
     ) -> Option<(String, crate::highlight::Lines)> {
+        let (blob, text) = self.blob_text(rev, path).await?;
+
+        self.paint_text(
+            blob,
+            text,
+            language.map(str::to_owned),
+            for_path.to_owned(),
+            upto,
+        )
+        .await
+    }
+
+    /// The hash and the text of a blob, with no highlight pass.
+    ///
+    /// Split from the pass because a run that is shown without colors reads
+    /// the text and nothing else.
+    async fn blob_text(&self, rev: &str, path: &str) -> Option<(String, String)> {
         let spec = format!("{rev}:{path}");
         let blob = self.git.text(&["rev-parse", &spec]).await.ok()?;
         let blob = blob.trim().to_owned();
         let text = self.git.text(&["cat-file", "blob", &blob]).await.ok()?;
 
+        Some((blob, text))
+    }
+
+    /// Paint a text that is already read, down to line `upto`.
+    async fn paint_text(
+        &self,
+        blob: String,
+        text: String,
+        language: Option<String>,
+        for_path: String,
+        upto: usize,
+    ) -> Option<(String, crate::highlight::Lines)> {
         let highlighter = self.highlighter.clone();
-        let language = language.map(str::to_owned);
-        let for_path = for_path.to_owned();
 
         tokio::task::spawn_blocking(move || {
             let lines = highlighter.lines_upto(&blob, &text, language.as_deref(), &for_path, upto);
