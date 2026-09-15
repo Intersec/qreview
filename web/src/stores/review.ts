@@ -413,13 +413,25 @@ export const useReview = defineStore('review', () => {
   }
 
   /// A run of lines the diff does not carry, for opening the context.
+  ///
+  /// A failure is said, never swallowed. This was the one call of the store
+  /// that let its error fall on the floor, so a run the server refused left
+  /// the reader with a button that seemed to do nothing.
   async function loadLines(from: number, to: number) {
     const key = changeKey.value;
     const file = filePath.value;
     if (!key || !file) {
       return [];
     }
-    return api.lines(key, file, from, to, patchSet.value);
+    try {
+      error.value = null;
+
+      return await api.lines(key, file, from, to, patchSet.value);
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+
+      return [];
+    }
   }
 
   /// Where a comment lands in the patch set being read.
