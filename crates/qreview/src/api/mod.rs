@@ -519,14 +519,18 @@ struct LinesQuery {
 }
 
 /// The lines between two hunks, so the reader can open the context.
+///
+/// A run of any length is answered. What bounds a long one is the colour,
+/// which the session leaves out past `PLAIN_RUN`, not a refusal: a reader
+/// who asks for the whole of a gap gets the whole of it.
 async fn lines(
     State(state): State<AppState>,
     Path(key): Path<String>,
     Query(query): Query<LinesQuery>,
 ) -> Result<Json<Vec<crate::model::Row>>, ApiError> {
-    if query.to < query.from || query.to - query.from > 2000 {
+    if query.to < query.from {
         return Err(ApiError::bad_request(
-            "ask for a run of 2000 lines or fewer".to_owned(),
+            "ask for a run that ends where it starts, or after".to_owned(),
         ));
     }
 
@@ -2062,6 +2066,55 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    /// The reader clicks "open the whole gap" on a long file. It used to be
+    /// a 400, because the route refused a run longer than its cap, and the
+    /// interface showed nothing at all. See issue 20.
+    #[tokio::test]
+    async fn a_long_run_is_answered_whole_and_without_colors() {
+        let long: String = (1..=2500).map(|i| format!("int a{i};\n")).collect();
+        let repo = build_repo(&[
+            commit("base").file("src/a.blk", &long),
+            commit("touch the end")
+                .file("src/a.blk", &long.replace("int a2500;\n", "int z;\n"))
+                .change_id("Ilong"),
+        ])
+        .await;
+        let server = server(&repo).await;
+
+        let (status, rows) = json(
+            server.clone(),
+            get_with_cookie(
+                "/api/changes/Ilong/lines?file=src/a.blk&from=1&to=2400",
+                TOKEN,
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.len(), 2400, "the whole run, not a refusal");
+        assert!(
+            rows.iter().all(|row| row["tokens"].is_null()),
+            "a long run leaves the syntax spans out"
+        );
+
+        // The same file, read a piece at a time, keeps its colors.
+        let (_, few) = json(
+            server,
+            get_with_cookie(
+                "/api/changes/Ilong/lines?file=src/a.blk&from=1&to=10",
+                TOKEN,
+            ),
+        )
+        .await;
+        let few = few.as_array().unwrap();
+        assert_eq!(few.len(), 10);
+        assert!(
+            few.iter().any(|row| !row["tokens"].is_null()),
+            "a short run is colored the way it always was"
+        );
     }
 
     #[tokio::test]
