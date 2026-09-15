@@ -66,6 +66,17 @@ for (const scheme of ['light', 'dark'] as const) {
   await useSplit(page);
   await page.screenshot({ path: join(OUT, `${scheme}-split.png`) });
 
+  // A file too long to paint: the gap opened puts thousands of rows on the
+  // screen, so the colors go and the bar says why.
+  await openChange(page, /docs: rename the document/);
+  await openFile(page, 'huge.c');
+  await page
+    .getByRole('button', { name: /common lines/ })
+    .first()
+    .click();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(OUT, `${scheme}-plain.png`) });
+
   // A remark on the left side, on the line the change deletes. It sits under
   // the left column, because that is the side it speaks of.
   await page
