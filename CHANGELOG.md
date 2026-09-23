@@ -12,6 +12,14 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.12.3]
+
+### Fixed
+
+- A remark posted on Gerrit shows only on the patch set it was posted on. Read
+  against that patch set, it stands on its line in the left column instead of
+  "no line here".
+
 ## [0.12.2]
 
 ### Changed
