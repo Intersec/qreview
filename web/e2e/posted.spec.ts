@@ -1,10 +1,10 @@
 // The remarks already posted on Gerrit, read only.
 //
-// A server for each test: one of them fetches a version, and a fetched
-// version anchors remarks the next test wants to see unplaced.
+// A server for each test: one of them fetches a version, and the others
+// read a clone that does not hold it.
 
 import { expect, test } from '@playwright/test';
-import { openChange, openFile } from './act.ts';
+import { openChange, openFile, useSplit } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -44,16 +44,34 @@ test('a remark about the whole file stands above the diff', async ({ page }) => 
   await expect(band).not.toHaveClass(/talk-stranded/);
 });
 
-test('a remark on a version that is not here stands at the top of its file', async ({ page }) => {
-  // The line is gone, so the file it was posted on is the nearest true
-  // place. It is a card like any other, not a line in a list of its own.
-  const stranded = page.locator('table.code .posted-box.talk-stranded');
+test('a remark of a version off the screen is not shown', async ({ page }) => {
+  // Posted on patch set 1, and patch set 2 is read against its parent. The
+  // remark speaks of code that is not on the screen, so Gerrit hides it here
+  // too.
+  await expect(page.locator('tr.talk .posted-box').first()).toBeVisible();
+  await expect(page.locator('.posted-box', { hasText: 'Where does this loop stop?' })).toHaveCount(
+    0,
+  );
+});
 
-  await expect(stranded).toContainText('Where does this loop stop?');
-  await expect(stranded).toContainText('Jane Reviewer');
-  await expect(stranded).toContainText('no line here');
-  await expect(stranded).toContainText('src/net.blk:3');
-  await expect(stranded).toContainText('patch set 1');
+test('a remark of the version read against stands on its line, on the left', async ({ page }) => {
+  await useSplit(page);
+  // Patch set 1 is on the server only. Opening it brings it here.
+  await page.locator('#read-set').selectOption('1');
+  await expect(page.locator('#read-set option').nth(0)).not.toContainText('not fetched', {
+    timeout: 15000,
+  });
+  await page.locator('#read-set').selectOption('2');
+  await page.locator('#base-of').selectOption('ps:1');
+  await openFile(page, 'net.blk');
+
+  const talk = page.locator('tr.talk', { hasText: 'Where does this loop stop?' });
+  await expect(talk).toHaveCount(1);
+  await expect(talk.locator('td').nth(0)).toContainText('Where does this loop stop?');
+  await expect(talk.locator('td').nth(1)).not.toContainText('Where does this loop stop?');
+  // Line 3 is on both sides, and patch set 2 has its own thread there.
+  const remark = talk.locator('.posted-box', { hasText: 'Where does this loop stop?' });
+  await expect(remark).not.toHaveClass(/talk-stranded/);
 });
 
 test('a remark of the session is not confused with one from the server', async ({ page }) => {

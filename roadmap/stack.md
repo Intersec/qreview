@@ -567,3 +567,19 @@ boundary that says how far the base still is. The card carries `remaining`
 and a second button, **Load the rest (N)**: the end is a number there, not a
 walk. The number is on the button because a base that is wrong is a base
 that is far, and the reader sees that before clicking.
+
+## 2026-09-23 — A Gerrit remark shows on its own version only
+
+A remark posted on patch set 1 followed its line into the version being
+read, and only into its right column. Two faults came of that. Read against
+patch set 1, the remark stood at the top of the file with "no line here",
+while its line was in the left column. Read on patch set 2, the remark of
+patch set 1 showed too, and it spoke of code that was not on the screen.
+
+**Decision.** A Gerrit remark shows on the version it was posted on and
+nowhere else, the way Gerrit shows it, and the rule of section 5.4 for the
+remarks of the session. `/posted` takes `base`, keeps the remarks of the
+version on the right and of the patch set on the left, and places each on
+its own version. `Placed` carries a `side`, so the interface puts each one
+in its column. A remark of any other version is not in the diff; opening its
+patch set, on either side, shows it.

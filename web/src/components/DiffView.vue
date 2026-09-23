@@ -18,6 +18,7 @@ import type {
   Hunk,
   NewComment,
   PatchSet,
+  Placed,
   PostedComment,
   Row,
   Side,
@@ -51,7 +52,7 @@ const props = defineProps<{
   /// What Gerrit already holds for this change. Read only.
   posted: PostedComment[];
   /// Where a Gerrit remark lands in the patch set being read.
-  postedPlacement: (id: string) => { line: number | null; lost: boolean } | undefined;
+  postedPlacement: (id: string) => Placed | undefined;
   /// The Gerrit remarks whose line this version does not have any more.
   postedStranded: PostedComment[];
   /// True when the diff leaves out what differs only by whitespace.
@@ -398,11 +399,11 @@ function at(row: Row | null, column: Side) {
 
 /// What Gerrit holds on one place of the code.
 ///
-/// Every Gerrit remark is on the new side: the ssh answer says no more than
-/// a file and a line. See `roadmap/design.md` section 6.3.
+/// A remark stands in the column of the version it was posted on. See
+/// `roadmap/design.md` section 6.3.
 function atPosted(row: Row | null, column: Side): PostedComment[] {
   const line = lineIn(row, column);
-  if (!row || line === null || column !== 'new') {
+  if (!row || line === null) {
     return [];
   }
   return props.posted.filter((remark) => {
@@ -410,10 +411,10 @@ function atPosted(row: Row | null, column: Side): PostedComment[] {
       return false;
     }
     const placed = props.postedPlacement(remark.id);
-    if (placed?.lost) {
+    if (!placed || placed.lost || placed.side !== column) {
       return false;
     }
-    return (placed?.line ?? remark.line) === line;
+    return placed.line === line;
   });
 }
 

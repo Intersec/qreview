@@ -661,14 +661,23 @@ The ssh answer gives a file, a line, an author and a text, and nothing else:
 | Missing | What qreview does |
 |---|---|
 | An id | Makes one from the patch set and the place |
-| A side | Reads every line as a line of the new side |
+| A side | Reads every line as a line of the version it was posted on |
 | A reply link | Two remarks on one line are a thread, in the order given |
 | A timestamp | Shows the patch set instead |
 
-A remark is anchored on the version it was posted on, by the rules of
-section 5.3, and follows its line into the version being read. A version that
-was never fetched holds no line to hash, so its remarks are unplaced, and the
-panel beside the file says so.
+A remark shows on the version it was posted on and nowhere else, the way
+Gerrit shows it:
+
+| The remark was posted on | Where it shows |
+|---|---|
+| The version on the right | The right column, on its line |
+| The patch set on the left | The left column, on its line |
+| Neither | Not in this diff |
+
+A remark of another version speaks of code that is not on the screen, the
+rule of section 5.4. It is anchored on its own version by the rules of
+section 5.3. A version that was never fetched holds no line to hash, so its
+remarks are unplaced, and they stand at the top of their file.
 
 Gerrit shows the commit message as `/COMMIT_MSG` with a header of its own.
 qreview drops that header, so the two do not count lines the same way. A
@@ -753,7 +762,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/changes/:key/diff?ps=2&base=parent&file=...` | The hunks of one file |
 | `GET /api/changes/:key/lines?file=...&from=1&to=400` | A run of lines the diff left out, so the reader can open the context. A run of more than 2000 lines carries no syntax spans |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
-| `GET /api/changes/:key/posted` | The remarks already on Gerrit, placed |
+| `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
 | `GET /api/comments` | Every comment of the session, in reading order |
 | `GET /api/update` | Whether a newer qreview is out. Empty when nothing answers |

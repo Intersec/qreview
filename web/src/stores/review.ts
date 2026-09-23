@@ -355,7 +355,7 @@ export const useReview = defineStore('review', () => {
       patchSet.value = number;
       against.value = base;
       review.value = await api.comments(key, number);
-      void loadPosted(key, number);
+      void loadPosted(key, number, base);
       files.value = await track(filesLoading, api.files(key, number, base));
 
       const stays = files.value.find((f) => f.path === was && !f.binary);
@@ -439,11 +439,13 @@ export const useReview = defineStore('review', () => {
     return review.value?.placed.find((p) => p.id === id);
   }
 
-  /// Read what Gerrit already holds, and never let it stop anything.
-  async function loadPosted(key: string, ps: number | undefined) {
+  /// Read what Gerrit holds on the two versions on the screen, and never let
+  /// it stop anything.
+  async function loadPosted(key: string, ps: number | undefined, base?: string) {
     try {
-      const found = await api.posted(key, ps);
-      if (changeKey.value === key) {
+      const found = await api.posted(key, ps, base);
+      // A reader who picked other versions meanwhile made a newer choice.
+      if (changeKey.value === key && patchSet.value === ps && against.value === base) {
         posted.value = found;
       }
     } catch {

@@ -19,6 +19,9 @@ const MIN_SCORE: f32 = 0.5;
 #[serde(rename_all = "camelCase")]
 pub struct Placed {
     pub id: String,
+    /// The column it stands in. A Gerrit remark posted on the version read
+    /// against stands on the left.
+    pub side: Side,
     /// The line it lands on, absent when nothing was found.
     pub line: Option<usize>,
     /// The last line of the range, which follows the first one.
@@ -95,7 +98,12 @@ impl Files {
 }
 
 async fn one(git: &Git, comment: &Comment, rev: &str, base: &str, read: &mut Files) -> Placed {
-    locate(git, comment, rev, base, read).await
+    let side = comment.anchor.as_ref().map_or(Side::New, |a| a.side);
+
+    Placed {
+        side,
+        ..locate(git, comment, rev, base, read).await
+    }
 }
 
 async fn locate(git: &Git, comment: &Comment, rev: &str, base: &str, read: &mut Files) -> Placed {
@@ -159,6 +167,7 @@ async fn locate(git: &Git, comment: &Comment, rev: &str, base: &str, read: &mut 
 fn nowhere(id: String) -> Placed {
     Placed {
         id,
+        side: Side::New,
         line: None,
         end_line: None,
         moved: false,
@@ -170,6 +179,7 @@ fn nowhere(id: String) -> Placed {
 fn gone(id: String) -> Placed {
     Placed {
         id,
+        side: Side::New,
         line: None,
         end_line: None,
         moved: false,
@@ -180,6 +190,7 @@ fn gone(id: String) -> Placed {
 fn found(id: String, line: usize, span: usize, moved: bool) -> Placed {
     Placed {
         id,
+        side: Side::New,
         line: Some(line),
         end_line: Some(line + span),
         moved,

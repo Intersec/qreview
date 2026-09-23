@@ -738,11 +738,11 @@ async fn comments(
 #[serde(rename_all = "camelCase")]
 struct Posted {
     comments: Vec<crate::model::PostedComment>,
-    /// Where each of them lands in the patch set being read.
+    /// Where each of them lands, and in which column.
     placed: Vec<Placed>,
 }
 
-/// The remarks already posted on Gerrit, placed in the patch set being read.
+/// The remarks already posted on Gerrit on the versions being read.
 ///
 /// Read only. A change the server does not know answers with an empty list,
 /// never an error: the local review must go on without Gerrit.
@@ -762,14 +762,16 @@ async fn posted(
     }
 
     let rev = target(&session, &key, view.ps).await?;
-    let base = session.base_of(&rev, &Against::Parent).await?;
-    let placeable: Vec<_> = found.iter().map(|p| p.placeable.clone()).collect();
-    let placed = anchor::place_all(&session.git, &placeable, &rev, &base).await;
+    // Only another version on the left carries remarks of its own. A parent
+    // or a base of a merge is no patch set.
+    let left = match resolve_base(&session, &key, parse_base(view.base.as_deref())?).await? {
+        Against::Tree(commit) => Some(commit),
+        _ => None,
+    };
+    let (comments, placed) =
+        crate::gerrit::posted::on_screen(&session.git, found, &rev, left.as_deref()).await;
 
-    Ok(Json(Posted {
-        comments: found.into_iter().map(|p| p.wire).collect(),
-        placed,
-    }))
+    Ok(Json(Posted { comments, placed }))
 }
 
 /// Is a newer qreview out?

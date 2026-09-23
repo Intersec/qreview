@@ -8,6 +8,7 @@
 //! section 6.4. The short of it: a file, a line, an author and a text. No id,
 //! no side and no reply link.
 
+use crate::anchor::{self, Placed};
 use crate::comments::{self, NewComment};
 use crate::commitmsg;
 use crate::git::exec::Git;
@@ -37,6 +38,47 @@ pub async fn of_change(git: &Git, change: &super::Change) -> Vec<Posted> {
         }
     }
     out
+}
+
+/// The remarks of the two versions on the screen, each placed in its column.
+///
+/// Gerrit shows a remark on the patch set it was posted on and nowhere else,
+/// and so does this: a remark of another version speaks of code that is not
+/// on the screen. `rev` is the version on the right, and `left` the version
+/// it is read against, when that is one.
+pub async fn on_screen(
+    git: &Git,
+    found: Vec<Posted>,
+    rev: &str,
+    left: Option<&str>,
+) -> (Vec<PostedComment>, Vec<Placed>) {
+    let mut wire = Vec::new();
+    let mut right_side = Vec::new();
+    let mut left_side = Vec::new();
+
+    for posted in found {
+        if posted.placeable.commit == rev {
+            right_side.push(posted.placeable);
+        } else if left == Some(posted.placeable.commit.as_str()) {
+            left_side.push(posted.placeable);
+        } else {
+            continue;
+        }
+        wire.push(posted.wire);
+    }
+
+    // Each remark reads the version it was posted on, whatever column that
+    // version stands in.
+    let mut placed = anchor::place_all(git, &right_side, rev, rev).await;
+    if let Some(left) = left {
+        let on_left = anchor::place_all(git, &left_side, left, left).await;
+        placed.extend(on_left.into_iter().map(|p| Placed {
+            side: Side::Old,
+            ..p
+        }));
+    }
+
+    (wire, placed)
 }
 
 async fn one(
@@ -123,6 +165,11 @@ mod tests {
     }
 
     fn change(revision: &str, comments: Vec<InlineComment>) -> Change {
+        versions(vec![(revision, comments)])
+    }
+
+    /// A change with one patch set per entry, numbered from 1.
+    fn versions(sets: Vec<(&str, Vec<InlineComment>)>) -> Change {
         Change {
             project: "myproject".to_owned(),
             branch: "main".to_owned(),
@@ -131,15 +178,78 @@ mod tests {
             subject: "work".to_owned(),
             url: String::new(),
             status: "NEW".to_owned(),
-            patch_sets: vec![PatchSet {
-                number: 1,
-                revision: revision.to_owned(),
-                git_ref: "refs/changes/01/1/1".to_owned(),
-                created_on: 0,
-                kind: "REWORK".to_owned(),
-                comments,
-            }],
+            patch_sets: sets
+                .into_iter()
+                .enumerate()
+                .map(|(nth, (revision, comments))| PatchSet {
+                    number: nth + 1,
+                    revision: revision.to_owned(),
+                    git_ref: format!("refs/changes/01/1/{}", nth + 1),
+                    created_on: 0,
+                    kind: "REWORK".to_owned(),
+                    comments,
+                })
+                .collect(),
         }
+    }
+
+    /// Two versions of one file, where the second rewrote line 2. The first
+    /// carries a remark on that line, the second a remark on line 3.
+    async fn two_versions() -> (crate::testutil::Repo, Git, String, String, Vec<Posted>) {
+        let repo = crate::testutil::build_repo(&[
+            crate::testutil::commit("first").file("a.txt", "one\ntwo\nthree\n"),
+            crate::testutil::commit("second").file("a.txt", "one\nTWO\nthree\n"),
+        ])
+        .await;
+        let git = Git::discover(repo.path()).await.unwrap();
+        let first = repo.sha("HEAD~1").await;
+        let second = repo.sha("HEAD").await;
+
+        let found = of_change(
+            &git,
+            &versions(vec![
+                (&first, vec![posted("a.txt", Some(2), "Jane", "too long")]),
+                (&second, vec![posted("a.txt", Some(3), "Jane", "and this")]),
+            ]),
+        )
+        .await;
+
+        (repo, git, first, second, found)
+    }
+
+    #[tokio::test]
+    async fn a_remark_of_a_version_off_the_screen_is_not_shown() {
+        let (_repo, git, _first, second, found) = two_versions().await;
+
+        // The second version against its parent: the remark of the first
+        // speaks of a line that is not on the screen, and Gerrit hides it.
+        let (wire, placed) = on_screen(&git, found, &second, None).await;
+
+        assert_eq!(wire.len(), 1);
+        assert_eq!(wire[0].body, "and this");
+        assert_eq!(placed.len(), 1);
+        assert_eq!(placed[0].side, Side::New);
+        assert_eq!(placed[0].line, Some(3));
+    }
+
+    #[tokio::test]
+    async fn a_remark_of_the_version_read_against_stands_on_the_left() {
+        let (_repo, git, first, second, found) = two_versions().await;
+
+        // The second version has rewritten line 2. The first is the left
+        // column, and line 2 is there, where the remark was posted.
+        let (wire, placed) = on_screen(&git, found, &second, Some(&first)).await;
+
+        assert_eq!(wire.len(), 2);
+        let left = placed.iter().find(|p| p.id == wire[0].id).unwrap();
+        assert_eq!(left.side, Side::Old);
+        assert_eq!(left.line, Some(2));
+        assert!(!left.lost);
+        assert!(!left.moved);
+
+        let right = placed.iter().find(|p| p.id == wire[1].id).unwrap();
+        assert_eq!(right.side, Side::New);
+        assert_eq!(right.line, Some(3));
     }
 
     #[tokio::test]

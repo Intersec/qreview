@@ -235,6 +235,9 @@ export interface PatchSet {
 /** Where a comment lands in the patch set being read. */
 export interface Placed {
   id: string;
+  /// The column it stands in. A Gerrit remark of the version read against
+  /// stands on the left.
+  side: Side;
   line: number | null;
   /// The last line of the range. It follows the first one.
   endLine: number | null;
