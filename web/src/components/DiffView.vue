@@ -31,9 +31,7 @@ const props = defineProps<{
   split: boolean;
   comments: Comment[];
   /// Where a comment lands in the patch set being read.
-  placement: (
-    id: string,
-  ) => { line: number | null; endLine: number | null; lost: boolean } | undefined;
+  placement: (id: string) => Placed | undefined;
   /// Read a run of lines the diff does not carry.
   loadLines: (from: number, to: number) => Promise<Row[]>;
   /// The comments whose line this version does not have any more.
@@ -434,7 +432,8 @@ function span(comment: Comment): { side: Side; start: number; end: number } | nu
   const start = placed?.line ?? anchor.startLine;
   const end = placed?.endLine ?? anchor.endLine ?? start;
 
-  return { side: anchor.side, start, end: Math.max(start, end) };
+  // A remark of the version on the left stands in its column.
+  return { side: placed?.side ?? anchor.side, start, end: Math.max(start, end) };
 }
 
 /// Every range drawn on the code: the one the keyboard is picking, and the

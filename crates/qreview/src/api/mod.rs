@@ -22,7 +22,7 @@ use crate::model::{ChangeSummary, FileDiff, FileEntry, Series};
 use crate::patchset::PatchSet;
 use crate::session::Against;
 use crate::session::Session;
-use crate::store::model::{ChangeFile, Comment};
+use crate::store::model::{ChangeFile, Comment, Side};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -728,7 +728,25 @@ async fn comments(
     // A comment on a removed line is anchored on the base, so the placement
     // needs both trees, not only the one being read.
     let base = session.base_of(&rev, &Against::Parent).await?;
-    let placed = anchor::place_all(&session.git, &file.comments, &rev, &base).await;
+    let mut placed = anchor::place_all(&session.git, &file.comments, &rev, &base).await;
+
+    // Another version on the left is on the screen too, and its remarks
+    // stand there, on its own lines. A remark on a removed line of it
+    // speaks of its parent, which no column shows.
+    if let Against::Tree(left) =
+        resolve_base(&session, &key, parse_base(view.base.as_deref())?).await?
+    {
+        for (comment, place) in file.comments.iter().zip(placed.iter_mut()) {
+            let on_left = comment.commit == left
+                && comment.anchor.as_ref().is_some_and(|a| a.side == Side::New);
+            if on_left {
+                *place = Placed {
+                    side: Side::Old,
+                    ..anchor::place(&session.git, comment, &left, &left).await
+                };
+            }
+        }
+    }
 
     Ok(Json(Review { file, placed }))
 }
@@ -2338,6 +2356,81 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         let placed = &body["placed"][0];
         assert_eq!(placed["line"], 3, "the comment is still on its line");
+        assert_eq!(placed["lost"], false);
+    }
+
+    #[tokio::test]
+    async fn a_remark_of_the_version_read_against_stands_on_the_left() {
+        let repo = build_repo(&[
+            commit("base").file("keep.txt", "0\n"),
+            commit("work")
+                .file("a.txt", "one\ntwo\nthree\n")
+                .change_id("Iwork"),
+        ])
+        .await;
+        let first = repo.sha("HEAD").await;
+
+        let mut opts = Options::new();
+        opts.gerrit = false;
+        opts.prevs = vec![first.clone()];
+        let root = repo.path().join(".qreview-test");
+        let session = |opts: Options| {
+            let root = root.clone();
+            let path = repo.path().to_owned();
+            async move {
+                Session::with(
+                    &path,
+                    &opts,
+                    Languages::new(),
+                    std::sync::Arc::new(crate::highlight::Highlighter::new()),
+                    Some(crate::store::Store::at(root.as_path())),
+                )
+                .await
+                .unwrap()
+            }
+        };
+
+        // The remark is written on the first version, on line 2.
+        let comment = serde_json::json!({
+            "scope": "line",
+            "file": "a.txt",
+            "startLine": 2,
+            "side": "new",
+            "body": "Can two be nullable?",
+        });
+        let request = Request::builder()
+            .method("POST")
+            .uri("/api/changes/Iwork/comments")
+            .header(header::COOKIE, format!("{}={TOKEN}", auth::COOKIE))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(comment.to_string()))
+            .unwrap();
+        let server = app(AppState::new(session(opts.clone()).await, TOKEN.to_owned()));
+        let (status, _) = json(server, request).await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        // The second version puts two lines above it.
+        std::fs::write(repo.path().join("a.txt"), "zero\nhalf\none\ntwo\nthree\n").unwrap();
+        repo.git(&["commit", "--amend", "--quiet", "--all", "--no-edit"])
+            .await;
+
+        let (status, body) = json(
+            app(AppState::new(session(opts).await, TOKEN.to_owned())),
+            get_with_cookie("/api/changes/Iwork/comments?ps=2&base=ps:1", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let placed = &body["placed"][0];
+        assert_eq!(
+            placed["side"], "old",
+            "the first version is the left column"
+        );
+        assert_eq!(
+            placed["line"], 2,
+            "the remark is on the line it was written on"
+        );
+        assert_eq!(placed["moved"], false);
         assert_eq!(placed["lost"], false);
     }
 

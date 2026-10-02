@@ -137,8 +137,8 @@ export const api = {
 
   posted: (key: string, ps?: number, base?: string) =>
     call<Posted>(`/api/changes/${encodeURIComponent(key)}/posted${query({ ps: num(ps), base })}`),
-  comments: (key: string, ps?: number) =>
-    call<Review>(`/api/changes/${encodeURIComponent(key)}/comments${query({ ps: num(ps) })}`),
+  comments: (key: string, ps?: number, base?: string) =>
+    call<Review>(`/api/changes/${encodeURIComponent(key)}/comments${query({ ps: num(ps), base })}`),
 
   addComment: (key: string, comment: NewComment) =>
     call<Comment>(`/api/changes/${encodeURIComponent(key)}/comments`, {

@@ -354,7 +354,7 @@ export const useReview = defineStore('review', () => {
     await guard(async () => {
       patchSet.value = number;
       against.value = base;
-      review.value = await api.comments(key, number);
+      review.value = await api.comments(key, number, base);
       void loadPosted(key, number, base);
       files.value = await track(filesLoading, api.files(key, number, base));
 
@@ -503,16 +503,28 @@ export const useReview = defineStore('review', () => {
     return patchSet.value !== undefined && last !== undefined && patchSet.value !== last;
   });
 
-  /// The comments the diff shows: the ones written on the version on the
-  /// screen. See `reading`.
+  /// The commit of an older version on the left, when the reader compares
+  /// two versions. It is on the screen too.
+  const readingLeft = computed(() => {
+    const number = against.value?.startsWith('ps:') ? Number(against.value.slice(3)) : NaN;
+
+    return patchSets.value.find((one) => one.number === number)?.commit;
+  });
+
+  /// The comments the diff shows: the ones written on the versions on the
+  /// screen. See `reading`. A remark on a removed line of the left version
+  /// speaks of its parent, which no column shows.
   function comments(): Comment[] {
-    return (review.value?.comments ?? []).filter((c) => isCurrent(c, reading.value));
+    return (review.value?.comments ?? []).filter(
+      (c) =>
+        isCurrent(c, reading.value) || (c.commit === readingLeft.value && c.anchor?.side === 'new'),
+    );
   }
 
   async function reload() {
     const key = changeKey.value;
     if (key) {
-      review.value = await api.comments(key, patchSet.value);
+      review.value = await api.comments(key, patchSet.value, against.value);
     }
     await readWritten();
   }

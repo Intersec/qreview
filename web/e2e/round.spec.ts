@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { card, openChange, openFile } from './act.ts';
+import { card, openChange, openFile, useSplit } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -79,6 +79,20 @@ test('a remark shows again on the version it was written on', async ({ page }) =
   await expect(shown).toBeVisible();
   await expect(shown).toContainText('previous');
   await expect(shown).toContainText(/patch set 1 · [0-9a-f]{8}/);
+});
+
+test('a remark of the version read against stands on the left', async ({ page }) => {
+  await reviewThenCorrect(page, 'This line says nothing.');
+  await useSplit(page);
+  await page.locator('#base-of').selectOption('ps:1');
+
+  // Patch set 1 is the left column, so its remark is on the screen, on the
+  // line it was written on.
+  const talk = page.locator('tr.talk', { hasText: 'This line says nothing.' });
+  await expect(talk).toHaveCount(1);
+  await expect(talk.locator('td').nth(0)).toContainText('This line says nothing.');
+  await expect(talk.locator('td').nth(1)).not.toContainText('This line says nothing.');
+  await expect(card(page, 'This line says nothing.')).toContainText('previous');
 });
 
 test('a previous remark is read, never edited and never deleted', async ({ page }) => {

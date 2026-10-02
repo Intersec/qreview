@@ -567,6 +567,12 @@ it was written on and it is on its line, grey rather than the draft yellow,
 tagged `previous`, naming the patch set and the sha. Nothing is hidden: the
 pane lists every remark of the change, under the version each one belongs to.
 
+Two versions read one against the other are both on the screen. A remark of
+the version on the left stands in the left column, on its own line, the way
+section 6.3 places a remark of Gerrit. A remark on a removed line of that
+version speaks of its parent, which no column shows, so the diff leaves it
+out.
+
 **A previous remark is read, and never written on.** It has no Edit and no
 Delete: the round it belongs to is over, and a record that can be rewritten is
 not a record. A version that is not the newest takes no new remark either: one
