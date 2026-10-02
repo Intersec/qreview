@@ -12,6 +12,14 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.12.4]
+
+### Fixed
+
+- A remark of the session shows again when its version is the one read
+  against. It stands in the left column, on its own line. It showed only when
+  its version was on the right.
+
 ## [0.12.3]
 
 ### Fixed
