@@ -114,6 +114,8 @@ pub fn app(state: AppState) -> Router {
         .route("/api/comments", get(all_comments))
         .route("/api/events", get(events))
         .route("/api/migrate", post(migrate))
+        .route("/api/changes/{key}/fix", post(fix))
+        .route("/api/changes/{key}/clean", post(clean))
         .route("/api/update", get(update))
         .route("/api/export", get(export))
         .route("/api/config", get(config).put(save_config))
@@ -960,6 +962,8 @@ struct ByQuery {
 #[derive(Deserialize)]
 struct EventsQuery {
     after: Option<u64>,
+    /// `agent` on a wait of `qreview wait`, so the server knows one listens.
+    who: Option<String>,
 }
 
 /// How long a wait on the events is held before it answers empty. Short
@@ -971,7 +975,47 @@ const EVENTS_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 /// The session lock is not held: a wait of 30 seconds must not stop a
 /// refresh.
 async fn events(State(state): State<AppState>, Query(query): Query<EventsQuery>) -> Json<Batch> {
+    let _waits = (query.who.as_deref() == Some("agent")).then(|| state.events.agent_waits());
+
     Json(state.events.after(query.after, EVENTS_WAIT).await)
+}
+
+/// Ask the agent to fix the change. See section 5.7.
+async fn fix(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    if state.session.read().await.commit_of(&key).is_none() {
+        return Err(ApiError::not_found(format!(
+            "no change {key} in the series"
+        )));
+    }
+    if !state.events.agent_listens() {
+        return Err(ApiError {
+            status: StatusCode::CONFLICT,
+            code: "noAgent",
+            message: "no agent listens. Start one with `qreview wait`".to_owned(),
+        });
+    }
+    state.events.push(Kind::Fix, Author::Reader, &key, None);
+
+    Ok(StatusCode::ACCEPTED)
+}
+
+/// Delete the done threads of the change.
+async fn clean(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<Json<Deleted>, ApiError> {
+    let session = state.session.read().await;
+    let current = session
+        .commit_of(&key)
+        .ok_or_else(|| ApiError::not_found(format!("no change {key} in the series")))?;
+    let deleted = crate::comments::clean(&session.store, &key, &current)?;
+    drop(session);
+    state.events.push(Kind::Clean, Author::Reader, &key, None);
+
+    Ok(Json(Deleted { deleted }))
 }
 
 /// One error shape for every route.
@@ -3042,5 +3086,42 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn fix_is_refused_with_no_agent_and_sent_while_one_waits() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        let server = app(state.clone());
+
+        let (status, body) = json(server.clone(), post("/api/changes/I8f3ac21/fix", "")).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["error"]["code"], "noAgent");
+
+        let waiting = tokio::spawn(
+            server
+                .clone()
+                .oneshot(get_with_cookie("/api/events?after=0&who=agent", TOKEN)),
+        );
+        let answer = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let (status, _) = json(server.clone(), post("/api/changes/I8f3ac21/fix", "")).await;
+                if status != StatusCode::CONFLICT {
+                    break status;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the wait of the agent must count");
+        assert_eq!(answer, StatusCode::ACCEPTED);
+
+        let batch = waiting.await.unwrap().unwrap();
+        let bytes = axum::body::to_bytes(batch.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let batch: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(batch["events"][0]["kind"], "fix");
+        assert_eq!(batch["agent"], true);
     }
 }

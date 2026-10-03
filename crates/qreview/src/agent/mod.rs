@@ -236,7 +236,7 @@ pub async fn refresh(client: &Client) -> Result<()> {
 /// The kinds of event that ask something of the agent. Every other write is
 /// for the page alone: a remark being written, changed or deleted costs the
 /// agent nothing until the reader asks.
-const REQUESTS: &[&str] = &["ask"];
+const REQUESTS: &[&str] = &["ask", "fix"];
 
 /// The requests among the events of a batch.
 fn requests(events: &Value) -> Vec<Value> {
@@ -268,7 +268,9 @@ pub async fn wait(client: &Client, after: Option<u64>, timeout: Duration) -> Res
     };
 
     loop {
-        let batch = client.get(&format!("/api/events?after={after}")).await?;
+        let batch = client
+            .get(&format!("/api/events?after={after}&who=agent"))
+            .await?;
         let next = batch["next"].as_u64().unwrap_or(after);
         if batch["reset"].as_bool() == Some(true) {
             return Ok((json!({ "events": [], "next": next, "reset": true }), true));
