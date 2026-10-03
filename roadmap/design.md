@@ -918,8 +918,9 @@ without a reload. The server is the only writer of the store, so it knows
 every write the moment it is made. It numbers them, and keeps the last few
 hundred in memory.
 
-`GET /api/events?after=<n>` answers at once with every event numbered above
-`n`, or holds the request until one comes, for at most 30 seconds, and then
+`GET /api/events` with no `after` answers at once, with no event and the
+number to start from. `GET /api/events?after=<n>` answers at once with every
+event numbered above `n`, or holds the request until one comes, for at most 30 seconds, and then
 answers with an empty list. Each answer carries the number to ask after
 next. An `after` the server no longer holds, because it restarted or the
 event fell out of memory, answers with `"reset": true`, and the reader reads
@@ -928,12 +929,15 @@ everything again.
 ```ts
 type Event = {
   seq: number;
-  kind: 'comment' | 'reply' | 'done' | 'deleted' | 'refresh';
+  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh';
   author: 'reader' | 'agent';
   key: string;             // the change
   id: string | null;       // the comment, absent on a refresh
 };
 ```
+
+A write names its author: in the body of a comment or of an edit, and as
+`?author=agent` on a delete and on a refresh, which carry no body.
 
 The interface holds one such request open, and reloads the comments of a
 change when an event of the agent names it. `qreview wait` holds one too and

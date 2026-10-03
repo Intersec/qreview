@@ -11,6 +11,7 @@ pub mod comments;
 pub mod commitmsg;
 pub mod config;
 pub mod diff;
+pub mod events;
 pub mod export;
 pub mod gerrit;
 pub mod git;

@@ -60,6 +60,9 @@ pub struct EditComment {
     /// Check or clear the Done box. A remark that opens a thread only.
     #[serde(default)]
     pub done: Option<bool>,
+    /// Who makes the change, for the event that tells the other party.
+    #[serde(default)]
+    pub author: Author,
 }
 
 /// What the change owes the series pane.
