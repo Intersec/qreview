@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::{TcpStream, UnixStream};
 
 use super::address::Address;
 use crate::api::auth::COOKIE;
@@ -62,10 +62,6 @@ impl Client {
     }
 
     async fn exchange(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Vec<u8>> {
-        let mut stream = TcpStream::connect(("127.0.0.1", self.address.port))
-            .await
-            .context("no qreview server answers on this repository. Run `qreview` first")?;
-
         let payload = body.map(Value::to_string).unwrap_or_default();
         let request = format!(
             "{method} {path} HTTP/1.1\r\n\
@@ -78,12 +74,26 @@ impl Client {
             token = self.address.token,
             length = payload.len(),
         );
-        stream.write_all(request.as_bytes()).await?;
 
-        let mut raw = Vec::new();
-        stream.read_to_end(&mut raw).await?;
-        Ok(raw)
+        // The socket first: it is the way in from a sandbox, where the port
+        // is in another network.
+        if let Some(socket) = &self.address.socket
+            && let Ok(mut stream) = UnixStream::connect(socket).await
+        {
+            return talk(&mut stream, &request).await;
+        }
+        let mut stream = TcpStream::connect(("127.0.0.1", self.address.port))
+            .await
+            .context("no qreview server answers on this repository. Run `qreview` first")?;
+        talk(&mut stream, &request).await
     }
+}
+
+async fn talk<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S, request: &str) -> Result<Vec<u8>> {
+    stream.write_all(request.as_bytes()).await?;
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).await?;
+    Ok(raw)
 }
 
 /// The status and the body of an answer.

@@ -617,3 +617,28 @@ directly. Two writers on one file need a lock, and the interface would have
 to watch the files to see a reply.
 
 Issue #23.
+
+## 2026-10-03 — A Unix socket for an agent in a sandbox
+
+Claude Code can run each command of an agent in a sandbox with a network of
+its own. There, `127.0.0.1` is the loopback of the sandbox, not of the
+machine, and the proxy of the sandbox refuses the loopback too. The
+commands of the agent could not reach the server, and an organisation can
+forbid the setting that takes a command out of the sandbox.
+
+**Decision.** The server also listens on `/tmp/qreview-<uid>/<repo-id>.sock`,
+and `server.json` names it. The commands try it before the port. A sandbox
+shares `/tmp` with the machine, so the socket is in reach where the port is
+not. The directory has mode `0700` and is refused when another user owns
+it or others can enter it; the socket has mode `0600`; the token is asked
+for as on the port. A Unix socket is no network interface: the rule that
+the server binds `127.0.0.1` only still holds for the network.
+
+`/tmp` itself and not `$TMPDIR`: a sandbox points `$TMPDIR` elsewhere, and
+the server and the agent must name the same file.
+
+Rejected: letting the loopback through the proxy of the sandbox. It opens
+every service of the machine to every sandboxed command, where the socket
+opens qreview alone.
+
+Issue #23.

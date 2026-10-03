@@ -18,6 +18,10 @@ pub struct Address {
     pub pid: u32,
     pub port: u16,
     pub token: String,
+    /// The Unix socket, which an agent in a sandbox can reach when the port
+    /// is out of its network. Absent when the server could not make one.
+    #[serde(default)]
+    pub socket: Option<String>,
 }
 
 impl Address {
@@ -89,6 +93,7 @@ mod tests {
             pid: 7,
             port,
             token: "abc".to_owned(),
+            socket: None,
         }
     }
 
