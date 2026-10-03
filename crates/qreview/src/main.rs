@@ -10,6 +10,7 @@ use axum::Router;
 use clap::Parser;
 use tokio::net::TcpListener;
 
+use qreview::agent;
 use qreview::api::{self, AppState, auth};
 use qreview::config;
 use qreview::git::exec::Git;
@@ -30,7 +31,24 @@ async fn main() -> Result<()> {
     }
 
     let cwd = std::env::current_dir().context("cannot read the working directory")?;
+    if let Some(code) = agent_command(&cli, &cwd).await? {
+        std::process::exit(code);
+    }
+
     let root = Git::discover(&cwd).await?.root().to_path_buf();
+    let store_dir = agent::store_dir(&cwd).await?;
+
+    // An agent that starts qreview twice gets the review that is open, not
+    // a second server and a second tab.
+    if cli.command.is_none()
+        && let Some(server) = agent::running(&store_dir).await
+    {
+        println!(
+            "qreview already runs on this repository, at {}",
+            server.address().url()
+        );
+        return Ok(());
+    }
     let config = config::load(&root)?;
 
     let mut opts = Options::new();
@@ -72,6 +90,7 @@ async fn main() -> Result<()> {
             print!("{}", list(&session));
             return Ok(());
         }
+        Some(_) => unreachable!("the commands of the agent ran above"),
         None => {}
     }
 
@@ -89,7 +108,48 @@ async fn main() -> Result<()> {
     // the file list of the others. See `api::read_ahead`.
     api::read_ahead(state.clone());
 
-    serve(cli.port, api::app(state), &token, cli.no_open).await
+    serve(cli.port, api::app(state), &token, cli.no_open, &store_dir).await
+}
+
+/// Run a command of the agent. None when the command is another one.
+async fn agent_command(cli: &cli::Cli, cwd: &std::path::Path) -> Result<Option<i32>> {
+    let print = |value: &serde_json::Value| {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(value).unwrap_or_default()
+        );
+    };
+
+    match &cli.command {
+        Some(cli::Command::Comment { place, body, key }) => {
+            let client = agent::connect(cwd).await?;
+            let place = agent::parse_place(place)?;
+            let body = agent::body_of(body)?;
+            print(&agent::comment(&client, &place, &body, key.as_deref()).await?);
+        }
+        Some(cli::Command::Reply {
+            id,
+            body,
+            done,
+            blocked,
+        }) => {
+            let client = agent::connect(cwd).await?;
+            let body = agent::body_of(body)?;
+            print(&agent::reply(&client, id, &body, *done, *blocked).await?);
+        }
+        Some(cli::Command::Wait { after, timeout }) => {
+            let client = agent::connect(cwd).await?;
+            let timeout = std::time::Duration::from_secs(*timeout);
+            let (events, any) = agent::wait(&client, *after, timeout).await?;
+            print(&events);
+            return Ok(Some(if any { 0 } else { 1 }));
+        }
+        Some(cli::Command::Refresh) => {
+            agent::refresh(&agent::connect(cwd).await?).await?;
+        }
+        _ => return Ok(None),
+    }
+    Ok(Some(0))
 }
 
 /// The reviews this repository has stored, whether the change is in the
@@ -137,7 +197,13 @@ async fn text_report(session: &Session) -> Result<String> {
     Ok(report::render(&session.series, &files))
 }
 
-async fn serve(port: u16, app: Router, token: &str, no_open: bool) -> Result<()> {
+async fn serve(
+    port: u16,
+    app: Router,
+    token: &str,
+    no_open: bool,
+    store_dir: &std::path::Path,
+) -> Result<()> {
     // The loopback address only. Never another interface.
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
@@ -148,16 +214,31 @@ async fn serve(port: u16, app: Router, token: &str, no_open: bool) -> Result<()>
     println!("qreview is at {url}");
     println!("Press Ctrl-C to stop.");
 
+    // The commands of an agent find the server here. A review still works
+    // without them, so a file that cannot be written is only said.
+    let announced = match agent::announce(store_dir, addr.port(), token) {
+        Ok(address) => Some(address),
+        Err(error) => {
+            eprintln!("qreview: the commands of an agent will not find this server: {error:#}");
+            None
+        }
+    };
+
     if !no_open {
         open_browser(&url);
     }
 
-    axum::serve(listener, app)
+    let served = axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })
         .await
-        .context("the server stopped with an error")
+        .context("the server stopped with an error");
+
+    if let Some(address) = announced {
+        agent::address::remove(store_dir, &address);
+    }
+    served
 }
 
 /// Show the review in the browser of the user.
