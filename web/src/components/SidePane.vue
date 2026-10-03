@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { inject, ref } from 'vue';
+import { THREADS } from '@/diff/threads';
 import BoundaryCard from './BoundaryCard.vue';
 import CommentList from './CommentList.vue';
 import FileList from './FileList.vue';
@@ -23,6 +24,8 @@ defineProps<{
   /// How many comments sit in each file of the change being read.
   inFile: Map<string, number>;
 }>();
+/// Absent where no review provides it, as in a test of this pane alone.
+const threads = inject(THREADS, null);
 const emit = defineEmits<{
   openChange: [key: string];
   openFile: [path: string];
@@ -104,6 +107,12 @@ defineExpose({ focusFilter: () => inChange.value[0]?.focusFilter() });
                 </span>
                 <span v-if="counts.get(change.key)" class="count"
                   >· {{ counts.get(change.key) }} ✎</span
+                >
+                <span
+                  v-if="threads?.blockedChanges.value.has(change.key)"
+                  class="awaits"
+                  title="The agent waits for your answer"
+                  >waits for you</span
                 >
               </span>
             </button>
