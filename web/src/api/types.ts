@@ -182,6 +182,30 @@ export interface Comment {
   scope: Scope;
   body: string;
   anchor: Anchor | null;
+  author: Author;
+  /// The remark that opens the thread, on a reply.
+  parent: string | null;
+  /// The thread is done. Only on the remark that opens it.
+  done: boolean;
+  /// A reply of the agent that waits for the reader.
+  blocked: boolean;
+}
+
+export type Author = 'reader' | 'agent';
+
+export interface StoreEvent {
+  seq: number;
+  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh';
+  author: Author;
+  key: string;
+  id: string | null;
+}
+
+export interface EventBatch {
+  events: StoreEvent[];
+  next: number;
+  /// The server restarted, or the events fell out of its memory.
+  reset: boolean;
 }
 
 export interface ChangeFile {
@@ -200,10 +224,15 @@ export interface NewComment {
   startChar?: number;
   endChar?: number;
   body: string;
+  /// The comment this one answers.
+  parent?: string;
+  /// On a reply, check or clear the Done box of the thread with it.
+  done?: boolean;
 }
 
 export interface EditComment {
   body?: string;
+  done?: boolean;
 }
 
 export type Origin = 'local' | 'prev' | 'gerrit';

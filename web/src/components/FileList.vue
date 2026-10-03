@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, inject, ref } from 'vue';
+import { THREADS } from '@/diff/threads';
 import { group } from '@/diff/tree';
 import LoadingVeil from './LoadingVeil.vue';
 import type { FileEntry } from '@/api/types';
+
+/// Absent where no review provides it, as in a test of this list alone.
+const threads = inject(THREADS, null);
 
 const props = defineProps<{
   files: FileEntry[];
@@ -71,6 +75,12 @@ defineExpose({ focusFilter: () => box.value?.focus() });
         <span class="file-path">{{ file.name }}</span>
         <span v-if="inFile.get(file.entry.path)" class="count"
           >{{ inFile.get(file.entry.path) }} ✎</span
+        >
+        <span
+          v-if="threads?.blockedFiles.value.has(file.entry.path)"
+          class="awaits"
+          title="The agent waits for your answer"
+          >!</span
         >
         <span v-if="file.entry.binary" class="quiet">bin</span>
         <span v-else class="stat">

@@ -10,6 +10,7 @@ use axum::Router;
 use clap::Parser;
 use tokio::net::TcpListener;
 
+use qreview::agent;
 use qreview::api::{self, AppState, auth};
 use qreview::config;
 use qreview::git::exec::Git;
@@ -30,7 +31,24 @@ async fn main() -> Result<()> {
     }
 
     let cwd = std::env::current_dir().context("cannot read the working directory")?;
+    if let Some(code) = agent_command(&cli, &cwd).await? {
+        std::process::exit(code);
+    }
+
     let root = Git::discover(&cwd).await?.root().to_path_buf();
+    let store_dir = agent::store_dir(&cwd).await?;
+
+    // An agent that starts qreview twice gets the review that is open, not
+    // a second server and a second tab.
+    if cli.command.is_none()
+        && let Some(server) = agent::running(&store_dir).await
+    {
+        println!(
+            "qreview already runs on this repository, at {}",
+            server.address().url()
+        );
+        return Ok(());
+    }
     let config = config::load(&root)?;
 
     let mut opts = Options::new();
@@ -60,7 +78,12 @@ async fn main() -> Result<()> {
     let session = Session::with(&cwd, &opts, langs, std::sync::Arc::new(highlighter), None).await?;
 
     match cli.command {
-        Some(cli::Command::Export { key }) => {
+        Some(cli::Command::Export { key, json: true }) => {
+            let value = qreview::export::json(&session, key.as_deref()).await?;
+            println!("{}", serde_json::to_string_pretty(&value)?);
+            return Ok(());
+        }
+        Some(cli::Command::Export { key, json: false }) => {
             let text = match key {
                 Some(key) => qreview::export::change(&session, &key).await?,
                 None => qreview::export::series(&session).await?,
@@ -72,6 +95,7 @@ async fn main() -> Result<()> {
             print!("{}", list(&session));
             return Ok(());
         }
+        Some(_) => unreachable!("the commands of the agent ran above"),
         None => {}
     }
 
@@ -89,7 +113,57 @@ async fn main() -> Result<()> {
     // the file list of the others. See `api::read_ahead`.
     api::read_ahead(state.clone());
 
-    serve(cli.port, api::app(state), &token, cli.no_open).await
+    let events = state.events.clone();
+    serve(
+        cli.port,
+        api::app(state),
+        events,
+        &token,
+        cli.no_open,
+        &store_dir,
+    )
+    .await
+}
+
+/// Run a command of the agent. None when the command is another one.
+async fn agent_command(cli: &cli::Cli, cwd: &std::path::Path) -> Result<Option<i32>> {
+    let print = |value: &serde_json::Value| {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(value).unwrap_or_default()
+        );
+    };
+
+    match &cli.command {
+        Some(cli::Command::Comment { place, body, key }) => {
+            let client = agent::connect(cwd).await?;
+            let place = agent::parse_place(place)?;
+            let body = agent::body_of(body)?;
+            print(&agent::comment(&client, &place, &body, key.as_deref()).await?);
+        }
+        Some(cli::Command::Reply {
+            id,
+            body,
+            done,
+            blocked,
+        }) => {
+            let client = agent::connect(cwd).await?;
+            let body = agent::body_of(body)?;
+            print(&agent::reply(&client, id, &body, *done, *blocked).await?);
+        }
+        Some(cli::Command::Wait { after, timeout }) => {
+            let client = agent::connect(cwd).await?;
+            let timeout = std::time::Duration::from_secs(*timeout);
+            let (events, any) = agent::wait(&client, *after, timeout).await?;
+            print(&events);
+            return Ok(Some(if any { 0 } else { 1 }));
+        }
+        Some(cli::Command::Refresh) => {
+            agent::refresh(&agent::connect(cwd).await?).await?;
+        }
+        _ => return Ok(None),
+    }
+    Ok(Some(0))
 }
 
 /// The reviews this repository has stored, whether the change is in the
@@ -137,7 +211,14 @@ async fn text_report(session: &Session) -> Result<String> {
     Ok(report::render(&session.series, &files))
 }
 
-async fn serve(port: u16, app: Router, token: &str, no_open: bool) -> Result<()> {
+async fn serve(
+    port: u16,
+    app: Router,
+    events: std::sync::Arc<qreview::events::Events>,
+    token: &str,
+    no_open: bool,
+    store_dir: &std::path::Path,
+) -> Result<()> {
     // The loopback address only. Never another interface.
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
@@ -148,16 +229,80 @@ async fn serve(port: u16, app: Router, token: &str, no_open: bool) -> Result<()>
     println!("qreview is at {url}");
     println!("Press Ctrl-C to stop.");
 
+    // The way in for an agent in a sandbox. The review works without it,
+    // so a socket that cannot be made is only said.
+    let unix = match unix_listener(store_dir) {
+        Ok(found) => Some(found),
+        Err(error) => {
+            eprintln!("qreview: an agent in a sandbox will not reach this server: {error:#}");
+            None
+        }
+    };
+    let on_socket = unix.as_ref().map(|(_, path)| path.clone());
+    let socket_task = unix.map(|(listener, _)| {
+        let app = app.clone();
+        tokio::spawn(async move { axum::serve(listener, app).await })
+    });
+
+    // The commands of an agent find the server here. A review still works
+    // without them, so a file that cannot be written is only said.
+    let announced = match agent::announce(store_dir, addr.port(), token, on_socket.as_deref()) {
+        Ok(address) => Some(address),
+        Err(error) => {
+            eprintln!("qreview: the commands of an agent will not find this server: {error:#}");
+            None
+        }
+    };
+
     if !no_open {
         open_browser(&url);
     }
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await
-        .context("the server stopped with an error")
+    // On Ctrl-C the waits on the events answer at once, so the requests in
+    // flight end. A request that still hangs gets a few seconds, no more:
+    // the reader asked to stop.
+    let (stopping, mut stopped) = tokio::sync::watch::channel(false);
+    let signal = async move {
+        let _ = tokio::signal::ctrl_c().await;
+        events.close();
+        let _ = stopping.send(true);
+    };
+    let deadline = async move {
+        let _ = stopped.wait_for(|stop| *stop).await;
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    };
+    let served = tokio::select! {
+        served = axum::serve(listener, app).with_graceful_shutdown(signal) => {
+            served.context("the server stopped with an error")
+        }
+        () = deadline => Ok(()),
+    };
+
+    if let Some(address) = announced {
+        agent::address::remove(store_dir, &address);
+    }
+    if let Some(task) = socket_task {
+        task.abort();
+    }
+    if let Some(path) = on_socket {
+        agent::socket::clear(&path);
+    }
+    served
+}
+
+/// A Unix socket for the server, in the private directory of the user.
+fn unix_listener(
+    store_dir: &std::path::Path,
+) -> Result<(tokio::net::UnixListener, std::path::PathBuf)> {
+    let path = agent::socket::path_for(store_dir)?;
+    // A server that crashed left its socket behind, and a bind on it fails.
+    // A server that runs has been asked already, before this one started.
+    agent::socket::clear(&path);
+    let listener = tokio::net::UnixListener::bind(&path)
+        .with_context(|| format!("cannot listen on {}", path.display()))?;
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+
+    Ok((listener, path))
 }
 
 /// Show the review in the browser of the user.

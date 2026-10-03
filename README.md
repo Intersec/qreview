@@ -96,6 +96,45 @@ second set of habits. `?` lists them in the interface.
 Comments are stored under `~/.local/state/qreview`, keyed by `Change-Id`. An
 amend keeps them.
 
+## Review with an agent
+
+An agent that works on the series in a terminal, such as Claude Code, can
+take part in the review. For Claude Code, install the skill in
+[`skills/qreview`](skills/qreview/SKILL.md), and it knows the procedure:
+
+```sh
+mkdir -p ~/.claude/skills
+cp -r skills/qreview ~/.claude/skills/
+```
+
+Then ask it to open qreview and answer your remarks.
+
+The agent starts `qreview` itself, and the review opens in your browser. If
+a server already runs on the repository, `qreview` prints its address and
+opens no second tab.
+
+The agent writes through these commands. Each one finds the server of the
+repository on its own:
+
+```sh
+qreview comment src/net.c:new:42 --body "The result of read is not checked."
+qreview reply c-5b72… --body "Renamed." --done
+qreview reply c-5b72… --body "Log it, or return it?" --blocked
+qreview wait                  # block until you write, print it as JSON
+qreview export --json         # the open threads, each comment with its id
+qreview refresh               # read the repository again, after an amend
+```
+
+In the browser, a remark opens a thread. Reply under it, and check **Done**
+when the work is done. A done thread is grey and folded, and a click opens
+it. A remark of the agent is blue. When the agent asks a question with
+`--blocked`, the thread gets a red edge, its change and its file get a mark,
+and the tab title starts with the number of open questions. Your next reply
+answers it.
+
+A done thread leaves every count and the export, so the agent does not get
+the same work twice.
+
 ## Build from source
 
 Rust and Node, both pinned in `.tool-versions` for
