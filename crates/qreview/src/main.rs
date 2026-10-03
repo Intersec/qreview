@@ -229,9 +229,24 @@ async fn serve(
     println!("qreview is at {url}");
     println!("Press Ctrl-C to stop.");
 
+    // The way in for an agent in a sandbox. The review works without it,
+    // so a socket that cannot be made is only said.
+    let unix = match unix_listener(store_dir) {
+        Ok(found) => Some(found),
+        Err(error) => {
+            eprintln!("qreview: an agent in a sandbox will not reach this server: {error:#}");
+            None
+        }
+    };
+    let on_socket = unix.as_ref().map(|(_, path)| path.clone());
+    let socket_task = unix.map(|(listener, _)| {
+        let app = app.clone();
+        tokio::spawn(async move { axum::serve(listener, app).await })
+    });
+
     // The commands of an agent find the server here. A review still works
     // without them, so a file that cannot be written is only said.
-    let announced = match agent::announce(store_dir, addr.port(), token) {
+    let announced = match agent::announce(store_dir, addr.port(), token, on_socket.as_deref()) {
         Ok(address) => Some(address),
         Err(error) => {
             eprintln!("qreview: the commands of an agent will not find this server: {error:#}");
@@ -266,7 +281,28 @@ async fn serve(
     if let Some(address) = announced {
         agent::address::remove(store_dir, &address);
     }
+    if let Some(task) = socket_task {
+        task.abort();
+    }
+    if let Some(path) = on_socket {
+        agent::socket::clear(&path);
+    }
     served
+}
+
+/// A Unix socket for the server, in the private directory of the user.
+fn unix_listener(
+    store_dir: &std::path::Path,
+) -> Result<(tokio::net::UnixListener, std::path::PathBuf)> {
+    let path = agent::socket::path_for(store_dir)?;
+    // A server that crashed left its socket behind, and a bind on it fails.
+    // A server that runs has been asked already, before this one started.
+    agent::socket::clear(&path);
+    let listener = tokio::net::UnixListener::bind(&path)
+        .with_context(|| format!("cannot listen on {}", path.display()))?;
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+
+    Ok((listener, path))
 }
 
 /// Show the review in the browser of the user.

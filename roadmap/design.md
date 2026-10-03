@@ -30,6 +30,13 @@ The token is also in `server.json` (section 11), a file only its owner can
 read, so the commands of an agent in a terminal of the same user reach the
 server. Another local user still cannot.
 
+The server also listens on a Unix socket, `/tmp/qreview-<uid>/<repo-id>.sock`,
+for the commands of an agent. An agent in a sandbox runs each command in a
+network of its own, where `127.0.0.1` is not the machine of the user, but it
+shares `/tmp`. The directory is made with mode `0700` and refused when
+another user owns it or others can enter it; the socket has mode `0600`.
+The token is asked for there as on the port. The browser uses the port.
+
 The server never writes to the working tree. It never reads it either. Every
 commit, tree, and blob comes from the object database, so a series under
 review does not have to be the checkout, and a dirty worktree changes nothing.
@@ -1186,11 +1193,11 @@ again with `export --json`.
 (section 5.1), with mode `0600`:
 
 ```json
-{ "pid": 41207, "port": 38412, "token": "..." }
+{ "pid": 41207, "port": 38412, "token": "...", "socket": "/tmp/qreview-1000/4f5959a8bfd8b629.sock" }
 ```
 
-It removes the file when it stops. The commands above read it to find the
-server; none of them starts one, and each says to run `qreview` when no
+It removes the file, and the socket, when it stops. The commands above
+read it to find the server, and try the socket before the port; none of them starts one, and each says to run `qreview` when no
 server answers. A file whose server does not answer is a stale one, left by
 a crash, and is ignored.
 

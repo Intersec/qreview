@@ -103,7 +103,8 @@ Two rules that no tool enforces:
   No ref, no file of the tree, ever. A task that needs more is a
   stop-and-report.
 - **The server binds `127.0.0.1` only**, with a session token. No other
-  interface, ever.
+  interface, ever. Beside it, a Unix socket in a directory only the user can
+  enter, for an agent in a sandbox, with the same token.
 - **Gerrit is optional at every point.** A query that fails, times out, or
   finds nothing leaves the local review working.
 - **A comment is never lost.** A comment that cannot be anchored on the
