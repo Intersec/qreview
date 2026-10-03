@@ -583,3 +583,37 @@ version on the right and of the patch set on the left, and places each on
 its own version. `Placed` carries a `side`, so the interface puts each one
 in its column. A remark of any other version is not in the diff; opening its
 patch set, on either side, shows it.
+
+## 2026-10-03 — The review is a conversation with an agent
+
+The only way from the review to an agent was the export: the reader copied
+it, pasted it into a session, and read the answers in the terminal. The
+answers were not on the lines, the agent could not write into the review,
+and a question of the agent had nowhere to wait for the reader. Section 5.2
+said a comment stands alone, with no author, no reply and no resolving,
+because a review of one's own series has no second party. An agent is that
+second party.
+
+**Decision.** A remark opens a thread. Each comment carries an `author`,
+`reader` or `agent`. A reply names its remark in `parent`. The remark that
+opens a thread carries `done`, a Done box as in Gerrit, and a reply of the
+agent can be `blocked`, a question the reader must answer first. The store
+goes to format 4; every new field has a default, so a file of format 3 reads
+as remarks of the reader, each alone. Done threads are counted nowhere and
+left out of the export.
+
+The agent stays in its own terminal, and qreview never starts it. It writes
+through commands of the binary (`comment`, `reply`, `wait`, `refresh`,
+`export --json`), which find the running server in `server.json`, a file
+with the port and the token that only the user can read. The server stays
+the only writer of the store, and numbers its writes on `/api/events`, so
+the interface sees a reply of the agent, and the agent sees a remark of the
+reader, without a reload.
+
+Rejected: qreview starting `claude` itself. The tool would then write the
+working tree through the agent, depend on one vendor, and send the code to
+a network service. Rejected too: the commands writing the store files
+directly. Two writers on one file need a lock, and the interface would have
+to watch the files to see a reply.
+
+Issue #23.
