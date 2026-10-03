@@ -149,7 +149,10 @@ async fn timed(
     let started = crate::trace::start();
     let what = started.map(|_| format!("{} {}", request.method(), without_token(request.uri())));
 
-    let _in_hand = InHand::new(state);
+    // A wait on the events is held for half a minute and does no work. It
+    // must not keep the read-ahead from its quiet moment.
+    let waits = request.uri().path() == "/api/events";
+    let _in_hand = (!waits).then(|| InHand::new(state));
     let response = next.run(request).await;
 
     crate::trace::since(started, || {
@@ -2922,5 +2925,17 @@ mod tests {
 
         let (_, cleared) = json(server.clone(), send("PATCH", &uri, r#"{"done":false}"#)).await;
         assert_eq!(cleared["done"], false);
+    }
+
+    #[tokio::test]
+    async fn a_wait_on_the_events_leaves_the_server_quiet() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        let server = app(state.clone());
+        let waiting = tokio::spawn(server.oneshot(get_with_cookie("/api/events?after=0", TOKEN)));
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(state.busy.lock().unwrap().in_hand, 0);
+        waiting.abort();
     }
 }

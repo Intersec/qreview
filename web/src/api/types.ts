@@ -193,6 +193,21 @@ export interface Comment {
 
 export type Author = 'reader' | 'agent';
 
+export interface StoreEvent {
+  seq: number;
+  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh';
+  author: Author;
+  key: string;
+  id: string | null;
+}
+
+export interface EventBatch {
+  events: StoreEvent[];
+  next: number;
+  /// The server restarted, or the events fell out of its memory.
+  reset: boolean;
+}
+
 export interface ChangeFile {
   version: number;
   key: string;
