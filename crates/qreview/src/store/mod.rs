@@ -34,6 +34,12 @@ impl Store {
         }
     }
 
+    /// The directory of the repository, where `server.json` sits beside
+    /// the changes.
+    pub fn dir(&self) -> &Path {
+        self.changes.parent().unwrap_or(&self.changes)
+    }
+
     fn path_of(&self, key: &str) -> PathBuf {
         self.changes.join(format!("{}.json", safe(key)))
     }

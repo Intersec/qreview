@@ -55,4 +55,46 @@ pub enum Command {
 
     /// List the changes this repository has a review for.
     List,
+
+    /// Write a remark as the agent, on the server of this repository.
+    Comment {
+        /// `<file>`, `<file>:<side>:<line>` or `<file>:<side>:<from>-<to>`.
+        /// The side is `old` or `new`.
+        place: String,
+        /// The text. `-` reads it from standard input.
+        #[arg(long)]
+        body: String,
+        /// The change. The newest change that touches the file by default.
+        #[arg(long, value_name = "CHANGE-ID")]
+        key: Option<String>,
+    },
+
+    /// Reply to a thread as the agent.
+    Reply {
+        /// The id of a comment of the thread.
+        id: String,
+        /// The text. `-` reads it from standard input.
+        #[arg(long)]
+        body: String,
+        /// Check the Done box of the thread.
+        #[arg(long)]
+        done: bool,
+        /// Wait for the reader: a question, or a problem to solve with them.
+        #[arg(long)]
+        blocked: bool,
+    },
+
+    /// Wait for the next remarks and replies of the reader, and print them
+    /// as JSON. Exits 1 when the time runs out.
+    Wait {
+        /// The `next` number of the last wait. Now by default.
+        #[arg(long)]
+        after: Option<u64>,
+        /// Seconds to wait.
+        #[arg(long, default_value_t = 600)]
+        timeout: u64,
+    },
+
+    /// Read the repository again, as the refresh button does.
+    Refresh,
 }
