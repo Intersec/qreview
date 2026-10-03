@@ -113,7 +113,16 @@ async fn main() -> Result<()> {
     // the file list of the others. See `api::read_ahead`.
     api::read_ahead(state.clone());
 
-    serve(cli.port, api::app(state), &token, cli.no_open, &store_dir).await
+    let events = state.events.clone();
+    serve(
+        cli.port,
+        api::app(state),
+        events,
+        &token,
+        cli.no_open,
+        &store_dir,
+    )
+    .await
 }
 
 /// Run a command of the agent. None when the command is another one.
@@ -205,6 +214,7 @@ async fn text_report(session: &Session) -> Result<String> {
 async fn serve(
     port: u16,
     app: Router,
+    events: std::sync::Arc<qreview::events::Events>,
     token: &str,
     no_open: bool,
     store_dir: &std::path::Path,
@@ -233,12 +243,25 @@ async fn serve(
         open_browser(&url);
     }
 
-    let served = axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await
-        .context("the server stopped with an error");
+    // On Ctrl-C the waits on the events answer at once, so the requests in
+    // flight end. A request that still hangs gets a few seconds, no more:
+    // the reader asked to stop.
+    let (stopping, mut stopped) = tokio::sync::watch::channel(false);
+    let signal = async move {
+        let _ = tokio::signal::ctrl_c().await;
+        events.close();
+        let _ = stopping.send(true);
+    };
+    let deadline = async move {
+        let _ = stopped.wait_for(|stop| *stop).await;
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    };
+    let served = tokio::select! {
+        served = axum::serve(listener, app).with_graceful_shutdown(signal) => {
+            served.context("the server stopped with an error")
+        }
+        () = deadline => Ok(()),
+    };
 
     if let Some(address) = announced {
         agent::address::remove(store_dir, &address);
