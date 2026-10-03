@@ -13,7 +13,7 @@ use crate::comments::{self, NewComment};
 use crate::commitmsg;
 use crate::git::exec::Git;
 use crate::model::PostedComment;
-use crate::store::model::{Comment, Scope, Side};
+use crate::store::model::{Author, Comment, Scope, Side};
 
 /// One posted remark, ready for the interface and for the anchoring.
 pub struct Posted {
@@ -113,6 +113,10 @@ async fn one(
         start_char: None,
         end_char: None,
         body: posted.message.clone(),
+        author: Author::Reader,
+        parent: None,
+        done: None,
+        blocked: false,
     };
 
     // A version that is not in this clone reads as no blob, no hash and no
@@ -129,6 +133,10 @@ async fn one(
             scope,
             body: posted.message.clone(),
             anchor,
+            author: Author::Reader,
+            parent: None,
+            done: false,
+            blocked: false,
         },
         wire,
     }

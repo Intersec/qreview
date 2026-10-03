@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCurrent, previousGroups, rounds } from './versions';
+import { isCurrent, open, previousGroups, rounds } from './versions';
 import type { Comment } from '@/api/types';
 
 function remark(id: string, commit: string): Comment {
@@ -12,6 +12,10 @@ function remark(id: string, commit: string): Comment {
     scope: 'line',
     body: id,
     anchor: null,
+    author: 'reader',
+    parent: null,
+    done: false,
+    blocked: false,
   };
 }
 
@@ -68,5 +72,19 @@ describe('previousGroups', () => {
     const gone = { ...change, comments: [remark('a', 'now'), remark('b', 'one')] };
 
     expect(previousGroups(gone).map((g) => g.version.commit)).toEqual(['one']);
+  });
+});
+
+describe('open', () => {
+  it('counts the remarks of this version that are not done, and no reply', () => {
+    const done = { ...remark('done', 'abc'), done: true };
+    const reply = { ...remark('reply', 'abc'), parent: 'a', author: 'agent' as const };
+    const change = {
+      commit: 'abc',
+      comments: [remark('a', 'abc'), done, reply, remark('old', 'old')],
+    };
+
+    expect(open(change).map((c) => c.id)).toEqual(['a']);
+    expect(rounds(change).current.map((c) => c.id)).toEqual(['a', 'done']);
   });
 });

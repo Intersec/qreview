@@ -1216,7 +1216,8 @@ impl Session {
     }
 
     pub fn edit_comment(&self, key: &str, id: &str, edit: EditComment) -> Result<Comment> {
-        comments::edit(&self.store, key, id, edit)
+        let current = self.commit_of(key).unwrap_or_default();
+        comments::edit(&self.store, key, &current, id, edit)
     }
 
     pub fn delete_comment(&self, key: &str, id: &str) -> Result<usize> {
