@@ -6,6 +6,7 @@
 
 pub mod address;
 pub mod client;
+pub mod socket;
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -274,11 +275,12 @@ fn segment(key: &str) -> String {
 }
 
 /// Write the address of a server that starts.
-pub fn announce(dir: &Path, port: u16, token: &str) -> Result<Address> {
+pub fn announce(dir: &Path, port: u16, token: &str, socket: Option<&Path>) -> Result<Address> {
     let address = Address {
         pid: std::process::id(),
         port,
         token: token.to_owned(),
+        socket: socket.map(|path| path.display().to_string()),
     };
     address::write(dir, &address)?;
 
