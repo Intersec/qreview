@@ -234,6 +234,7 @@ interface lists them:
 |---|---|
 | Local | The commit under review, always the last patch set |
 | `--prev <sha>` | A commit given on the command line |
+| A declared link | A commit that `qreview migrate` named as the previous version of this one. See section 5.6 |
 | Gerrit | `refs/changes/NN/CCCC/P`, fetched after the ssh query |
 
 Each patch set carries its commit hash, its parent, its author date, and its
@@ -441,6 +442,8 @@ $XDG_STATE_HOME/qreview/           (default ~/.local/state/qreview)
       changes/
         I8f3a...c21.json           one file per change
         sha-4a91...f0.json
+      commits/
+        4a91...f0.json             one file per commit that has a declared link
 ```
 
 `<repo-id>` is the first 16 hexadecimal characters of the SHA-256 of the
@@ -498,9 +501,10 @@ read, and one file is written.
 }
 ```
 
-Format 4 added `author`, `parent`, `done` and `blocked`. Each one carries a
-default, so a file of format 3 reads as a set of remarks by the reader, each
-alone in its thread, none of them done.
+Format 4 added `author`, `parent`, `done` and `blocked`, and `moves`, the
+earlier places of a remark that `qreview migrate` moved (section 5.6). Each
+one carries a default, so a file of format 3 reads as a set of remarks by
+the reader, each alone in its thread, none of them done, none of them moved.
 
 The versions of a change are not stored. They are read from git, and the
 `commit` of each comment says which one a remark was written against. See
@@ -607,7 +611,8 @@ not a record. A version that is not the newest takes no new remark either: one
 written there would be anchored on the newest version, at the line numbers of
 the one on the screen.
 
-**A change with no `Change-Id` finds its earlier versions in the reflog.**
+**A change with no `Change-Id` finds its earlier versions in the reflog**,
+when no link of section 5.6 names them.
 The `Change-Id` is what keeps a review under one key across an amend. Without
 one the key follows the sha, so the round before sits under the key of a
 commit nothing points at. Git has not lost that commit: an amend stops
@@ -694,6 +699,88 @@ until it is asked about.
 
 **Deleting a remark deletes its thread.** A reply deleted alone leaves the
 thread as it was.
+
+### 5.6 New versions, declared
+
+An agent that amends a commit knows which commit the new one replaces. It
+says so, and qreview stops guessing:
+
+```
+qreview migrate --from <old sha> [--to <new sha>] [--done <id>,...] [--blocked <id>=<text>]...
+```
+
+**The link belongs to the commits.** `migrate` writes one small file per
+commit under `commits/`:
+
+```json
+{ "previousVersion": "4a91...", "nextVersion": null, "declaredAt": "2026-10-03T14:02:11Z" }
+```
+
+The old commit gets `nextVersion`, the new one `previousVersion`. The
+versions of a change are the chain these links make, walked back from the
+commit under review. Each one is a patch set, and its remarks are read as
+remarks of the change, whatever key they were written under. A change needs
+no `Change-Id` for this. The reflog guess of section 5.4 stays for an amend
+that nobody declared.
+
+`migrate` refuses, and changes nothing, when:
+
+- the old commit already has another next version: one commit, one next;
+- both commits carry a `Change-Id` and the two differ. When one is present
+  it is a check, never a requirement.
+
+**The threads move with the declaration.** Every thread of the old version,
+open and done, moves to the key of the new commit: its `Change-Id`, or
+`sha-<new>`. A remark gets the new `commit` and the new anchor, and its
+earlier place goes onto `moves`:
+
+```json
+"moves": [{ "commit": "4a91...", "anchor": { ... }, "movedAt": "..." }]
+```
+
+So the move is explicit, stored, and readable afterwards: the rule that a
+comment is never moved in silence holds. A done thread moves too, grey and
+folded, until the reader cleans it. Older rounds stay on their own version.
+
+The new key is written before the old one is emptied. A write that fails
+between the two leaves a thread in both places, never in neither.
+
+**The new line of a remark** comes from the first of these that gives one:
+
+1. A line map built from `git diff <old> <new> -- <file>`, `-M` on, run as a
+   child process so it follows `diff.algorithm`. A line outside the hunks
+   moves by the offset of the hunks above it. A line inside a hunk was
+   changed by the new version, and goes to the first line of the new text of
+   that hunk, or to the line before the hunk when the hunk only removes.
+2. The fallback of section 5.4: the file, then the commit message.
+
+A remark on the old side reads the parents of the two commits instead. A
+range keeps its length, as in section 5.3.
+
+`--done` and `--blocked` reply as the agent, on the new version, after the
+move. One command, so the reader never sees the threads half moved.
+
+### 5.7 Fix and Clean
+
+**Fix** asks the agent to correct the change on the screen. A button, and
+`a` outside a text field, the key that opens the reply dialog in Gerrit.
+
+- It opens a dialog that lists the open threads the agent will deal with:
+  the place and the first line of each. `Enter` sends, `Escape` closes, and
+  no other key does anything. A key typed by mistake opens the dialog and
+  sends nothing.
+- If a thread of the change waits for the reader, the dialog lists those
+  threads instead and sends nothing. `Enter` jumps to the first one.
+- Without an agent, the button is disabled and `a` opens nothing. The server
+  knows an agent listens while a `qreview wait` is open, or ended less than
+  two minutes ago, and says so on every answer of `/api/events`.
+- Sending writes a `fix` event, author the reader, naming the change.
+  `qreview wait` returns it like any other.
+
+**Clean** deletes for good every done thread of the change on the screen. A
+thread reopened since is not done, and stays. The browser waits three
+seconds with an Undo before it asks the server, because nothing brings a
+deleted thread back.
 
 ## 6. Gerrit integration
 
@@ -863,6 +950,9 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `PATCH /api/changes/:key/comments/:id` | Change the body, or check or clear `done` on a thread |
 | `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |
 | `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. See section 8.3 |
+| `POST /api/migrate` | Link a new version to its previous one and move its threads. Body: `{ "from", "to", "done": [ids], "blocked": [{ "id", "body" }] }`. See section 5.6 |
+| `POST /api/changes/:key/fix` | Ask the agent to fix the change. See section 5.7 |
+| `POST /api/changes/:key/clean` | Delete the done threads of the change |
 | `POST /api/changes/:key/patchsets/fetch` | Fetch one Gerrit patch set |
 | `GET /api/export?scope=change&key=...` | The export text |
 | `GET /api/config` | The three layers, folded |
@@ -938,14 +1028,16 @@ hundred in memory.
 number to start from. `GET /api/events?after=<n>` answers at once with every
 event numbered above `n`, or holds the request until one comes, for at most 30 seconds, and then
 answers with an empty list. Each answer carries the number to ask after
-next. An `after` the server no longer holds, because it restarted or the
+next, and `agent`, true while an agent listens (section 5.7). An `after`
+the server no longer holds, because it restarted or the
 event fell out of memory, answers with `"reset": true`, and the reader reads
 everything again.
 
 ```ts
 type Event = {
   seq: number;
-  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh' | 'ask';
+  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh' | 'ask'
+      | 'migrated' | 'fix' | 'clean';
   author: 'reader' | 'agent';
   key: string;             // the change
   id: string | null;       // the comment, absent on a refresh
@@ -1180,6 +1272,8 @@ qreview reply <id> --body <text> [--done] [--blocked]
 qreview wait [--after <n>] [--timeout <s>]
                               print the next requests of the reader as JSON
 qreview refresh               read the repository again, as the ⟳ button
+qreview migrate --from <old> [--to <new>] [--done <id>,...] [--blocked <id>=<text>]...
+                              declare a new version and move its threads
 ```
 
 `<place>` is `<file>`, `<file>:<side>:<line>` or `<file>:<side>:<from>-<to>`,

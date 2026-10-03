@@ -643,6 +643,38 @@ opens qreview alone.
 
 Issue #23.
 
+## 2026-10-03 — A new version is declared, and its threads follow it
+
+After an amend, the remarks of the old version stayed on it, marked
+previous, and the new version read as if nobody had reviewed it. An agent
+that corrects a change and amends it then answered on a version the reader
+no longer looks at. Finding the old version also leaned on the
+`Change-Id`, or on a guess from the reflog without one, and many
+repositories carry no `Change-Id`.
+
+**Decision.** The agent declares the new version: `qreview migrate --from
+<old> --to <new>`. The link is stored per commit, `previousVersion` and
+`nextVersion` in `commits/<sha>.json`, so it needs no `Change-Id`; one that
+is present is only checked. The threads of the old version move to the new
+one with a line map from `git diff`, and each remark keeps its earlier
+places in `moves`. The move is declared and recorded, so section 5.4's rule
+against silent moves holds. The reflog guess stays for an amend that nobody
+declared.
+
+The remark takes the new `commit` and anchor, and the old ones go to the
+history, rather than the other way round: every reader of the store already
+reads `commit` and `anchor`, and keeps working unchanged.
+
+Fix asks the agent for the work from the browser, behind a dialog on `a`,
+so a key typed by mistake sends nothing. Clean deletes the done threads of
+a change, after an Undo of three seconds.
+
+Rejected: keying the review by a declared change id of qreview's own. It
+would be a second identity beside the `Change-Id`, invisible in git, and
+lost with the state directory.
+
+Issue #24.
+
 ## 2026-10-05 — The agent answers one thread, when asked
 
 In a field test, `qreview wait` woke the agent on every write of the
