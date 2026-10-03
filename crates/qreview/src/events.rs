@@ -55,6 +55,9 @@ pub struct Batch {
 pub struct Events {
     log: Mutex<Log>,
     notify: Notify,
+    /// The server stops. A page always holds a wait open, and a stop must
+    /// not sit behind it.
+    closed: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Default)]
@@ -86,6 +89,12 @@ impl Events {
 
     /// The events after `after`, as soon as there is one, or none once
     /// `wait` has passed. With no `after`, the number to start from, at once.
+    /// Answer every wait now, and every later one at once.
+    pub fn close(&self) {
+        self.closed.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
     pub async fn after(&self, after: Option<u64>, wait: Duration) -> Batch {
         let Some(after) = after else {
             return self.since(u64::MAX);
@@ -98,7 +107,8 @@ impl Events {
         notified.as_mut().enable();
 
         let batch = self.since(after);
-        if !batch.events.is_empty() || batch.reset {
+        let closed = self.closed.load(std::sync::atomic::Ordering::SeqCst);
+        if !batch.events.is_empty() || batch.reset || closed {
             return batch;
         }
         let _ = tokio::time::timeout(wait, notified).await;
@@ -196,6 +206,32 @@ mod tests {
             .unwrap();
 
         assert_eq!(batch.events.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_closed_log_answers_every_wait_at_once() {
+        let events = Arc::new(Events::default());
+        let waiting = {
+            let events = events.clone();
+            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30)).await })
+        };
+        tokio::time::sleep(SHORT).await;
+
+        events.close();
+
+        tokio::time::timeout(Duration::from_secs(5), waiting)
+            .await
+            .expect("a stop must not wait for a poll")
+            .unwrap();
+        let later = tokio::time::timeout(
+            Duration::from_secs(5),
+            events.after(Some(0), Duration::from_secs(30)),
+        )
+        .await;
+        assert!(
+            later.is_ok(),
+            "a poll that comes after the stop answers too"
+        );
     }
 
     #[tokio::test]
