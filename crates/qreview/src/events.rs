@@ -30,6 +30,10 @@ pub enum Kind {
     Ask,
     /// A new version was declared and the threads moved onto it.
     Migrated,
+    /// The reader asks the agent to fix the change.
+    Fix,
+    /// The reader deleted the done threads of the change.
+    Clean,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -53,7 +57,13 @@ pub struct Batch {
     /// The events asked for are gone, or were never made by this server.
     /// The party reads everything again.
     pub reset: bool,
+    /// An agent listens: a `qreview wait` is open, or ended a moment ago.
+    pub agent: bool,
 }
+
+/// How long after its last wait an agent still counts as listening. It
+/// reads and answers between two waits, and that is not leaving.
+const LISTENS_FOR: Duration = Duration::from_secs(120);
 
 #[derive(Default)]
 pub struct Events {
@@ -62,6 +72,24 @@ pub struct Events {
     /// The server stops. A page always holds a wait open, and a stop must
     /// not sit behind it.
     closed: std::sync::atomic::AtomicBool,
+    agent: Mutex<Listening>,
+}
+
+#[derive(Default)]
+struct Listening {
+    open: usize,
+    ended: Option<std::time::Instant>,
+}
+
+/// Held while an agent waits. A guard, because the agent can hang up.
+pub struct AgentWaits<'a>(&'a Events);
+
+impl Drop for AgentWaits<'_> {
+    fn drop(&mut self) {
+        let mut agent = self.0.agent.lock().expect("the agent state is poisoned");
+        agent.open = agent.open.saturating_sub(1);
+        agent.ended = Some(std::time::Instant::now());
+    }
 }
 
 #[derive(Default)]
@@ -72,6 +100,17 @@ struct Log {
 }
 
 impl Events {
+    /// Mark an agent as waiting until the guard is dropped.
+    pub fn agent_waits(&self) -> AgentWaits<'_> {
+        self.agent.lock().expect("the agent state is poisoned").open += 1;
+        AgentWaits(self)
+    }
+
+    pub fn agent_listens(&self) -> bool {
+        let agent = self.agent.lock().expect("the agent state is poisoned");
+        agent.open > 0 || agent.ended.is_some_and(|at| at.elapsed() < LISTENS_FOR)
+    }
+
     pub fn push(&self, kind: Kind, author: Author, key: &str, id: Option<&str>) {
         {
             let mut log = self.log.lock().expect("the event log is poisoned");
@@ -129,6 +168,7 @@ impl Events {
                 events: Vec::new(),
                 next,
                 reset: false,
+                agent: self.agent_listens(),
             };
         }
         let first = log.kept.front().map_or(log.last + 1, |e| e.seq);
@@ -139,12 +179,14 @@ impl Events {
                 events: Vec::new(),
                 next,
                 reset: true,
+                agent: self.agent_listens(),
             };
         }
         Batch {
             events: log.kept.iter().filter(|e| e.seq > after).cloned().collect(),
             next,
             reset: false,
+            agent: self.agent_listens(),
         }
     }
 }
@@ -236,6 +278,21 @@ mod tests {
             later.is_ok(),
             "a poll that comes after the stop answers too"
         );
+    }
+
+    #[tokio::test]
+    async fn an_agent_listens_while_it_waits_and_a_moment_after() {
+        let events = Events::default();
+        assert!(!events.agent_listens());
+
+        let waiting = events.agent_waits();
+        assert!(events.agent_listens());
+        drop(waiting);
+        assert!(events.agent_listens(), "it reads before it waits again");
+
+        events.agent.lock().unwrap().ended =
+            Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
+        assert!(!events.agent_listens());
     }
 
     #[tokio::test]

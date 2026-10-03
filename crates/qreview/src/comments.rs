@@ -285,6 +285,26 @@ pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
     Ok(before - file.comments.len())
 }
 
+/// Delete the done threads of the version under review, replies with them.
+/// A thread opened again since is not done, and stays.
+pub fn clean(store: &Store, key: &str, current: &str) -> Result<usize> {
+    let mut file = store.load(key, "")?;
+    let before = file.comments.len();
+    let done: Vec<String> = file
+        .comments
+        .iter()
+        .filter(|c| c.is_remark() && c.done && of_version(c, current))
+        .map(|c| c.id.clone())
+        .collect();
+
+    file.comments
+        .retain(|c| !done.contains(&c.id) && !c.parent.as_ref().is_some_and(|p| done.contains(p)));
+    if file.comments.len() != before {
+        store.save(&file)?;
+    }
+    Ok(before - file.comments.len())
+}
+
 /// True when the remark was written on the version being read.
 ///
 /// A remark from a store older than format 3 names no version. It counts as
@@ -713,6 +733,42 @@ mod tests {
         assert_eq!(delete(&f.store, "I8f3a", &alone.id).unwrap(), 1);
         let left: Vec<_> = f.file().comments.into_iter().map(|c| c.id).collect();
         assert_eq!(left, [other.id]);
+    }
+
+    #[tokio::test]
+    async fn clean_deletes_the_done_threads_and_keeps_a_reopened_one() {
+        let f = fixture().await;
+        let gone = f.target().add(remark("one")).await.unwrap();
+        let reopened = f.target().add(remark("two")).await.unwrap();
+        let open = f.target().add(remark("three")).await.unwrap();
+        for id in [&gone.id, &reopened.id] {
+            f.target()
+                .add(NewComment {
+                    done: Some(true),
+                    ..reply(id, Author::Agent, "Done")
+                })
+                .await
+                .unwrap();
+        }
+        f.target()
+            .add(reply(&reopened.id, Author::Reader, "not quite"))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            clean(&f.store, "I8f3a", &f.rev).unwrap(),
+            2,
+            "a remark and its reply"
+        );
+
+        let left: Vec<_> = f
+            .file()
+            .comments
+            .into_iter()
+            .filter(|c| c.is_remark())
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(left, [reopened.id, open.id]);
     }
 
     #[tokio::test]
