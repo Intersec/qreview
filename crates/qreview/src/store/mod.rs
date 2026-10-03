@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-pub use model::{Anchor, ChangeFile, Comment, Scope, Side};
+pub use model::{Anchor, ChangeFile, Comment, Scope, Side, Version};
 
 pub struct Store {
     changes: PathBuf,
@@ -102,6 +102,38 @@ impl Store {
         Ok(())
     }
 
+    /// The declared versions around a commit. None when nothing was
+    /// declared, or when the file cannot be read: a link is a help to the
+    /// reader, never a reason for a change not to open.
+    pub fn version(&self, commit: &str) -> Option<Version> {
+        let text = fs::read_to_string(self.commit_path(commit)).ok()?;
+
+        serde_json::from_str(&text).ok()
+    }
+
+    /// Write the declared versions around a commit, atomically.
+    pub fn save_version(&self, commit: &str, version: &Version) -> Result<()> {
+        let path = self.commit_path(commit);
+        let dir = path.parent().unwrap_or(self.dir()).to_path_buf();
+        fs::create_dir_all(&dir).with_context(|| format!("cannot make {}", dir.display()))?;
+        let temp = path.with_extension("json.tmp");
+
+        let mut handle =
+            fs::File::create(&temp).with_context(|| format!("cannot write {}", temp.display()))?;
+        handle.write_all(serde_json::to_string_pretty(version)?.as_bytes())?;
+        handle.write_all(b"\n")?;
+        handle.sync_all()?;
+        drop(handle);
+
+        fs::rename(&temp, &path).with_context(|| format!("cannot put {} in place", path.display()))
+    }
+
+    fn commit_path(&self, commit: &str) -> PathBuf {
+        self.dir()
+            .join("commits")
+            .join(format!("{}.json", safe(commit)))
+    }
+
     /// The keys of every change this repository has a review for.
     pub fn keys(&self) -> Vec<String> {
         let Ok(entries) = fs::read_dir(&self.changes) else {
@@ -173,6 +205,7 @@ mod tests {
             parent: None,
             done: false,
             blocked: false,
+            moves: Vec::new(),
         }
     }
 
@@ -307,6 +340,23 @@ mod tests {
         assert_eq!(comment.parent, None);
         assert!(!comment.done);
         assert!(!comment.blocked);
+    }
+
+    #[test]
+    fn a_declared_version_is_read_back_and_a_missing_one_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::at(dir.path());
+        let version = Version {
+            previous_version: Some("4a91".to_owned()),
+            next_version: None,
+            declared_at: "2026-10-03T14:02:11Z".to_owned(),
+        };
+
+        store.save_version("b7e2", &version).unwrap();
+
+        assert_eq!(store.version("b7e2"), Some(version));
+        assert_eq!(store.version("4a91"), None);
+        assert!(dir.path().join("commits/b7e2.json").exists());
     }
 
     #[test]

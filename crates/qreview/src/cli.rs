@@ -100,4 +100,21 @@ pub enum Command {
 
     /// Read the repository again, as the refresh button does.
     Refresh,
+
+    /// Declare a commit the new version of another one, after an amend, and
+    /// move the threads of the old version onto it.
+    Migrate {
+        /// The commit before the amend.
+        #[arg(long, value_name = "SHA")]
+        from: String,
+        /// The commit after the amend. HEAD by default.
+        #[arg(long, value_name = "SHA")]
+        to: Option<String>,
+        /// Threads to close with a Done reply, as ids separated by commas.
+        #[arg(long, value_name = "IDS")]
+        done: Vec<String>,
+        /// A thread to ask the reader about, as `<id>=<text>`. Repeatable.
+        #[arg(long, value_name = "ID=TEXT")]
+        blocked: Vec<String>,
+    },
 }

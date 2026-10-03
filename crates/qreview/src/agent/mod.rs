@@ -195,6 +195,36 @@ async fn key_of(client: &Client, id: &str) -> Result<String> {
         .with_context(|| format!("no comment {id} in this series"))
 }
 
+/// Declare `to` the next version of `from`, and move the threads onto it.
+pub async fn migrate(
+    client: &Client,
+    from: &str,
+    to: Option<&str>,
+    done: &[String],
+    blocked: &[String],
+) -> Result<Value> {
+    let mut asked = Vec::new();
+    for item in blocked {
+        let Some((id, body)) = item.split_once('=') else {
+            bail!("--blocked takes <id>=<text>, not {item}");
+        };
+        asked.push(json!({ "id": id, "body": body }));
+    }
+    let done: Vec<&str> = done
+        .iter()
+        .flat_map(|ids| ids.split(','))
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .collect();
+
+    client
+        .post(
+            "/api/migrate",
+            &json!({ "from": from, "to": to, "done": done, "blocked": asked }),
+        )
+        .await
+}
+
 /// Read the repository again, as the ⟳ button does.
 pub async fn refresh(client: &Client) -> Result<()> {
     client

@@ -195,7 +195,7 @@ export type Author = 'reader' | 'agent';
 
 export interface StoreEvent {
   seq: number;
-  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh' | 'ask';
+  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh' | 'ask' | 'migrated';
   author: Author;
   key: string;
   id: string | null;

@@ -28,6 +28,8 @@ pub enum Kind {
     Refresh,
     /// The reader asks the agent to answer one thread.
     Ask,
+    /// A new version was declared and the threads moved onto it.
+    Migrated,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]

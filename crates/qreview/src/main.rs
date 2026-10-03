@@ -161,6 +161,15 @@ async fn agent_command(cli: &cli::Cli, cwd: &std::path::Path) -> Result<Option<i
         Some(cli::Command::Refresh) => {
             agent::refresh(&agent::connect(cwd).await?).await?;
         }
+        Some(cli::Command::Migrate {
+            from,
+            to,
+            done,
+            blocked,
+        }) => {
+            let client = agent::connect(cwd).await?;
+            print(&agent::migrate(&client, from, to.as_deref(), done, blocked).await?);
+        }
         _ => return Ok(None),
     }
     Ok(Some(0))

@@ -19,6 +19,7 @@ pub mod git;
 pub mod highlight;
 pub mod lang;
 pub mod linemap;
+pub mod migrate;
 pub mod model;
 pub mod offsets;
 pub mod patchset;

@@ -89,6 +89,42 @@ fn map_line(hunks: &[(usize, usize, usize, usize)], line: usize) -> Mapped {
     }
 }
 
+/// The map between two texts held in memory, such as two commit messages,
+/// which have no blob for git to diff.
+pub fn of_texts(path: &str, old: &str, new: &str) -> FileMap {
+    use similar::{DiffOp, TextDiff};
+
+    let diff = TextDiff::from_lines(old, new);
+    let mut hunks = Vec::new();
+    for op in diff.ops() {
+        // The same shape as a `-U0` hunk header, 1-based, with the line
+        // before the hole on the side that has no line.
+        match *op {
+            DiffOp::Equal { .. } => {}
+            DiffOp::Insert {
+                old_index,
+                new_index,
+                new_len,
+            } => hunks.push((old_index, 0, new_index + 1, new_len)),
+            DiffOp::Delete {
+                old_index,
+                old_len,
+                new_index,
+            } => hunks.push((old_index + 1, old_len, new_index, 0)),
+            DiffOp::Replace {
+                old_index,
+                old_len,
+                new_index,
+                new_len,
+            } => hunks.push((old_index + 1, old_len, new_index + 1, new_len)),
+        }
+    }
+    FileMap {
+        path: path.to_owned(),
+        hunks,
+    }
+}
+
 /// The map of a file from one version to the next. `None` when the new
 /// version deleted the file.
 pub async fn of_file(git: &Git, old: &str, new: &str, path: &str) -> Result<Option<FileMap>> {
@@ -166,6 +202,26 @@ mod tests {
         let hunks = [(2, 0, 3, 2), (10, 1, 12, 0), (20, 1, 21, 3)];
         assert_eq!(at(&hunks, 15), (16, false));
         assert_eq!(at(&hunks, 25), (28, false));
+    }
+
+    #[test]
+    fn two_texts_map_like_a_diff_of_two_blobs() {
+        let map = of_texts("/COMMIT_MSG", "a\nb\nc\n", "a\nnew\nb\nC\n");
+
+        assert_eq!(
+            map.map(2),
+            Mapped {
+                line: 3,
+                touched: false
+            }
+        );
+        assert_eq!(
+            map.map(3),
+            Mapped {
+                line: 4,
+                touched: true
+            }
+        );
     }
 
     #[tokio::test]
