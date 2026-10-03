@@ -18,6 +18,7 @@ pub mod gerrit;
 pub mod git;
 pub mod highlight;
 pub mod lang;
+pub mod linemap;
 pub mod model;
 pub mod offsets;
 pub mod patchset;
