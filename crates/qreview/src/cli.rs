@@ -51,6 +51,9 @@ pub enum Command {
         /// One change. The whole series when it is missing.
         #[arg(long, value_name = "CHANGE-ID")]
         key: Option<String>,
+        /// The open threads as JSON, each comment with its id.
+        #[arg(long)]
+        json: bool,
     },
 
     /// List the changes this repository has a review for.

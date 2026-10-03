@@ -9,7 +9,7 @@ use anyhow::Result;
 
 use crate::comments;
 use crate::session::Session;
-use crate::store::model::{Comment, Scope, Side};
+use crate::store::model::{Author, Comment, Scope, Side};
 
 /// Lines of code shown around a comment.
 const CONTEXT: usize = 2;
@@ -19,6 +19,11 @@ const CONTEXT: usize = 2;
 /// best rather than on the one it was written on.
 const RULE: &str = "Each comment is about the lines marked `>`; the lines around them are\n\
 context only.";
+
+/// Said once, when a thread holds a reply. An agent that reads a question
+/// to it as a request for code changes the code instead of answering.
+const THREADS: &str = "Some comments hold a conversation; when the last reply is a question to\n\
+you, answer it instead of changing the code.";
 
 /// The review of one change.
 pub async fn change(session: &Session, key: &str) -> Result<String> {
@@ -34,6 +39,9 @@ pub async fn change(session: &Session, key: &str) -> Result<String> {
     if !head.comments.is_empty() {
         let _ = writeln!(out, "{RULE}");
     }
+    if head.talks() {
+        let _ = writeln!(out, "{THREADS}");
+    }
     let _ = writeln!(out);
     out.push_str(&head.about);
 
@@ -43,7 +51,7 @@ pub async fn change(session: &Session, key: &str) -> Result<String> {
         return Ok(out);
     }
 
-    out.push_str(&body(session, &head.commit, &head.comments).await);
+    out.push_str(&body(session, &head).await);
 
     Ok(out)
 }
@@ -92,11 +100,17 @@ pub async fn series(session: &Session) -> Result<String> {
     );
     let _ = writeln!(out, "{RULE}");
 
+    let mut heads = Vec::new();
     for (key, _) in &reviewed {
-        let head = header(session, key).await?;
+        heads.push(header(session, key).await?);
+    }
+    if heads.iter().any(Head::talks) {
+        let _ = writeln!(out, "{THREADS}");
+    }
+    for head in &heads {
         let _ = writeln!(out);
         let _ = writeln!(out, "### {} — {}", head.name(), head.subject);
-        out.push_str(&body(session, &head.commit, &head.comments).await);
+        out.push_str(&body(session, head).await);
     }
     Ok(out)
 }
@@ -112,6 +126,9 @@ struct Head {
     subject: String,
     about: String,
     comments: Vec<crate::store::model::Comment>,
+    /// The replies of each thread, in the order they were written.
+    replies: std::collections::HashMap<String, Vec<Comment>>,
+    patch_set: usize,
     /// The work that is not committed. It has no sha worth printing: the one
     /// it carries is synthetic, and a session cannot look it up.
     worktree: bool,
@@ -124,6 +141,17 @@ impl Head {
             true => "the changes that are not committed".to_owned(),
             false => format!("commit {}", self.short),
         }
+    }
+
+    /// True when a thread holds a reply.
+    fn talks(&self) -> bool {
+        self.comments
+            .iter()
+            .any(|c| self.replies.contains_key(&c.id))
+    }
+
+    fn replies_of(&self, remark: &Comment) -> &[Comment] {
+        self.replies.get(&remark.id).map_or(&[], Vec::as_slice)
     }
 
     /// What names it in the heading of one change of a series.
@@ -168,6 +196,19 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
         .filter(|c| comments::is_open(c, &commit))
         .cloned()
         .collect();
+    let mut replies: std::collections::HashMap<String, Vec<Comment>> =
+        std::collections::HashMap::new();
+    for reply in file.comments.iter().filter(|c| !c.is_remark()) {
+        if let Some(parent) = &reply.parent {
+            replies
+                .entry(parent.clone())
+                .or_default()
+                .push(reply.clone());
+        }
+    }
+    for thread in replies.values_mut() {
+        thread.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    }
     comments::in_reading_order(&mut comments);
 
     let count = comments.len();
@@ -203,35 +244,23 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
         subject,
         about,
         comments,
+        replies,
+        patch_set,
         worktree,
     })
 }
 
-/// The comments of one change, numbered, each under the code it speaks of.
-async fn body(
-    session: &Session,
-    commit: &str,
-    comments: &[crate::store::model::Comment],
-) -> String {
+/// The comments of one change, numbered, each under the code it speaks of,
+/// and each followed by its replies.
+async fn body(session: &Session, head: &Head) -> String {
     let mut out = String::new();
 
-    for (index, comment) in comments.iter().enumerate() {
+    for (index, comment) in head.comments.iter().enumerate() {
+        let shown = shown(session, &head.commit, comment).await;
         let _ = writeln!(out);
-        let text = source_of(session, commit, comment).await;
-        let lines: Option<Vec<&str>> = text.as_deref().map(|t| t.lines().collect());
-        let _ = match &comment.anchor {
-            Some(_) => writeln!(
-                out,
-                "{}. `{}`{}{}",
-                index + 1,
-                place_of(comment),
-                before_the_change(comment),
-                cut_of(comment, lines.as_deref())
-            ),
-            None => writeln!(out, "{}. The change as a whole", index + 1),
-        };
+        let _ = writeln!(out, "{}. {}", index + 1, shown.place);
 
-        if let Some(excerpt) = excerpt(comment, lines.as_deref()) {
+        if let Some(excerpt) = &shown.excerpt {
             let _ = writeln!(out);
             let _ = writeln!(out, "   ```{}", language_of(session, comment));
             for line in excerpt.lines() {
@@ -241,9 +270,118 @@ async fn body(
         }
 
         let _ = writeln!(out);
-        let _ = writeln!(out, "   {}", one_line(&comment.body));
+        let _ = match comment.author {
+            Author::Reader => writeln!(out, "   {}", one_line(&comment.body)),
+            Author::Agent => writeln!(out, "   (written by the agent) {}", one_line(&comment.body)),
+        };
+        for reply in head.replies_of(comment) {
+            let _ = writeln!(out);
+            let _ = writeln!(out, "   {}", reply_line(reply));
+        }
     }
     out
+}
+
+/// What the export says of a comment before its body.
+struct Shown {
+    /// `` `src/net.blk:42` `` with what follows it, or the change.
+    place: String,
+    excerpt: Option<String>,
+}
+
+async fn shown(session: &Session, commit: &str, comment: &Comment) -> Shown {
+    let text = source_of(session, commit, comment).await;
+    let lines: Option<Vec<&str>> = text.as_deref().map(|t| t.lines().collect());
+    let place = match &comment.anchor {
+        Some(_) => format!(
+            "`{}`{}{}",
+            place_of(comment),
+            before_the_change(comment),
+            cut_of(comment, lines.as_deref())
+        ),
+        None => "The change as a whole".to_owned(),
+    };
+
+    Shown {
+        place,
+        excerpt: excerpt(comment, lines.as_deref()),
+    }
+}
+
+fn reply_line(reply: &Comment) -> String {
+    let who = match reply.author {
+        Author::Reader => "the reader",
+        Author::Agent => "the agent",
+    };
+    let waits = match reply.blocked && reply.author == Author::Agent {
+        true => " (waiting for an answer)",
+        false => "",
+    };
+
+    format!("Reply from {who}{waits}: {}", one_line(&reply.body))
+}
+
+/// The open threads of the series, or of one change, for a program.
+///
+/// The Markdown names a comment by its number, which changes when a remark
+/// is added; this names it by its id, which a command can act on.
+pub async fn json(session: &Session, key: Option<&str>) -> Result<serde_json::Value> {
+    let keys: Vec<String> = match key {
+        Some(key) => vec![key.to_owned()],
+        None => session
+            .series
+            .changes
+            .iter()
+            .rev()
+            .map(|c| c.key.clone())
+            .collect(),
+    };
+
+    let mut changes = Vec::new();
+    for key in keys {
+        let head = header(session, &key).await?;
+        if head.comments.is_empty() {
+            continue;
+        }
+        let mut threads = Vec::new();
+        for comment in &head.comments {
+            let shown = shown(session, &head.commit, comment).await;
+            let mut said = vec![serde_json::json!({
+                "id": comment.id,
+                "author": comment.author,
+                "body": comment.body,
+            })];
+            for reply in head.replies_of(comment) {
+                said.push(serde_json::json!({
+                    "id": reply.id,
+                    "author": reply.author,
+                    "body": reply.body,
+                }));
+            }
+            let anchor = comment.anchor.as_ref();
+            threads.push(serde_json::json!({
+                "id": comment.id,
+                "place": shown.place,
+                "side": anchor.map(|a| a.side),
+                "line": anchor.and_then(|a| a.start_line),
+                "excerpt": shown.excerpt,
+                "blocked": comments::is_blocked(head.replies_of(comment), &comment.id),
+                "comments": said,
+            }));
+        }
+        changes.push(serde_json::json!({
+            "key": key,
+            "subject": head.subject,
+            "commit": head.commit,
+            "patchSet": head.patch_set,
+            "threads": threads,
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "repo": session.project(),
+        "changes": changes,
+    }))
 }
 
 fn place_of(comment: &Comment) -> String {
@@ -595,6 +733,135 @@ mod tests {
             .join("\n");
 
         insta::assert_snapshot!(stable);
+    }
+
+    fn reply(parent: &str, author: Author, body: &str) -> NewComment {
+        NewComment {
+            parent: Some(parent.to_owned()),
+            author,
+            ..line_comment("src/net.blk", 3, body)
+        }
+    }
+
+    /// Without the hash of the commit, which changes with the fixture.
+    fn stable(text: &str) -> String {
+        text.lines()
+            .map(|line| match line.starts_with("## Review:") {
+                true => "## Review: <repo>@main, commit <hash>".to_owned(),
+                false => line.to_owned(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[tokio::test]
+    async fn the_export_of_a_conversation_is_pinned() {
+        let repo = reviewed().await;
+        let session = session_of(&repo).await;
+
+        let loop_remark = session
+            .add_comment(
+                "Iretry",
+                line_comment(
+                    "src/net.blk",
+                    3,
+                    "This loop never ends when the socket closes.",
+                ),
+            )
+            .await
+            .unwrap();
+        session
+            .add_comment(
+                "Iretry",
+                reply(&loop_remark.id, Author::Reader, "Is a retry count enough?"),
+            )
+            .await
+            .unwrap();
+        session
+            .add_comment(
+                "Iretry",
+                NewComment {
+                    blocked: true,
+                    ..reply(
+                        &loop_remark.id,
+                        Author::Agent,
+                        "Should a closed socket end the loop, or retry the connect?",
+                    )
+                },
+            )
+            .await
+            .unwrap();
+        session
+            .add_comment(
+                "Iretry",
+                NewComment {
+                    author: Author::Agent,
+                    ..line_comment("src/net.blk", 4, "The result of read is never checked.")
+                },
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Iretry").await.unwrap();
+
+        insta::assert_snapshot!(stable(&text));
+    }
+
+    #[tokio::test]
+    async fn the_json_names_each_comment_by_its_id() {
+        let repo = reviewed().await;
+        let session = session_of(&repo).await;
+        let remark = session
+            .add_comment(
+                "Iretry",
+                line_comment("src/net.blk", 3, "This loop never ends."),
+            )
+            .await
+            .unwrap();
+        let answer = session
+            .add_comment(
+                "Iretry",
+                NewComment {
+                    blocked: true,
+                    ..reply(&remark.id, Author::Agent, "End it, or retry?")
+                },
+            )
+            .await
+            .unwrap();
+        let fixed = session
+            .add_comment("Iretry", line_comment("src/net.blk", 4, "Check read."))
+            .await
+            .unwrap();
+        session
+            .edit_comment(
+                "Iretry",
+                &fixed.id,
+                crate::comments::EditComment {
+                    done: Some(true),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let value = json(&session, None).await.unwrap();
+        let change = &value["changes"][0];
+        let thread = &change["threads"][0];
+
+        assert_eq!(change["key"], "Iretry");
+        assert_eq!(change["patchSet"], 1);
+        assert_eq!(
+            change["threads"].as_array().unwrap().len(),
+            1,
+            "done is left out"
+        );
+        assert_eq!(thread["id"], remark.id.as_str());
+        assert_eq!(thread["place"], "`src/net.blk:3`");
+        assert_eq!(thread["side"], "new");
+        assert_eq!(thread["line"], 3);
+        assert_eq!(thread["blocked"], true);
+        assert!(thread["excerpt"].as_str().unwrap().contains("> 3 |"));
+        assert_eq!(thread["comments"][1]["id"], answer.id.as_str());
+        assert_eq!(thread["comments"][1]["author"], "agent");
     }
 
     #[tokio::test]
