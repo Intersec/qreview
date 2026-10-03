@@ -14,8 +14,9 @@ use serde::{Deserialize, Serialize};
 /// names none, and takes no part in that.
 ///
 /// 4 added threads: the author of a comment, the remark a reply belongs to,
-/// and the Done and blocked states. A file of format 3 reads as remarks of
-/// the reader, each alone in its thread, none of them done.
+/// and the Done and blocked states, and the earlier places of a remark that
+/// a declared new version moved. A file of format 3 reads as remarks of the
+/// reader, each alone in its thread, none of them done or moved.
 pub const VERSION: u32 = 4;
 
 /// Everything a review of one change holds.
@@ -95,6 +96,32 @@ pub struct Comment {
     /// change.
     #[serde(default)]
     pub blocked: bool,
+    /// Where the remark stood before each declared new version moved it,
+    /// oldest first. The move is recorded, never silent.
+    #[serde(default)]
+    pub moves: Vec<Move>,
+}
+
+/// One earlier place of a remark.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Move {
+    pub commit: String,
+    #[serde(default)]
+    pub anchor: Option<Anchor>,
+    pub moved_at: String,
+}
+
+/// The declared versions around one commit, kept under `commits/`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Version {
+    #[serde(default)]
+    pub previous_version: Option<String>,
+    #[serde(default)]
+    pub next_version: Option<String>,
+    #[serde(default)]
+    pub declared_at: String,
 }
 
 impl Comment {

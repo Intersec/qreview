@@ -138,6 +138,7 @@ async fn one(
             parent: None,
             done: false,
             blocked: false,
+            moves: Vec::new(),
         },
         wire,
     }

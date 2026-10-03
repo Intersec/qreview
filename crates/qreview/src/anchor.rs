@@ -389,6 +389,7 @@ mod tests {
             parent: None,
             done: false,
             blocked: false,
+            moves: Vec::new(),
         };
 
         let placed = place(&git, &comment, "HEAD", crate::diff::EMPTY_TREE).await;
@@ -431,6 +432,7 @@ mod tests {
             parent: None,
             done: false,
             blocked: false,
+            moves: Vec::new(),
         };
 
         let placed = place(&git, &comment, "HEAD", "HEAD~1").await;
@@ -479,6 +481,7 @@ mod tests {
             parent: None,
             done: false,
             blocked: false,
+            moves: Vec::new(),
         }
     }
 
@@ -559,6 +562,7 @@ mod tests {
             parent: None,
             done: false,
             blocked: false,
+            moves: Vec::new(),
         };
 
         let placed = place(&git, &comment, "HEAD", crate::diff::EMPTY_TREE).await;

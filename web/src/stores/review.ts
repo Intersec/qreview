@@ -632,7 +632,9 @@ export const useReview = defineStore('review', () => {
             await reload();
             break;
           }
-          if (theirs.some((event) => event.kind === 'refresh')) {
+          // A migrate moves threads to a new commit, and a change without a
+          // Change-Id to a new key: the whole series is read again.
+          if (theirs.some((event) => event.kind === 'refresh' || event.kind === 'migrated')) {
             await refresh();
           } else if (theirs.some((event) => event.key === changeKey.value)) {
             await reload();

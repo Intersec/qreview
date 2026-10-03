@@ -169,10 +169,26 @@ impl Session {
     /// Nothing is moved: the store keeps every file where it is. The linked
     /// versions become patch sets, and their remarks are read as remarks of
     /// the change they belong to, which is what they always were.
-    async fn link_versions(&mut self) {
+    ///
+    /// A version an agent declared with `qreview migrate` comes first, with
+    /// or without a `Change-Id`: it is a fact, where the reflog is a guess.
+    pub(crate) async fn link_versions(&mut self) {
         self.linked =
             crate::reflog::earlier_versions(&self.git, &self.series.changes, &self.series.head)
                 .await;
+
+        for change in &self.series.changes {
+            let declared = declared_versions(&self.store, &change.commit);
+            if declared.is_empty() {
+                continue;
+            }
+            let known = self.linked.entry(change.key.clone()).or_default();
+            for commit in declared.into_iter().rev() {
+                if !known.contains(&commit) {
+                    known.insert(0, commit);
+                }
+            }
+        }
     }
 
     /// Load the next batch, from the commit the boundary named.
@@ -1230,6 +1246,24 @@ impl Session {
 
         merge::merge_list(&self.git, &info).await
     }
+}
+
+/// The versions declared before a commit, the newest first.
+///
+/// The chain is bounded: a store edited by hand could hold a loop, and a
+/// loop must not hang the session.
+pub fn declared_versions(store: &Store, commit: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut at = commit.to_owned();
+
+    while let Some(previous) = store.version(&at).and_then(|v| v.previous_version) {
+        if previous == commit || out.contains(&previous) || out.len() >= 100 {
+            break;
+        }
+        out.push(previous.clone());
+        at = previous;
+    }
+    out
 }
 
 /// The deepest line each side of a diff shows, old first.

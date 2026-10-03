@@ -113,6 +113,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/mergelist", get(mergelist))
         .route("/api/comments", get(all_comments))
         .route("/api/events", get(events))
+        .route("/api/migrate", post(migrate))
         .route("/api/update", get(update))
         .route("/api/export", get(export))
         .route("/api/config", get(config).put(save_config))
@@ -924,6 +925,30 @@ async fn delete_comment(
     );
 
     Ok(Json(Deleted { deleted }))
+}
+
+/// Declare a new version and move its threads. See section 5.6.
+///
+/// Written by the agent alone: it is the one that amended.
+async fn migrate(
+    State(state): State<AppState>,
+    Json(request): Json<crate::migrate::Request>,
+) -> Result<Json<crate::migrate::Outcome>, ApiError> {
+    let mut session = state.session.write().await;
+    let outcome = crate::migrate::run(&mut session, request).await?;
+    drop(session);
+
+    state
+        .events
+        .push(Kind::Migrated, Author::Agent, &outcome.key, None);
+    for id in &outcome.replies {
+        state
+            .events
+            .push(Kind::Reply, Author::Agent, &outcome.key, Some(id));
+    }
+    read_ahead(state.clone());
+
+    Ok(Json(outcome))
 }
 
 /// Who asks, on a route with no body to say it in.

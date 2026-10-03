@@ -159,6 +159,7 @@ impl Target<'_> {
             parent: None,
             done: false,
             blocked: false,
+            moves: Vec::new(),
         };
 
         file.comments.push(comment.clone());
@@ -202,6 +203,7 @@ impl Target<'_> {
             parent: Some(remark.id.clone()),
             done: false,
             blocked: new.blocked,
+            moves: Vec::new(),
         };
         file.comments.push(reply.clone());
 
