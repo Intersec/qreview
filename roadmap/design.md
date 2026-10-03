@@ -1157,19 +1157,29 @@ qreview list                  list the stored reviews of this repository
 that runs on the repository:
 
 ```
-qreview comment <file>:<side>:<line> --body <text> [--key <id>]
-                              write a remark on a line of the newest version
+qreview comment <place> --body <text> [--key <id>]
+                              write a remark on the newest version
 qreview reply <id> --body <text> [--done] [--blocked]
                               reply to a thread
-qreview wait [--timeout <s>]  print the next writes of the reader as JSON
+qreview wait [--after <n>] [--timeout <s>]
+                              print the next writes of the reader as JSON
 qreview refresh               read the repository again, as the ⟳ button
 ```
 
-`<side>` is `old` or `new`, the place of section 4. `--key` names the
-change; without it, the change is the one whose newest version holds the
-line. A body of `-` is read from standard input, so a long answer needs no
-quoting. `wait` exits 0 with the events, or 1 on the timeout with nothing
-printed.
+`<place>` is `<file>`, `<file>:<side>:<line>` or `<file>:<side>:<from>-<to>`,
+with `<side>` `old` or `new`, the place of section 4. A file alone writes a
+remark about the file. A path may hold a colon: the side and the line are
+read from the right. `--key` names the change; without it, the change is
+the newest one of the series that touches the file. A body of `-` is read
+from standard input, so a long answer needs no quoting.
+
+`comment` and `reply` print the comment they wrote, its `id` included.
+`wait` prints `{ "events": [...], "next": <n> }`: each event carries the
+comment it names, and `next` is the `--after` of the next wait, so nothing
+the reader writes between two waits is missed. Without `--after`, it waits
+from now. It exits 0 with events, and 1 when the time runs out, 600 seconds
+by default. A `"reset": true` says the server restarted: read the review
+again with `export --json`.
 
 **The server of a repository.** At startup the server writes
 `server.json` beside `repo.json` in the directory of the repository
