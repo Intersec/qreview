@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
 import { format, parse, same, type Place } from '@/place';
 import { storeToRefs } from 'pinia';
 import ChangeBar from './components/ChangeBar.vue';
@@ -12,6 +12,7 @@ import PaneSplit from './components/PaneSplit.vue';
 import PatchSetBar from './components/PatchSetBar.vue';
 import SidePane from './components/SidePane.vue';
 import { useReview } from './stores/review';
+import { THREADS } from './diff/threads';
 import type { Side } from './api/types';
 
 const review = useReview();
@@ -46,7 +47,18 @@ const {
   against,
   gerrit,
   place,
+  blockedThreads,
+  blockedChanges,
+  blockedFiles,
 } = storeToRefs(review);
+
+provide(THREADS, {
+  repliesOf: review.repliesOf,
+  reply: review.reply,
+  setDone: review.setDone,
+  blockedChanges,
+  blockedFiles,
+});
 
 const comments = computed(() => review.comments());
 /// How many comments the change on the screen carries.
@@ -289,10 +301,14 @@ watch(
 /// tabs of the browser. The rest follows, because a reader opens one window
 /// per review and a row of tabs that all say `qreview` says nothing about
 /// which is which.
+///
+/// A thread that waits for the reader puts its count first, so the reader
+/// sees it from another window.
 watch(
-  [() => series.value?.repo.name, () => change.value?.subject],
-  ([repo, subject]) => {
-    document.title = ['qreview', repo, subject].filter(Boolean).join(' · ');
+  [() => series.value?.repo.name, () => change.value?.subject, () => blockedThreads.value.length],
+  ([repo, subject, waiting]) => {
+    const name = ['qreview', repo, subject].filter(Boolean).join(' · ');
+    document.title = waiting ? `(${waiting}) ${name}` : name;
   },
   { immediate: true },
 );
@@ -300,6 +316,7 @@ watch(
 onMounted(() => {
   void goTo(null, review.load(parse(location.hash)));
   window.addEventListener('keydown', onKey);
+  void review.listen();
   window.addEventListener('popstate', onPop);
 });
 

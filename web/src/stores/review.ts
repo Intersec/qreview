@@ -4,6 +4,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
+import { isBlocked, repliesBy } from '@/diff/threads';
 import { isCurrent, open } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
@@ -561,6 +562,82 @@ export const useReview = defineStore('review', () => {
     });
   }
 
+  /// The replies of each remark of the change on the screen.
+  const replies = computed(() => repliesBy(review.value?.comments ?? []));
+
+  function repliesOf(id: string): Comment[] {
+    return replies.value.get(id) ?? [];
+  }
+
+  async function reply(id: string, body: string) {
+    // The scope is the one of the thread; the server reads the parent.
+    await addComment({ scope: 'line', parent: id, body });
+  }
+
+  async function setDone(id: string, done: boolean) {
+    await editComment(id, { done });
+  }
+
+  /// The open threads of the current version that wait for the reader,
+  /// change by change.
+  const blockedThreads = computed(() => {
+    const out: { key: string; comment: Comment }[] = [];
+    for (const change of written.value) {
+      const answers = repliesBy(change.comments);
+      for (const comment of open(change)) {
+        if (isBlocked(answers.get(comment.id) ?? [])) {
+          out.push({ key: change.key, comment });
+        }
+      }
+    }
+    return out;
+  });
+  const blockedChanges = computed(() => new Set(blockedThreads.value.map((t) => t.key)));
+  const blockedFiles = computed(
+    () =>
+      new Set(
+        blockedThreads.value
+          .filter((t) => t.key === changeKey.value)
+          .map((t) => t.comment.anchor?.file ?? ''),
+      ),
+  );
+
+  /// Listen to the writes of the agent, and read again what they touch.
+  ///
+  /// The browser reloads after its own writes already, so only the
+  /// agent's are acted on here. A failure waits a little and starts over:
+  /// the review goes on without the agent.
+  let listening = false;
+  async function listen() {
+    if (listening) {
+      return;
+    }
+    listening = true;
+    for (;;) {
+      try {
+        let after = (await api.events()).next;
+        for (;;) {
+          const batch = await api.events(after);
+          after = batch.next;
+          const theirs = batch.events.filter((event) => event.author === 'agent');
+          if (batch.reset) {
+            await reload();
+            break;
+          }
+          if (theirs.some((event) => event.kind === 'refresh')) {
+            await refresh();
+          } else if (theirs.some((event) => event.key === changeKey.value)) {
+            await reload();
+          } else if (theirs.length > 0) {
+            await readWritten();
+          }
+        }
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+  }
+
   async function deleteComment(id: string) {
     const key = changeKey.value;
     if (!key) {
@@ -631,6 +708,13 @@ export const useReview = defineStore('review', () => {
     addComment,
     editComment,
     deleteComment,
+    repliesOf,
+    reply,
+    setDone,
+    blockedThreads,
+    blockedChanges,
+    blockedFiles,
+    listen,
     config,
     savePrefs,
     split,
