@@ -56,7 +56,8 @@ server.
 - **Not a Git client.** No commit, no rebase, no amend from the interface.
 - **Not a merge request tool.** No GitHub, no GitLab, no forge API.
 - **Not multi-user.** One developer, one machine, no authentication beyond
-  the loopback address and a session token.
+  the loopback address and a session token. An agent that the developer
+  runs in a terminal is a second author in the review, not a second user.
 - **Not a way to share a review.** Sharing a review with a colleague is what
   Gerrit is for. Push the series and comment there.
 
