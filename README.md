@@ -99,9 +99,19 @@ amend keeps them.
 ## Review with an agent
 
 An agent that works on the series in a terminal, such as Claude Code, can
-take part in the review. It starts `qreview` itself, and the review opens in
-your browser. If a server already runs on the repository, `qreview` prints
-its address and opens no second tab.
+take part in the review. For Claude Code, install the skill in
+[`skills/qreview`](skills/qreview/SKILL.md), and it knows the procedure:
+
+```sh
+mkdir -p ~/.claude/skills
+cp -r skills/qreview ~/.claude/skills/
+```
+
+Then ask it to open qreview and answer your remarks.
+
+The agent starts `qreview` itself, and the review opens in your browser. If
+a server already runs on the repository, `qreview` prints its address and
+opens no second tab.
 
 The agent writes through these commands. Each one finds the server of the
 repository on its own:
