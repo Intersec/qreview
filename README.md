@@ -122,7 +122,8 @@ qreview reply c-5b72… --body "Renamed." --done
 qreview reply c-5b72… --body "Log it, or return it?" --blocked
 qreview wait                  # block until you ask, print the thread as JSON
 qreview export --json         # the open threads, each comment with its id
-qreview refresh               # read the repository again, after an amend
+qreview migrate --from 4a91… --done c-5b72…  # after an amend, see below
+qreview refresh               # read the repository again
 ```
 
 The agent answers when you ask it, one thread at a time: **Ask agent** on a
@@ -140,6 +141,26 @@ answers it.
 
 A done thread leaves every count and the export, so the agent does not get
 the same work twice.
+
+**After an amend**, the agent runs `qreview migrate --from <old sha>`. It
+tells qreview that the new commit replaces the old one, and every thread
+moves to its line in the new version, open or done. The old commit stays
+readable as an earlier patch set. This needs no `Change-Id`.
+
+**Fix** (or `a`) asks the agent to deal with the open threads of the change
+on the screen. A dialog lists them, and `Enter` sends. If the agent waits
+for an answer, the dialog lists those questions instead and sends nothing.
+The button is greyed out while no agent runs `qreview wait`.
+
+**Clean** deletes the done threads of the change, once you agree with the
+work. It lists them and asks first, then waits three seconds with an
+**Undo**.
+
+If Claude Code runs commands in a sandbox, start `qreview` yourself, in
+your own terminal, and let the agent connect to it. A server started from
+inside the sandbox cannot save comments, and your browser cannot reach it.
+The agent commands reach your server through its Unix socket under `/tmp`,
+which the sandbox shares with your machine: nothing to configure.
 
 ## Build from source
 
