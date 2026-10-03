@@ -4,6 +4,8 @@ import { format, parse, same, type Place } from '@/place';
 import { storeToRefs } from 'pinia';
 import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
+import CleanDialog from './components/CleanDialog.vue';
+import FixDialog from './components/FixDialog.vue';
 import PreferencesDialog from './components/PreferencesDialog.vue';
 import ShortcutHelp from './components/ShortcutHelp.vue';
 import LoadingVeil from './components/LoadingVeil.vue';
@@ -13,7 +15,7 @@ import PatchSetBar from './components/PatchSetBar.vue';
 import SidePane from './components/SidePane.vue';
 import { useReview } from './stores/review';
 import { THREADS } from './diff/threads';
-import type { Side } from './api/types';
+import type { Comment, Side } from './api/types';
 
 const review = useReview();
 const {
@@ -50,7 +52,65 @@ const {
   blockedThreads,
   blockedChanges,
   blockedFiles,
+  agent,
+  openHere,
+  doneHere,
+  waitingHere,
 } = storeToRefs(review);
+
+/// The dialog of Fix is open.
+const fixing = ref(false);
+
+function openFix() {
+  if (agent.value && changeKey.value) {
+    fixing.value = true;
+  }
+}
+
+async function sendFix() {
+  fixing.value = false;
+  await review.askFix();
+}
+
+async function jumpTo(comment: Comment) {
+  fixing.value = false;
+  const anchor = comment.anchor;
+  if (changeKey.value) {
+    await goToComment(
+      changeKey.value,
+      anchor?.file ?? '',
+      anchor?.side ?? 'new',
+      anchor?.startLine ?? null,
+    );
+  }
+}
+
+/// Clean waits a moment before it deletes, because nothing brings a
+/// deleted thread back. The notice holds the Undo.
+const UNDO_FOR = 3000;
+const cleaning = ref<{ count: number; timer: ReturnType<typeof setTimeout> } | null>(null);
+
+/// The dialog that asks before Clean, which a click only opens.
+const confirmingClean = ref(false);
+
+function startClean() {
+  confirmingClean.value = false;
+  if (cleaning.value || doneHere.value.length === 0) {
+    return;
+  }
+  const timer = setTimeout(() => {
+    cleaning.value = null;
+    void review.clean();
+  }, UNDO_FOR);
+  cleaning.value = { count: doneHere.value.length, timer };
+}
+
+function undoClean() {
+  if (cleaning.value) {
+    clearTimeout(cleaning.value.timer);
+    cleaning.value = null;
+  }
+}
 
 provide(THREADS, {
   repliesOf: review.repliesOf,
@@ -258,6 +318,9 @@ function onKey(event: KeyboardEvent) {
     case 'c':
       diffView.value?.commentHere();
       break;
+    case 'a':
+      openFix();
+      break;
     case 'v':
       diffView.value?.startRange();
       break;
@@ -354,6 +417,26 @@ onBeforeUnmount(() => {
       <p v-if="series" class="repo">{{ series.repo.remote ?? series.repo.root }}</p>
 
       <span class="bar-actions">
+        <button
+          type="button"
+          class="chip chip-fix"
+          :title="
+            agent ? 'Ask the agent to fix this change (a)' : 'No agent listens: run qreview wait'
+          "
+          :disabled="!agent || !changeKey"
+          @click="openFix"
+        >
+          Fix<span v-if="openHere.length" class="count"> · {{ openHere.length }}</span>
+        </button>
+        <button
+          type="button"
+          class="chip"
+          title="Delete the done threads of this change"
+          :disabled="doneHere.length === 0 || cleaning !== null"
+          @click="confirmingClean = true"
+        >
+          Clean<span v-if="doneHere.length" class="count"> · {{ doneHere.length }}</span>
+        </button>
         <button
           type="button"
           class="chip"
@@ -513,5 +596,26 @@ onBeforeUnmount(() => {
     />
 
     <ShortcutHelp v-if="helping" @close="helping = false" />
+
+    <FixDialog
+      v-if="fixing"
+      :open="openHere"
+      :waiting="waitingHere"
+      @send="sendFix"
+      @jump="jumpTo"
+      @close="fixing = false"
+    />
+
+    <CleanDialog
+      v-if="confirmingClean"
+      :done="doneHere"
+      @clean="startClean"
+      @close="confirmingClean = false"
+    />
+
+    <p v-if="cleaning" class="undo-note" role="status">
+      Deleting {{ cleaning.count }} done {{ cleaning.count === 1 ? 'thread' : 'threads' }}…
+      <button type="button" class="action" @click="undoClean">Undo</button>
+    </p>
   </div>
 </template>

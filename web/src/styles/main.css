@@ -1269,6 +1269,50 @@ a.change-id:hover {
   font-size: 13px;
   box-shadow: 0 8px 30px rgb(0 0 0 / 0.3);
 }
+.fix-panel {
+  max-width: 40rem;
+}
+.fix-note {
+  margin-bottom: 6px;
+  color: var(--ink-quiet);
+}
+.fix-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 0 0 10px;
+  padding-left: 18px;
+  list-style: disc;
+}
+.fix-list li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fix-list code {
+  font-family: var(--code-font);
+  font-size: 11px;
+}
+.fix-keys {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+/* The Undo of Clean, at the foot of the window, above the panes. */
+.undo-note {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  z-index: 40;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--page);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  font-size: 13px;
+}
 .panel-title {
   margin-bottom: 8px;
   font-size: 15px;

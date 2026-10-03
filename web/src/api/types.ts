@@ -195,7 +195,17 @@ export type Author = 'reader' | 'agent';
 
 export interface StoreEvent {
   seq: number;
-  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh' | 'ask' | 'migrated';
+  kind:
+    | 'comment'
+    | 'reply'
+    | 'edited'
+    | 'done'
+    | 'deleted'
+    | 'refresh'
+    | 'ask'
+    | 'migrated'
+    | 'fix'
+    | 'clean';
   author: Author;
   key: string;
   id: string | null;
@@ -206,6 +216,8 @@ export interface EventBatch {
   next: number;
   /// The server restarted, or the events fell out of its memory.
   reset: boolean;
+  /// An agent listens, so Fix has someone to ask.
+  agent: boolean;
 }
 
 export interface ChangeFile {

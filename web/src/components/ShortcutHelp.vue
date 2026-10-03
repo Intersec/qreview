@@ -10,6 +10,7 @@ const KEYS: [string, string][] = [
   ['J / K', 'The next or the previous change'],
   ['v', 'Start a range on this line. j and k grow it'],
   ['c', 'Write on the line, or on the range, or on what the mouse selected'],
+  ['a', 'Ask the agent to fix this change'],
   [
     'Ctrl+Shift+Enter',
     'Ask the agent about the thread on this line. In a comment box: save, then ask',

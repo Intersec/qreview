@@ -5,7 +5,7 @@ import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
 import { awaitsAgent, isBlocked, repliesBy } from '@/diff/threads';
-import { isCurrent, open } from '@/diff/versions';
+import { isCurrent, open, rounds } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
   ChangeComments,
@@ -615,6 +615,38 @@ export const useReview = defineStore('review', () => {
   /// The browser reloads after its own writes already, so only the
   /// agent's are acted on here. A failure waits a little and starts over:
   /// the review goes on without the agent.
+  /// An agent listens, as the last answer of the events route said.
+  const agent = ref(false);
+
+  /// The change on the screen, as every count reads it.
+  const here = computed(() => written.value.find((change) => change.key === changeKey.value));
+  /// The open threads of the change on the screen: what Fix hands over.
+  const openHere = computed(() => (here.value ? open(here.value) : []));
+  /// Its done threads: what Clean deletes.
+  const doneHere = computed(() =>
+    here.value ? rounds(here.value).current.filter((comment) => comment.done) : [],
+  );
+  const waitingHere = computed(() =>
+    blockedThreads.value.filter((t) => t.key === changeKey.value).map((t) => t.comment),
+  );
+
+  async function askFix() {
+    const key = changeKey.value;
+    if (key) {
+      await guard(() => api.fix(key));
+    }
+  }
+
+  async function clean() {
+    const key = changeKey.value;
+    if (key) {
+      await guard(async () => {
+        await api.clean(key);
+        await reload();
+      });
+    }
+  }
+
   let listening = false;
   async function listen() {
     if (listening) {
@@ -623,10 +655,13 @@ export const useReview = defineStore('review', () => {
     listening = true;
     for (;;) {
       try {
-        let after = (await api.events()).next;
+        const start = await api.events();
+        let after = start.next;
+        agent.value = start.agent;
         for (;;) {
           const batch = await api.events(after);
           after = batch.next;
+          agent.value = batch.agent;
           const theirs = batch.events.filter((event) => event.author === 'agent');
           if (batch.reset) {
             await reload();
@@ -726,6 +761,12 @@ export const useReview = defineStore('review', () => {
     blockedChanges,
     blockedFiles,
     listen,
+    agent,
+    openHere,
+    doneHere,
+    waitingHere,
+    askFix,
+    clean,
     config,
     savePrefs,
     split,
