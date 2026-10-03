@@ -7,7 +7,7 @@
 
 import { computed, ref } from 'vue';
 import { label } from '@/diff/paths';
-import { previousGroups, rounds } from '@/diff/versions';
+import { open, previousGroups, rounds } from '@/diff/versions';
 import type { ChangeComments, Comment, Side } from '@/api/types';
 
 const props = defineProps<{
@@ -25,9 +25,7 @@ const folded = ref(false);
 /// The count is of the current remarks alone, like every other count on the
 /// screen and like the export. The previous ones are listed under them, and
 /// said to be previous.
-const total = computed(() =>
-  props.written.reduce((sum, change) => sum + rounds(change).current.length, 0),
-);
+const total = computed(() => props.written.reduce((sum, change) => sum + open(change).length, 0));
 
 /// The pane stands as long as the session holds anything at all. A round
 /// whose remarks are all previous counts nothing and must still be read.

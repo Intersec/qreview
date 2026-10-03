@@ -4,7 +4,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
-import { isCurrent, rounds } from '@/diff/versions';
+import { isCurrent, open } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
   ChangeComments,
@@ -110,16 +110,14 @@ export const useReview = defineStore('review', () => {
   /// Only the remarks of the version under review are counted, because only
   /// those are exported. A round before this one left remarks the reader has
   /// dealt with, and counting them says there is work where there is none.
-  const total = computed(() =>
-    written.value.reduce((sum, change) => sum + rounds(change).current.length, 0),
-  );
+  const total = computed(() => written.value.reduce((sum, change) => sum + open(change).length, 0));
   /// How many comments sit in each file of the change being read. Out of
   /// the same list as every other count on the screen.
   const inFile = computed(() => {
     const counts = new Map<string, number>();
     const here = written.value.find((change) => change.key === changeKey.value);
 
-    for (const comment of here ? rounds(here).current : []) {
+    for (const comment of here ? open(here) : []) {
       const file = comment.anchor?.file;
       if (file) {
         counts.set(file, (counts.get(file) ?? 0) + 1);
@@ -131,7 +129,7 @@ export const useReview = defineStore('review', () => {
   const countOf = computed(() => {
     const counts = new Map<string, number>();
     for (const change of written.value) {
-      counts.set(change.key, rounds(change).current.length);
+      counts.set(change.key, open(change).length);
     }
     return counts;
   });
@@ -517,7 +515,9 @@ export const useReview = defineStore('review', () => {
   function comments(): Comment[] {
     return (review.value?.comments ?? []).filter(
       (c) =>
-        isCurrent(c, reading.value) || (c.commit === readingLeft.value && c.anchor?.side === 'new'),
+        c.parent === null &&
+        (isCurrent(c, reading.value) ||
+          (c.commit === readingLeft.value && c.anchor?.side === 'new')),
     );
   }
 

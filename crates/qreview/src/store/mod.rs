@@ -141,7 +141,7 @@ fn state_home() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::model::{Scope, Side};
+    use crate::store::model::{Author, Scope, Side};
 
     fn comment(id: &str, body: &str) -> Comment {
         Comment {
@@ -163,6 +163,10 @@ mod tests {
                 line_hash: Some("sha256:9c1f".to_owned()),
                 context: vec!["one".to_owned(), "two".to_owned()],
             }),
+            author: Author::Reader,
+            parent: None,
+            done: false,
+            blocked: false,
         }
     }
 
@@ -274,6 +278,29 @@ mod tests {
             model::VERSION,
             "a write must say what the file holds"
         );
+    }
+
+    #[test]
+    fn a_file_of_format_3_reads_as_remarks_of_the_reader_each_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::at(dir.path());
+        let path = dir.path().join("changes");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(
+            path.join("I8f3a.json"),
+            r#"{"version":3,"key":"I8f3a","subject":"s","comments":[{"id":"c1",
+               "patchSet":1,"commit":"af44","createdAt":"","updatedAt":"",
+               "scope":"file","body":"a remark","anchor":{"file":"a.c",
+               "side":"new"}}]}"#,
+        )
+        .unwrap();
+
+        let comment = store.load("I8f3a", "s").unwrap().comments.remove(0);
+
+        assert_eq!(comment.author, Author::Reader);
+        assert_eq!(comment.parent, None);
+        assert!(!comment.done);
+        assert!(!comment.blocked);
     }
 
     #[test]

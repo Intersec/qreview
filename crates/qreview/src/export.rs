@@ -64,7 +64,7 @@ pub async fn series(session: &Session) -> Result<String> {
         let live = file
             .comments
             .iter()
-            .any(|comment| comments::of_version(comment, &summary.commit));
+            .any(|comment| comments::is_open(comment, &summary.commit));
         if live {
             reviewed.push((summary.key.clone(), file));
         }
@@ -156,13 +156,18 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
     // Only the remarks of the version under review. The round before this
     // one left remarks the reader has already dealt with, and an agent
     // reading them again would redo work that is done.
-    let before = file.comments.len();
-    let mut comments: Vec<Comment> = file
-        .comments
-        .into_iter()
-        .filter(|comment| comments::of_version(comment, &commit))
+    // A done thread is left out for the same reason.
+    let remarks = || file.comments.iter().filter(|c| c.is_remark());
+    let earlier = remarks()
+        .filter(|c| !comments::of_version(c, &commit))
+        .count();
+    let done = remarks()
+        .filter(|c| c.done && comments::of_version(c, &commit))
+        .count();
+    let mut comments: Vec<Comment> = remarks()
+        .filter(|c| comments::is_open(c, &commit))
+        .cloned()
         .collect();
-    let earlier = before - comments.len();
     comments::in_reading_order(&mut comments);
 
     let count = comments.len();
@@ -182,6 +187,13 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
             about,
             "{earlier} more {} written on an earlier version, and left out here.",
             if earlier == 1 { "was" } else { "were" }
+        );
+    }
+    if done > 0 {
+        let _ = writeln!(
+            about,
+            "{done} more {} marked done, and left out here.",
+            if done == 1 { "was" } else { "were" }
         );
     }
 
@@ -447,6 +459,7 @@ mod tests {
     use crate::lang::Languages;
     use crate::series::Options as SeriesOptions;
     use crate::store::Store;
+    use crate::store::model::Author;
     use crate::testutil::{Repo, build_repo, commit};
 
     async fn session_of(repo: &Repo) -> Session {
@@ -477,6 +490,10 @@ mod tests {
             start_char: None,
             end_char: None,
             body: body.to_owned(),
+            author: Author::Reader,
+            parent: None,
+            done: None,
+            blocked: false,
         }
     }
 
@@ -495,6 +512,10 @@ mod tests {
             start_char: chars.map(|c| c.0),
             end_char: chars.map(|c| c.1),
             body: body.to_owned(),
+            author: Author::Reader,
+            parent: None,
+            done: None,
+            blocked: false,
         }
     }
 
@@ -537,6 +558,10 @@ mod tests {
                     start_char: None,
                     end_char: None,
                     body: "The whole change needs a test.".to_owned(),
+                    author: Author::Reader,
+                    parent: None,
+                    done: None,
+                    blocked: false,
                 },
             )
             .await
@@ -609,6 +634,10 @@ mod tests {
                     start_char: None,
                     end_char: None,
                     body: "About the change.".to_owned(),
+                    author: Author::Reader,
+                    parent: None,
+                    done: None,
+                    blocked: false,
                 },
             )
             .await
@@ -691,6 +720,10 @@ mod tests {
                         start_char: None,
                         end_char: None,
                         body: format!("A remark on {key}."),
+                        author: Author::Reader,
+                        parent: None,
+                        done: None,
+                        blocked: false,
                     },
                 )
                 .await
@@ -757,6 +790,10 @@ mod tests {
                     start_char: None,
                     end_char: None,
                     body: "This line was doing something.".to_owned(),
+                    author: Author::Reader,
+                    parent: None,
+                    done: None,
+                    blocked: false,
                 },
             )
             .await
@@ -806,6 +843,49 @@ mod tests {
         assert!(
             text.contains("1 more was written on an earlier version, and left out here."),
             "the export says what it left out:\n{text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_done_thread_is_left_out_and_counted_apart() {
+        let repo = build_repo(&[
+            commit("first").file("a.c", "one\ntwo\n"),
+            commit("work: a change")
+                .file("a.c", "one\ntwo\nthree\n")
+                .change_id("Idone"),
+        ])
+        .await;
+        let session = session_of(&repo).await;
+
+        session
+            .add_comment("Idone", line_comment("a.c", 2, "Still to do."))
+            .await
+            .unwrap();
+        let fixed = session
+            .add_comment("Idone", line_comment("a.c", 3, "Fixed already."))
+            .await
+            .unwrap();
+        session
+            .add_comment(
+                "Idone",
+                NewComment {
+                    parent: Some(fixed.id.clone()),
+                    author: Author::Agent,
+                    done: Some(true),
+                    ..line_comment("a.c", 3, "Done")
+                },
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Idone").await.unwrap();
+
+        assert!(text.contains("Still to do."), "{text}");
+        assert!(!text.contains("Fixed already."), "{text}");
+        assert!(text.contains("Patch set 1 · 1 comment"), "{text}");
+        assert!(
+            text.contains("1 more was marked done, and left out here."),
+            "{text}"
         );
     }
 
@@ -1068,6 +1148,10 @@ mod tests {
                         start_char: None,
                         end_char: None,
                         body: format!("A remark on {key}."),
+                        author: Author::Reader,
+                        parent: None,
+                        done: None,
+                        blocked: false,
                     },
                 )
                 .await
