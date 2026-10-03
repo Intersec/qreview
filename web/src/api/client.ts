@@ -170,6 +170,23 @@ export const api = {
       }
     }),
 
+  /// Ask the agent to fix the change.
+  fix: (key: string) =>
+    fetch(`/api/changes/${encodeURIComponent(key)}/fix`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    }).then(async (response) => {
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new ApiError(body?.error?.code ?? 'failed', body?.error?.message ?? 'failed');
+      }
+    }),
+
+  clean: (key: string) =>
+    call<{ deleted: number }>(`/api/changes/${encodeURIComponent(key)}/clean`, {
+      method: 'POST',
+    }),
+
   deleteComment: (key: string, id: string) =>
     call<{ deleted: number }>(
       `/api/changes/${encodeURIComponent(key)}/comments/${encodeURIComponent(id)}`,

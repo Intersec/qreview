@@ -158,6 +158,10 @@ for (const scheme of ['light', 'dark'] as const) {
     (c) => c.parent === null && c.body.startsWith('This line is the one'),
   );
   if (long && remark) {
+    // A wait of the agent, so the server counts one as listening and the
+    // writes below tell the page so. A number the server never gave answers
+    // at once.
+    await page.request.get(api('/api/events?after=999999999&who=agent'));
     const comments = api(`/api/changes/${long.key}/comments`);
     await page.request.post(comments, {
       data: {
@@ -207,6 +211,17 @@ for (const scheme of ['light', 'dark'] as const) {
       complaints.push(`no folded thread. The cards:\n    ${cards.join('\n    ')}`);
     }
     await page.screenshot({ path: join(OUT, `${scheme}-thread.png`) });
+
+    // The dialog of Fix. The agent waits for an answer here, so it lists
+    // that thread and offers to go there rather than to send.
+    await page.keyboard.press('a');
+    const dialog = page.getByRole('dialog', { name: 'Fix this change' });
+    if (await dialog.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await page.screenshot({ path: join(OUT, `${scheme}-fix.png`) });
+      await page.keyboard.press('Escape');
+    } else {
+      complaints.push('the dialog of Fix did not open');
+    }
   } else {
     complaints.push('no remark to start a conversation on');
   }
