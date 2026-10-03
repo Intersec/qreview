@@ -274,7 +274,7 @@ async fn blob_of(git: &Git, rev: &str, path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::model::Anchor;
+    use crate::store::model::{Anchor, Author};
 
     fn lines(text: &str) -> Vec<&str> {
         text.lines().collect()
@@ -385,6 +385,10 @@ mod tests {
             scope: Scope::Change,
             body: "b".to_owned(),
             anchor: None,
+            author: Author::Reader,
+            parent: None,
+            done: false,
+            blocked: false,
         };
 
         let placed = place(&git, &comment, "HEAD", crate::diff::EMPTY_TREE).await;
@@ -423,6 +427,10 @@ mod tests {
                 line_hash: Some(hash_line("two")),
                 context: vec!["one".to_owned(), "two".to_owned(), "three".to_owned()],
             }),
+            author: Author::Reader,
+            parent: None,
+            done: false,
+            blocked: false,
         };
 
         let placed = place(&git, &comment, "HEAD", "HEAD~1").await;
@@ -467,6 +475,10 @@ mod tests {
                 line_hash: Some(hash_line("two")),
                 context: vec!["one".to_owned(), "two".to_owned(), "three".to_owned()],
             }),
+            author: Author::Reader,
+            parent: None,
+            done: false,
+            blocked: false,
         }
     }
 
@@ -543,6 +555,10 @@ mod tests {
                 line_hash: Some(hash_line("1")),
                 context: vec!["1".to_owned()],
             }),
+            author: Author::Reader,
+            parent: None,
+            done: false,
+            blocked: false,
         };
 
         let placed = place(&git, &comment, "HEAD", crate::diff::EMPTY_TREE).await;
