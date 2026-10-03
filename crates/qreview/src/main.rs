@@ -78,7 +78,12 @@ async fn main() -> Result<()> {
     let session = Session::with(&cwd, &opts, langs, std::sync::Arc::new(highlighter), None).await?;
 
     match cli.command {
-        Some(cli::Command::Export { key }) => {
+        Some(cli::Command::Export { key, json: true }) => {
+            let value = qreview::export::json(&session, key.as_deref()).await?;
+            println!("{}", serde_json::to_string_pretty(&value)?);
+            return Ok(());
+        }
+        Some(cli::Command::Export { key, json: false }) => {
             let text = match key {
                 Some(key) => qreview::export::change(&session, &key).await?,
                 None => qreview::export::series(&session).await?,

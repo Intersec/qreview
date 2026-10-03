@@ -1,0 +1,42 @@
+---
+source: crates/qreview/src/export.rs
+expression: stable(&text)
+---
+## Review: <repo>@main, commit <hash>
+
+I reviewed this commit and left the comments below. Please address them.
+Each comment is about the lines marked `>`; the lines around them are
+context only.
+Some comments hold a conversation; when the last reply is a question to
+you, answer it instead of changing the code.
+
+Change: net: fix the retry loop
+Patch set 1 · 2 comments
+
+1. `src/net.blk:3`
+
+   ```c
+     1 | int connect_once(int fd)
+     2 | {
+   > 3 |     for (;;) {
+     4 |         read(fd);
+     5 |     }
+   ```
+
+   This loop never ends when the socket closes.
+
+   Reply from the reader: Is a retry count enough?
+
+   Reply from the agent (waiting for an answer): Should a closed socket end the loop, or retry the connect?
+
+2. `src/net.blk:4`
+
+   ```c
+     2 | {
+     3 |     for (;;) {
+   > 4 |         read(fd);
+     5 |     }
+     6 | }
+   ```
+
+   (written by the agent) The result of read is never checked.
