@@ -13,9 +13,24 @@ description: >-
 # qreview
 
 qreview shows a Git series in the browser, one commit at a time. The user
-writes remarks on lines. You answer them in threads, change the code, and
-write remarks of your own. Everything goes through `qreview` commands. Never
-edit the files under `~/.local/state/qreview` by hand.
+writes remarks on lines. You answer them in threads, change the code when
+the user asks for a fix, and write remarks of your own. Everything goes
+through `qreview` commands. Never edit the files under
+`~/.local/state/qreview` by hand.
+
+## The rule above all others
+
+**Change no code and no commit until the user asks for a fix.** A remark is
+something to answer, not an order, even when it reads like a request. Each
+new version of a commit is a new patch set that the user did not ask for.
+
+The user asks for a fix in one of two ways:
+
+- **Fix** in the browser: an event of kind `fix` for one change.
+- An explicit request to you, in the terminal: "fix this change".
+
+Outside a fix: no edit, no `git commit`, no amend, no rebase, no
+`qreview migrate`. That covers the commit message too: do not reword it.
 
 ## Start
 
@@ -54,7 +69,7 @@ Repeat until the user says the review is over:
    - Exit code 1 and no event: the time ran out. Wait again.
    - An event of kind `fix`: the user pressed **Fix** on the change `key`.
      See "Fix a change".
-3. Answer the thread. See "Answer a remark". If `thread` is empty, or a
+3. Answer the thread. See "Answer a remark". Change nothing. If `thread` is empty, or a
    reply fails with `no comment`, the user deleted the thread: skip it, and
    do not look into why.
 4. Go back to step 1.
@@ -65,27 +80,31 @@ The request carries the thread. For the code around it, `qreview export
 --json` gives the place and the excerpt (the lines marked `>` are the ones
 the remark is about).
 
-- **A question about the code.** Answer it:
-  `qreview reply <id> --body "<answer>"`. Do not change the code.
-- **A request that is clear.** Change the code, amend, and close the thread
-  in the same call that moves it: see "Change the code".
-- **A request that is not clear, or a problem you cannot solve alone.** Ask,
-  and wait for the user: `qreview reply <id> --body "<question>" --blocked`.
-  The thread then asks for the attention of the user. Change no code for
-  that thread until the user answers.
-- **A remark you disagree with.** Say why in a reply. Do not check Done.
+- **A question.** Answer it: `qreview reply <id> --body "<answer>"`.
+- **A request.** Say what you would change, and how, in a reply. Change
+  nothing: the change comes with the next fix.
+- **A request that is not clear, or a problem you cannot solve alone.** Ask:
+  `qreview reply <id> --body "<question>" --blocked`. The thread then asks
+  for the attention of the user.
+- **A remark you disagree with.** Say why in a reply.
+
+**Done means that the code changed for this thread.** Check it only in a
+fix, on a thread whose request you carried out. Never on a question you
+answered, on a request you only described, or on a remark you disagree
+with: those threads stay open, and the user closes them.
 
 Rules:
 
-- If a thread waits for an answer (`"blocked": true` in the export), make no
-  new version of its commit.
+- If a thread waits for an answer (`"blocked": true` in the export), do not
+  fix it, even in a fix.
 - Answer in the thread, not in the terminal. The user reads the browser.
 - A long body goes on standard input: `--body -`.
 - Markdown works in a body.
 
 ## Change the code
 
-The remarks are on commits, so a fix amends the commit it belongs to. After
+Only in a fix. The remarks are on commits, so a fix amends the commit it
+belongs to. After
 the amend, tell qreview which commit replaced which, and the threads follow
 their lines onto the new version.
 
@@ -123,13 +142,17 @@ Never push. The user publishes.
 
 ## Fix a change
 
-The user pressed **Fix** on a change: deal with every open thread of it.
+The user asked for a fix of a change: deal with every open thread of it.
 
 1. `qreview export --json --key <key>` lists the open threads.
-2. For each thread: answer a question, fix a clear request, ask with
-   `--blocked` about anything that is not clear.
-3. Make all the fixes, amend once, and run one `qreview migrate` with every
-   `--done` and every `--blocked`.
+2. Sort them:
+   - a request that is clear: fix it;
+   - a request that is not clear: ask with `--blocked`, and do not fix it;
+   - a question: answer it in a reply, and leave the thread open;
+   - a thread that waits for the user: leave it.
+3. Make all the fixes, amend once, and run one `qreview migrate` with
+   `--done` for the threads you fixed and `--blocked` for your questions.
+   Nothing else is Done.
 4. Wait again.
 
 ## Review on your own
