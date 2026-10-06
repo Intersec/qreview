@@ -681,6 +681,14 @@ A blocked thread asks for the reader:
 - the title of the browser tab starts with the number of blocked threads, so
   the reader sees it from another window.
 
+**The agent answers when the reader asks, and not before.** Every write of
+the reader reaches the page at once, but `qreview wait` returns on a
+request alone: **Ask agent** on a thread, or **Save and ask** in a box.
+Ctrl+Shift+Enter asks too: in a box it saves first, and on a line it asks
+about the thread under the cursor. The request names one thread. The reader writes,
+changes and deletes remarks in peace, and a remark costs the agent nothing
+until it is asked about.
+
 **A previous thread is read, and never written on**, the rule of section
 5.4. It takes no reply and no change of `done`.
 
@@ -850,7 +858,8 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/comments` | Every comment of the session, in reading order |
 | `GET /api/update` | Whether a newer qreview is out. Empty when nothing answers |
 | `GET /api/changes/:key/comments` | Every comment of the change |
-| `POST /api/changes/:key/comments` | Create a remark, or a reply when the body names a `parent`. `"author": "agent"` writes as the agent, and a reply may carry `"done": true` or `"blocked": true` |
+| `POST /api/changes/:key/comments` | Create a remark, or a reply when the body names a `parent`. `"author": "agent"` writes as the agent, and a reply may carry `"done": true` or `"blocked": true`. `"ask": true` asks the agent about the thread once it is saved |
+| `POST /api/changes/:key/comments/:id/ask` | Ask the agent to answer the thread of a comment. See section 5.5 |
 | `PATCH /api/changes/:key/comments/:id` | Change the body, or check or clear `done` on a thread |
 | `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |
 | `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. See section 8.3 |
@@ -936,7 +945,7 @@ everything again.
 ```ts
 type Event = {
   seq: number;
-  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh';
+  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh' | 'ask';
   author: 'reader' | 'agent';
   key: string;             // the change
   id: string | null;       // the comment, absent on a refresh
@@ -948,7 +957,7 @@ A write names its author: in the body of a comment or of an edit, and as
 
 The interface holds one such request open, and reloads the comments of a
 change when an event of the agent names it. `qreview wait` holds one too and
-returns on the first event of the reader. One route serves both, so there is
+returns on the first request of the reader: an `ask`, never a mere write. One route serves both, so there is
 one way to learn of a write.
 
 ## 9. Export for a Claude session
@@ -1169,7 +1178,7 @@ qreview comment <place> --body <text> [--key <id>]
 qreview reply <id> --body <text> [--done] [--blocked]
                               reply to a thread
 qreview wait [--after <n>] [--timeout <s>]
-                              print the next writes of the reader as JSON
+                              print the next requests of the reader as JSON
 qreview refresh               read the repository again, as the ⟳ button
 ```
 
@@ -1181,9 +1190,11 @@ the newest one of the series that touches the file. A body of `-` is read
 from standard input, so a long answer needs no quoting.
 
 `comment` and `reply` print the comment they wrote, its `id` included.
-`wait` prints `{ "events": [...], "next": <n> }`: each event carries the
-comment it names, and `next` is the `--after` of the next wait, so nothing
-the reader writes between two waits is missed. Without `--after`, it waits
+`wait` prints `{ "events": [...], "next": <n> }`. It returns on a request
+only: an `ask` event, never a remark being written, changed or deleted.
+Each request carries `thread`, the remark and its replies in order, empty
+when the thread was deleted since. `next` is the `--after` of the next
+wait, so no request made between two waits is missed. Without `--after`, it waits
 from now. It exits 0 with events, and 1 when the time runs out, 600 seconds
 by default. A `"reset": true` says the server restarted: read the review
 again with `export --json`.

@@ -32,6 +32,7 @@ function card(remark: Comment, replies: Comment[] = []) {
   const threads: Threads = {
     repliesOf: () => replies,
     reply: vi.fn(async () => {}),
+    ask: vi.fn(async () => {}),
     setDone: vi.fn(async () => {}),
     blockedChanges: computed(() => new Set<string>()),
     blockedFiles: computed(() => new Set<string>()),
@@ -102,7 +103,48 @@ describe('a thread', () => {
     await wrapper.get('textarea').setValue('Return it.');
     await wrapper.get('form').trigger('submit');
 
-    expect(threads.reply).toHaveBeenCalledWith('a', 'Return it.');
+    expect(threads.reply).toHaveBeenCalledWith('a', 'Return it.', false);
+  });
+
+  it('asks the agent about the thread, and says so', async () => {
+    const { wrapper, threads } = card(comment('a'));
+
+    const ask = wrapper.findAll('button').find((b) => b.text() === 'Ask agent');
+    await ask?.trigger('click');
+
+    expect(threads.ask).toHaveBeenCalledWith('a');
+    expect(wrapper.text()).toContain('Asked');
+  });
+
+  it('offers no Ask under the last word of the agent', () => {
+    const asks = (wrapper: ReturnType<typeof card>['wrapper']) =>
+      wrapper.findAll('button').some((b) => b.text() === 'Ask agent');
+
+    expect(asks(card(comment('a', { author: 'agent' })).wrapper)).toBe(false);
+    expect(
+      asks(card(comment('a'), [comment('b', { parent: 'a', author: 'agent' })]).wrapper),
+    ).toBe(false);
+    expect(
+      asks(
+        card(comment('a'), [
+          comment('b', { parent: 'a', author: 'agent' }),
+          comment('c', { parent: 'a' }),
+        ]).wrapper,
+      ),
+    ).toBe(true);
+  });
+
+  it('saves a reply and asks with Ctrl+Shift+Enter', async () => {
+    const { wrapper, threads } = card(comment('a'));
+
+    const reply = wrapper.findAll('button').find((b) => b.text() === 'Reply');
+    await reply?.trigger('click');
+    await nextTick();
+    const area = wrapper.get('textarea');
+    await area.setValue('And this one?');
+    await area.trigger('keydown', { key: 'Enter', ctrlKey: true, shiftKey: true });
+
+    expect(threads.reply).toHaveBeenCalledWith('a', 'And this one?', true);
   });
 
   it('takes no reply and no Done on a previous remark', () => {

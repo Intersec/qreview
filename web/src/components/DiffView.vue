@@ -630,6 +630,21 @@ function commentHere() {
   }
 }
 
+/// The open thread whose card stands under the line of the cursor, for a
+/// key that asks the agent about it. The first one when there are several.
+function threadHere(): string | null {
+  const place = cursor.value;
+  if (place === null) {
+    return null;
+  }
+  const [side, line] = place.split(':');
+  const found = props.comments.find((comment) => {
+    const at = span(comment);
+    return !comment.done && at?.side === side && String(at.end) === line;
+  });
+  return found?.id ?? null;
+}
+
 /// Open the box under the last line of the range.
 function writeOnPicked() {
   if (!picked.value) {
@@ -650,7 +665,15 @@ function revealLine(side: Side, line: number) {
   }
 }
 
-defineExpose({ moveLine, moveHunk, commentHere, startRange, clearPicked, revealLine });
+defineExpose({
+  moveLine,
+  moveHunk,
+  commentHere,
+  threadHere,
+  startRange,
+  clearPicked,
+  revealLine,
+});
 
 /// True while the reader holds a selection that starts in the code.
 ///
@@ -826,7 +849,7 @@ function onCursor(row: Row | null): boolean {
   return row !== null && cursor.value === key(row);
 }
 
-function write(row: Row | null, column: Side, body: string) {
+function write(row: Row | null, column: Side, body: string, ask = false) {
   const line = lineIn(row, column);
   if (!row || line === null) {
     return;
@@ -843,6 +866,7 @@ function write(row: Row | null, column: Side, body: string) {
     startChar: range?.startChar,
     endChar: range?.endChar,
     body,
+    ask,
   });
   closeBox(at);
   clearPicked();
@@ -883,8 +907,8 @@ const postedOnChange = computed(() =>
   props.postedStranded.filter((remark) => strandedOn(remark.file) === 'change'),
 );
 
-function writeAboutFile(body: string) {
-  emit('add', { scope: 'file', file: props.diff.path, side: 'new', body });
+function writeAboutFile(body: string, ask = false) {
+  emit('add', { scope: 'file', file: props.diff.path, side: 'new', body, ask });
   aboutFile.value = false;
 }
 
@@ -1011,7 +1035,7 @@ function toggle(row: Row | null, column: Side) {
       <CommentBox
         v-if="aboutFile"
         :label="isHome ? 'A remark about the change' : 'A remark about the file'"
-        @save="(body) => writeAboutFile(body)"
+        @save="(body, ask) => writeAboutFile(body, ask)"
         @cancel="aboutFile = false"
       />
     </section>
@@ -1061,7 +1085,7 @@ function toggle(row: Row | null, column: Side) {
               <CommentBox
                 v-if="aboutFile"
                 :label="isHome ? 'A remark about the change' : 'A remark about the file'"
-                @save="(body) => writeAboutFile(body)"
+                @save="(body, ask) => writeAboutFile(body, ask)"
                 @cancel="aboutFile = false"
               />
             </td>
@@ -1097,7 +1121,7 @@ function toggle(row: Row | null, column: Side) {
                     :read-only="readOnly"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
-                    @save="(body) => write(row, 'old', body)"
+                    @save="(body, ask) => write(row, 'old', body, ask)"
                     @cancel="closeBox(keyIn(row, 'old'))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
@@ -1113,7 +1137,7 @@ function toggle(row: Row | null, column: Side) {
                     :read-only="readOnly"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
-                    @save="(body) => write(row, 'new', body)"
+                    @save="(body, ask) => write(row, 'new', body, ask)"
                     @cancel="closeBox(keyIn(row, 'new'))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
@@ -1157,7 +1181,7 @@ function toggle(row: Row | null, column: Side) {
                     :read-only="readOnly"
                     :draft="draftAt(row, 'old')"
                     :label="boxLabel(row, 'old')"
-                    @save="(body) => write(row, 'old', body)"
+                    @save="(body, ask) => write(row, 'old', body, ask)"
                     @cancel="closeBox(keyIn(row, 'old'))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
@@ -1173,7 +1197,7 @@ function toggle(row: Row | null, column: Side) {
                     :read-only="readOnly"
                     :draft="draftAt(row, 'new')"
                     :label="boxLabel(row, 'new')"
-                    @save="(body) => write(row, 'new', body)"
+                    @save="(body, ask) => write(row, 'new', body, ask)"
                     @cancel="closeBox(keyIn(row, 'new'))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
@@ -1213,7 +1237,7 @@ function toggle(row: Row | null, column: Side) {
                   :read-only="readOnly"
                   :draft="draftAt(pair.left, 'old')"
                   :label="boxLabel(pair.left, 'old')"
-                  @save="(body) => write(pair.left, 'old', body)"
+                  @save="(body, ask) => write(pair.left, 'old', body, ask)"
                   @cancel="closeBox(keyIn(pair.left, 'old'))"
                   @edit="(id, body) => emit('edit', id, body)"
                   @remove="(id) => emit('remove', id)"
@@ -1229,7 +1253,7 @@ function toggle(row: Row | null, column: Side) {
                   :read-only="readOnly"
                   :draft="draftAt(pair.right, 'new')"
                   :label="boxLabel(pair.right, 'new')"
-                  @save="(body) => write(pair.right, 'new', body)"
+                  @save="(body, ask) => write(pair.right, 'new', body, ask)"
                   @cancel="closeBox(keyIn(pair.right, 'new'))"
                   @edit="(id, body) => emit('edit', id, body)"
                   @remove="(id) => emit('remove', id)"
@@ -1272,7 +1296,7 @@ function toggle(row: Row | null, column: Side) {
               <CommentBox
                 v-if="aboutFile"
                 :label="isHome ? 'A remark about the change' : 'A remark about the file'"
-                @save="(body) => writeAboutFile(body)"
+                @save="(body, ask) => writeAboutFile(body, ask)"
                 @cancel="aboutFile = false"
               />
             </td>
@@ -1319,7 +1343,7 @@ function toggle(row: Row | null, column: Side) {
                     :read-only="readOnly"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
-                    @save="(body) => write(row, column, body)"
+                    @save="(body, ask) => write(row, column, body, ask)"
                     @cancel="closeBox(keyIn(row, column))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
@@ -1374,7 +1398,7 @@ function toggle(row: Row | null, column: Side) {
                     :read-only="readOnly"
                     :draft="draftAt(row, column)"
                     :label="boxLabel(row, column)"
-                    @save="(body) => write(row, column, body)"
+                    @save="(body, ask) => write(row, column, body, ask)"
                     @cancel="closeBox(keyIn(row, column))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
@@ -1423,7 +1447,7 @@ function toggle(row: Row | null, column: Side) {
                   :read-only="readOnly"
                   :draft="draftAt(row, column)"
                   :label="boxLabel(row, column)"
-                  @save="(body) => write(row, column, body)"
+                  @save="(body, ask) => write(row, column, body, ask)"
                   @cancel="closeBox(keyIn(row, column))"
                   @edit="(id, body) => emit('edit', id, body)"
                   @remove="(id) => emit('remove', id)"

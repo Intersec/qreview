@@ -7,8 +7,10 @@ const props = defineProps<{
   label: string;
   /// Where an unfinished remark is kept. Without it, nothing is kept.
   draft?: string;
+  /// The box can save and ask the agent to answer in one go.
+  askable?: boolean;
 }>();
-const emit = defineEmits<{ save: [body: string]; cancel: [] }>();
+const emit = defineEmits<{ save: [body: string, ask: boolean]; cancel: [] }>();
 
 const body = ref(props.start ?? (props.draft ? read(props.draft) : ''));
 const area = ref<HTMLTextAreaElement | null>(null);
@@ -30,12 +32,12 @@ watch(body, (text) => {
   }
 });
 
-function save() {
+function save(ask = false) {
   if (body.value.trim() === '') {
     return;
   }
   forget();
-  emit('save', body.value);
+  emit('save', body.value, ask && props.askable === true);
 }
 
 function forget() {
@@ -46,7 +48,7 @@ function forget() {
 </script>
 
 <template>
-  <form class="talk-box" @submit.prevent="save">
+  <form class="talk-box" @submit.prevent="save()">
     <p class="talk-head">{{ label }}</p>
 
     <div class="talk-body">
@@ -58,13 +60,18 @@ function forget() {
         v-model="body"
         class="talk-text"
         :placeholder="label"
-        @keydown.ctrl.enter="save"
-        @keydown.ctrl.s.prevent="save"
+        @keydown.ctrl.enter.exact="save()"
+        @keydown.ctrl.shift.enter.exact="save(true)"
+        @keydown.ctrl.s.prevent="save()"
       ></textarea>
     </div>
 
     <div class="talk-foot">
-      <span class="talk-hint">Markdown. Ctrl+Enter or Ctrl+S saves.</span>
+      <span class="talk-hint"
+        >Markdown. Ctrl+Enter or Ctrl+S saves<template v-if="askable"
+          >, Ctrl+Shift+Enter saves and asks the agent</template
+        >.</span
+      >
       <span class="spacer"></span>
       <button
         type="button"
@@ -75,6 +82,16 @@ function forget() {
         "
       >
         Cancel
+      </button>
+      <button
+        v-if="askable"
+        type="button"
+        class="action"
+        :disabled="body.trim() === ''"
+        title="Save, and ask the agent to answer (Ctrl+Shift+Enter)"
+        @click="save(true)"
+      >
+        Save and ask
       </button>
       <button type="submit" class="action" :disabled="body.trim() === ''">Save</button>
     </div>

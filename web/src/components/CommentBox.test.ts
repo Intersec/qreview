@@ -9,10 +9,11 @@ import { describe, expect, it } from 'vitest';
 import CommentBox from './CommentBox.vue';
 
 /// Send a real key to the text area and say whether the browser kept it.
-function press(area: HTMLTextAreaElement, key: string, ctrl: boolean) {
+function press(area: HTMLTextAreaElement, key: string, ctrl: boolean, shift = false) {
   const event = new KeyboardEvent('keydown', {
     key,
     ctrlKey: ctrl,
+    shiftKey: shift,
     bubbles: true,
     cancelable: true,
   });
@@ -29,19 +30,38 @@ describe('the keys that save', () => {
   it('saves on Ctrl+Enter', () => {
     const { wrapper, area } = box('A remark.');
     press(area, 'Enter', true);
-    expect(wrapper.emitted('save')).toEqual([['A remark.']]);
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false]]);
   });
 
   it('saves on Ctrl+S, and keeps the browser out of it', () => {
     const { wrapper, area } = box('A remark.');
     expect(press(area, 's', true)).toBe(true);
-    expect(wrapper.emitted('save')).toEqual([['A remark.']]);
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false]]);
   });
 
   it('holds the browser back even when there is nothing to save', () => {
     const { wrapper, area } = box('');
     expect(press(area, 's', true)).toBe(true);
     expect(wrapper.emitted('save')).toBeUndefined();
+  });
+
+  it('saves and asks on Ctrl+Shift+Enter, where the box can ask', () => {
+    const wrapper = mount(CommentBox, {
+      props: { label: 'Comment', start: 'A question?', askable: true },
+    });
+    const area = wrapper.get('textarea').element as HTMLTextAreaElement;
+
+    press(area, 'Enter', true, true);
+
+    expect(wrapper.emitted('save')).toEqual([['A question?', true]]);
+  });
+
+  it('never asks from a box that cannot', () => {
+    const { wrapper, area } = box('A remark.');
+
+    press(area, 'Enter', true, true);
+
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false]]);
   });
 
   it('leaves a plain s to the text', () => {

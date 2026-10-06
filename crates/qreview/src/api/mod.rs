@@ -131,6 +131,7 @@ pub fn app(state: AppState) -> Router {
             "/api/changes/{key}/comments/{id}",
             axum::routing::patch(edit_comment).delete(delete_comment),
         )
+        .route("/api/changes/{key}/comments/{id}/ask", post(ask))
         .fallback(interface)
         .layer(middleware::from_fn_with_state(state.clone(), auth::guard))
         .layer(middleware::from_fn_with_state(state.clone(), timed))
@@ -844,6 +845,7 @@ async fn add_comment(
     Json(new): Json<NewComment>,
 ) -> Result<(StatusCode, Json<Comment>), ApiError> {
     let session = state.session.read().await;
+    let ask = new.ask;
     let comment = session.add_comment(&key, new).await?;
     let kind = match comment.is_remark() {
         true => Kind::Comment,
@@ -852,6 +854,12 @@ async fn add_comment(
     state
         .events
         .push(kind, comment.author, &key, Some(&comment.id));
+    if ask {
+        let thread = comment.parent.as_deref().unwrap_or(&comment.id);
+        state
+            .events
+            .push(Kind::Ask, Author::Reader, &key, Some(thread));
+    }
 
     Ok((StatusCode::CREATED, Json(comment)))
 }
@@ -876,6 +884,29 @@ async fn edit_comment(
 #[serde(rename_all = "camelCase")]
 struct Deleted {
     deleted: usize,
+}
+
+/// Ask the agent to answer one thread. The agent wakes on this and on
+/// nothing the reader merely writes, so a remark can be written, changed
+/// and deleted in peace, and costs the agent nothing until it is asked.
+async fn ask(
+    State(state): State<AppState>,
+    Path((key, id)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let session = state.session.read().await;
+    let file = session.comments(&key, "")?;
+    let thread = file
+        .comments
+        .iter()
+        .find(|c| c.id == id)
+        .map(|c| c.parent.clone().unwrap_or_else(|| c.id.clone()))
+        .ok_or_else(|| ApiError::not_found(format!("no comment {id}")))?;
+    drop(session);
+    state
+        .events
+        .push(Kind::Ask, Author::Reader, &key, Some(&thread));
+
+    Ok(StatusCode::ACCEPTED)
 }
 
 async fn delete_comment(
@@ -2937,5 +2968,54 @@ mod tests {
 
         assert_eq!(state.busy.lock().unwrap().in_hand, 0);
         waiting.abort();
+    }
+
+    #[tokio::test]
+    async fn ask_names_the_thread_of_a_comment_and_save_can_ask_too() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+        let (_, start) = json(server.clone(), get_with_cookie("/api/events", TOKEN)).await;
+        let after = start["next"].as_u64().unwrap();
+
+        let (_, remark) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", LINE_COMMENT),
+        )
+        .await;
+        let id = remark["id"].as_str().unwrap();
+        let reply = format!(r#"{{"scope":"line","parent":"{id}","body":"and this?","ask":true}}"#);
+        let (status, _) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", &reply),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let (status, _) = json(
+            server.clone(),
+            post(&format!("/api/changes/I8f3ac21/comments/{id}/ask"), ""),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+
+        let (_, batch) = json(
+            server.clone(),
+            get_with_cookie(&format!("/api/events?after={after}"), TOKEN),
+        )
+        .await;
+        let asked: Vec<_> = batch["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["kind"] == "ask")
+            .map(|e| e["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(asked, [id, id], "a reply asks about its thread");
+
+        let (status, _) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments/c-gone/ask", ""),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 }

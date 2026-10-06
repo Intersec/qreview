@@ -642,3 +642,23 @@ every service of the machine to every sandboxed command, where the socket
 opens qreview alone.
 
 Issue #23.
+
+## 2026-10-05 — The agent answers one thread, when asked
+
+In a field test, `qreview wait` woke the agent on every write of the
+reader. The agent answered remarks the reader was still writing, spent a
+turn on each change, and lost itself when the reader deleted a remark it
+was answering.
+
+**Decision.** `qreview wait` returns on a request alone. The reader asks
+about one thread: **Ask agent** on the thread, or **Save and ask** in a
+box. Ctrl+Shift+Enter does both, in a box and on the line of a thread.
+The request is an `ask` event that names the thread, and `wait` hands it
+over with the remark and its replies. Every other write still reaches the
+page at once, and wakes nobody.
+
+One thread per request, because the reader asks a question where it
+stands, the way a reviewer replies in Gerrit. A request for the whole
+series would answer threads that were not finished.
+
+Issue #23.

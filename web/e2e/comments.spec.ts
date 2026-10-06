@@ -21,7 +21,7 @@ async function remark(page: Page, nth: number, body: string) {
   const box = page.getByRole('textbox').first();
   await box.waitFor();
   await box.fill(body);
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   // Markdown makes a paragraph of each line, so wait for the first one.
   await expect(page.getByText(body.split('\n')[0]).first()).toBeVisible();
 }

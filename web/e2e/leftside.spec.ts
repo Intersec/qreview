@@ -44,7 +44,7 @@ test('a deleted line takes a comment, under the left column', async ({ page }) =
   // long.c replaces `line 3`, so line 3 of the old side is deleted.
   await rowOf(page, '3').locator('td.gutter-comment[data-column="old"]').click();
   await page.getByRole('textbox').first().fill('This line was doing something.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(card(page, 'This line was doing something.')).toBeVisible();
 
@@ -62,7 +62,7 @@ test('a line the change did not touch takes one on the left too', async ({ page 
   await rowOf(page, '5').locator('td.gutter-comment[data-column="old"]').click();
   await expect(page.getByRole('textbox').first()).toBeVisible();
   await page.getByRole('textbox').first().fill('It read better before.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   const talk = page.locator('tr.talk', { hasText: 'It read better before.' }).first();
   await expect(talk.locator('td').nth(0)).toContainText('It read better before.');
@@ -75,12 +75,12 @@ test('the two sides of one line hold two remarks', async ({ page }) => {
   const row = rowOf(page, '5');
   await row.locator('td.gutter-comment[data-column="old"]').click();
   await page.getByRole('textbox').first().fill('On the left.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(card(page, 'On the left.')).toBeVisible();
 
   await row.locator('td.gutter-comment[data-column="new"]').click();
   await page.getByRole('textbox').first().fill('On the right.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   const talk = page.locator('tr.talk', { hasText: 'On the left.' }).first();
   await expect(talk.locator('td').nth(0)).toContainText('On the left.');
@@ -94,7 +94,7 @@ test('the unified view offers the old number too', async ({ page }) => {
   // place to click.
   await rowOf(page, '3').locator('td.gutter-comment[data-column="old"]').click();
   await page.getByRole('textbox').first().fill('Gone, and it should not be.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(card(page, 'Gone, and it should not be.')).toBeVisible();
 });
@@ -104,7 +104,7 @@ test('a comment on the left comes back after a reload', async ({ page }) => {
 
   await rowOf(page, '3').locator('td.gutter-comment[data-column="old"]').click();
   await page.getByRole('textbox').first().fill('Written on the left.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(card(page, 'Written on the left.')).toBeVisible();
 
   await page.reload();

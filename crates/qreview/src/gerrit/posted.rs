@@ -117,6 +117,7 @@ async fn one(
         parent: None,
         done: None,
         blocked: false,
+        ask: false,
     };
 
     // A version that is not in this clone reads as no blob, no hash and no

@@ -58,7 +58,7 @@ test('a remark on it is written and kept like any other', async ({ page }) => {
 
   await page.locator('td.gutter-comment[data-column="new"]').first().click();
   await page.getByRole('textbox').first().fill('Shouting is not a fix.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(card(page, 'Shouting is not a fix.')).toBeVisible();
 
   await page.reload();
