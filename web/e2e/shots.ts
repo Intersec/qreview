@@ -126,7 +126,7 @@ for (const scheme of ['light', 'dark'] as const) {
   // The list of what the session holds, with a remark in two changes. The
   // two themes share one server, so the second pass finds the remarks of
   // the first: the wait is on a count of rows, never on a total.
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.locator('.list-row').first().waitFor();
 
   await openChange(page, /long: touch two places/);
@@ -135,7 +135,7 @@ for (const scheme of ['light', 'dark'] as const) {
   const box = page.getByRole('textbox').first();
   await box.waitFor();
   await box.fill('This line is the one to read twice.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.locator('.list-row').nth(1).waitFor();
   await page.screenshot({ path: join(OUT, `${scheme}-comment-list.png`) });
 
@@ -234,7 +234,7 @@ for (const scheme of ['light', 'dark'] as const) {
   const mine = second.getByRole('textbox').first();
   await mine.waitFor();
   await mine.fill('And the name of this function says nothing.');
-  await second.getByRole('button', { name: 'Save' }).click();
+  await second.getByRole('button', { name: 'Save', exact: true }).click();
   await second.locator('.talk-box:not(.posted-box)').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-posted.png`) });
 

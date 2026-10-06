@@ -55,6 +55,7 @@ const {
 provide(THREADS, {
   repliesOf: review.repliesOf,
   reply: review.reply,
+  ask: review.askAgent,
   setDone: review.setDone,
   blockedChanges,
   blockedFiles,
@@ -210,6 +211,16 @@ function onKey(event: KeyboardEvent) {
   const target = event.target as HTMLElement | null;
   const typing =
     target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+  // The one chord outside a box. In a box it saves and asks; here it asks
+  // about the thread on the line of the cursor.
+  if (!typing && event.ctrlKey && event.shiftKey && event.key === 'Enter') {
+    const id = diffView.value?.threadHere();
+    if (id) {
+      event.preventDefault();
+      void review.askAgent(id);
+    }
+    return;
+  }
   if (typing || event.metaKey || event.ctrlKey || event.altKey) {
     return;
   }

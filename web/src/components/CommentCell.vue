@@ -26,7 +26,7 @@ defineProps<{
   label: string;
 }>();
 const emit = defineEmits<{
-  save: [body: string];
+  save: [body: string, ask: boolean];
   cancel: [];
   edit: [id: string, body: string];
   remove: [id: string];
@@ -49,7 +49,8 @@ const emit = defineEmits<{
     v-if="writing && !readOnly"
     :draft="draft"
     :label="label"
-    @save="(body) => emit('save', body)"
+    askable
+    @save="(body, ask) => emit('save', body, ask)"
     @cancel="emit('cancel')"
   />
 </template>

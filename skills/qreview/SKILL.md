@@ -35,21 +35,24 @@ Repeat until the user says the review is over:
 1. Run `qreview wait --after <next>` in the background. Use the `next`
    number of the last `wait`. Leave out `--after` the first time.
 2. When it returns, read the JSON:
-   - `events`: what the user wrote. Each event carries the `comment`, with
-     its `id`, its `body` and its `parent` (null on a new remark).
+   - `events`: the requests of the user. An event of kind `ask` names one
+     thread, and carries it in `thread`: the remark first, then the
+     replies in order. Answer that thread, and no other.
    - `next`: pass it to the next `wait`, so nothing is missed between two
      waits.
    - `"reset": true`: the server restarted. Read everything again with
      `qreview export --json`.
    - Exit code 1 and no event: the time ran out. Wait again.
-3. Deal with each new remark or reply. See "Answer a remark".
+3. Answer the thread. See "Answer a remark". If `thread` is empty, or a
+   reply fails with `no comment`, the user deleted the thread: skip it, and
+   do not look into why.
 4. Go back to step 1.
 
 ## Answer a remark
 
-Read the thread first: `qreview export --json` gives the place, the excerpt
-of code (the lines marked `>` are the ones the remark is about) and every
-reply of the thread.
+The request carries the thread. For the code around it, `qreview export
+--json` gives the place and the excerpt (the lines marked `>` are the ones
+the remark is about).
 
 - **A question about the code.** Answer it:
   `qreview reply <id> --body "<answer>"`. Do not change the code.

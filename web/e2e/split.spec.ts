@@ -120,7 +120,7 @@ test('a remark about the file stands before the first line', async ({ page }) =>
   await openFile(page, 'long.c');
   await page.getByRole('button', { name: 'Comment on the file' }).click();
   await page.getByRole('textbox').first().fill('This file does two things.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(card(page, 'This file does two things.')).toBeVisible();
 
   // Inside the code, above line 1, not in a band that takes the top of the

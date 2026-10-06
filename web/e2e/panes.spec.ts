@@ -29,7 +29,7 @@ async function remark(page: Page) {
   await openFile(page, 'net.blk');
   await page.locator('td.gutter-comment').first().click();
   await page.getByRole('textbox').first().fill('One remark.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.locator('.list-row').first().waitFor();
 }
 

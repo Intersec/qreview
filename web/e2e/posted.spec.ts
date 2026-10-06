@@ -77,7 +77,7 @@ test('a remark of the version read against stands on its line, on the left', asy
 test('a remark of the session is not confused with one from the server', async ({ page }) => {
   await page.locator('td.gutter-comment[data-column="new"]').first().click();
   await page.getByRole('textbox').first().fill('Mine, not theirs.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   const mine = page.locator('.talk-box:not(.posted-box)', { hasText: 'Mine, not theirs.' });
   await expect(mine).toHaveCount(1);

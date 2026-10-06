@@ -25,7 +25,7 @@ test('ignoring whitespace drops the file that is only spacing', async ({ page })
 
   await page.getByRole('button', { name: '⚙' }).click();
   await page.getByRole('dialog').getByLabel('Ignore whitespace').check();
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(page.locator('.file-row', { hasText: 'spacing.c' })).toHaveCount(0);
   await expect(page.locator('.file-row', { hasText: 'long.c' })).toBeVisible();
@@ -38,7 +38,7 @@ test('a preference is kept for the next run', async ({ page }) => {
 
   await page.getByRole('button', { name: '⚙' }).click();
   await page.getByRole('dialog').getByLabel('Context').selectOption('25');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   // Twenty-five lines of context swallow the gap between the two hunks.
   await expect(page.getByRole('button', { name: /common lines/ })).toHaveCount(0);
@@ -60,7 +60,7 @@ test('a comment being written survives a setting change', async ({ page }) => {
 
   await page.getByRole('button', { name: '⚙' }).click();
   await page.getByRole('dialog').getByLabel('Context').selectOption('3');
-  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click();
 
   // Three lines of context widen the gap, so this text proves the fresh diff
   // is on the screen. Only then is the box worth asking about.
@@ -68,7 +68,7 @@ test('a comment being written survives a setting change', async ({ page }) => {
   await expect(page.getByRole('textbox')).toHaveCount(1);
   await expect(page.getByRole('textbox')).toHaveValue('Still here.');
 
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.locator('tr.talk', { hasText: 'Still here.' })).toHaveCount(1);
 });
 
@@ -81,7 +81,7 @@ test('the theme can be chosen rather than followed', async ({ page }) => {
 
   await page.getByRole('button', { name: '⚙' }).click();
   await page.getByRole('dialog').getByLabel('Theme').selectOption('dark');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   const dark = await page

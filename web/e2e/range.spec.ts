@@ -68,7 +68,7 @@ test('a selection over several lines offers to become a comment', async ({ page 
 
   await offer.click();
   await page.getByRole('textbox').first().fill('These four lines say one thing.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   // The card sits under the last line of the range.
   const talk = page.locator('tr.talk', { hasText: 'These four lines say one thing.' });
@@ -80,7 +80,7 @@ test('the range comes back after a reload, over the same lines', async ({ page }
   await drag(page, 5, 7);
   await page.getByRole('button', { name: /Comment on (part of )?3 lines/ }).click();
   await page.getByRole('textbox').first().fill('Three lines.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(card(page, 'Three lines.')).toBeVisible();
 
   await page.reload();
@@ -98,7 +98,7 @@ test('a part of one line can carry a comment of its own', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Comment on this' })).toBeVisible();
   await page.getByRole('button', { name: 'Comment on this' }).click();
   await page.getByRole('textbox').first().fill('This word is wrong.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(card(page, 'This word is wrong.')).toBeVisible();
   // The mark covers a part of the line, not the whole of it.
@@ -133,7 +133,7 @@ test('the keyboard picks a range with v, and c writes on it', async ({ page }) =
 
   await page.keyboard.press('c');
   await page.getByRole('textbox').first().fill('Three lines from the keyboard.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(card(page, 'Three lines from the keyboard.')).toBeVisible();
 });
@@ -144,7 +144,7 @@ test('a click puts the keyboard on the line, and c writes there', async ({ page 
 
   await page.keyboard.press('c');
   await page.getByRole('textbox').first().fill('About line 7.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   // The card sits under line 7, not under the line the keyboard started on.
   const talk = page.locator('tr.talk', { hasText: 'About line 7.' });
@@ -160,7 +160,7 @@ test('a click while a box is open leaves the range of that box alone', async ({ 
   // The reader looks at another line before finishing the remark.
   await page.locator('td.code-cell[data-line="12"]').click();
   await page.getByRole('textbox').first().fill('Still about four lines.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(card(page, 'Still about four lines.')).toBeVisible();
   await expect(page.locator('td.code-cell:has(.in-range)')).toHaveCount(4);

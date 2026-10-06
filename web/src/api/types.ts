@@ -195,7 +195,7 @@ export type Author = 'reader' | 'agent';
 
 export interface StoreEvent {
   seq: number;
-  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh';
+  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh' | 'ask';
   author: Author;
   key: string;
   id: string | null;
@@ -228,6 +228,8 @@ export interface NewComment {
   parent?: string;
   /// On a reply, check or clear the Done box of the thread with it.
   done?: boolean;
+  /// Ask the agent to answer the thread once the comment is saved.
+  ask?: boolean;
 }
 
 export interface EditComment {

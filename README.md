@@ -120,10 +120,16 @@ repository on its own:
 qreview comment src/net.c:new:42 --body "The result of read is not checked."
 qreview reply c-5b72… --body "Renamed." --done
 qreview reply c-5b72… --body "Log it, or return it?" --blocked
-qreview wait                  # block until you write, print it as JSON
+qreview wait                  # block until you ask, print the thread as JSON
 qreview export --json         # the open threads, each comment with its id
 qreview refresh               # read the repository again, after an amend
 ```
+
+The agent answers when you ask it, one thread at a time: **Ask agent** on a
+thread, or **Save and ask** in a comment box. **Ctrl+Shift+Enter** does
+both: in a box it saves and asks, and on a line it asks about the thread
+there. Until then, write, change and delete remarks as you like: nothing
+reaches the agent.
 
 In the browser, a remark opens a thread. Reply under it, and check **Done**
 when the work is done. A done thread is grey and folded, and a click opens

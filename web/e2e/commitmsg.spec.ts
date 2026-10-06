@@ -40,7 +40,7 @@ test('a comment on the message comes back after a reload', async ({ page }) => {
 
   await page.locator('td.gutter-comment').first().click();
   await page.getByRole('textbox').first().fill('The subject says what, not why.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(card(page, 'The subject says what, not why.')).toBeVisible();
 
   await page.reload();
@@ -67,7 +67,7 @@ test('a remark about the change goes on the commit message', async ({ page }) =>
   await openFile(page, 'Commit message');
   await page.getByRole('button', { name: 'Comment on the change' }).click();
   await page.getByRole('textbox').first().fill('This series needs a test plan.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(card(page, 'This series needs a test plan.')).toBeVisible();
 

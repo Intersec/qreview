@@ -113,5 +113,5 @@ async function write(page: Page, body: string) {
   await box.waitFor();
   await box.pressSequentially(body, { delay: 35 });
   await beat();
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 }

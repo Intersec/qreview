@@ -203,9 +203,29 @@ pub async fn refresh(client: &Client) -> Result<()> {
         .map(|_| ())
 }
 
-/// Wait for the next writes of the reader.
+/// The kinds of event that ask something of the agent. Every other write is
+/// for the page alone: a remark being written, changed or deleted costs the
+/// agent nothing until the reader asks.
+const REQUESTS: &[&str] = &["ask"];
+
+/// The requests among the events of a batch.
+fn requests(events: &Value) -> Vec<Value> {
+    events
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|e| {
+            e["kind"]
+                .as_str()
+                .is_some_and(|kind| REQUESTS.contains(&kind))
+        })
+        .cloned()
+        .collect()
+}
+
+/// Wait for the next request of the reader.
 ///
-/// Answers with the events, each with the comment it names, and the number
+/// Answers with the requests, each with the thread it names, and the number
 /// to pass as `after` next time. The flag is false when the time ran out
 /// with nothing to report.
 pub async fn wait(client: &Client, after: Option<u64>, timeout: Duration) -> Result<(Value, bool)> {
@@ -224,15 +244,9 @@ pub async fn wait(client: &Client, after: Option<u64>, timeout: Duration) -> Res
             return Ok((json!({ "events": [], "next": next, "reset": true }), true));
         }
 
-        let theirs: Vec<Value> = batch["events"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|e| e["author"].as_str() == Some("reader"))
-            .cloned()
-            .collect();
-        if !theirs.is_empty() {
-            let events = with_comments(client, theirs).await?;
+        let asked = requests(&batch["events"]);
+        if !asked.is_empty() {
+            let events = with_threads(client, asked).await?;
             return Ok((json!({ "events": events, "next": next }), true));
         }
 
@@ -243,27 +257,43 @@ pub async fn wait(client: &Client, after: Option<u64>, timeout: Duration) -> Res
     }
 }
 
-/// Each event with the comment it names, so the agent reads the remark
-/// without a second call.
-async fn with_comments(client: &Client, events: Vec<Value>) -> Result<Vec<Value>> {
+/// Each request with the thread it names, the remark first and the replies
+/// in order, so the agent answers without a second call. A thread deleted
+/// since the request carries none.
+async fn with_threads(client: &Client, events: Vec<Value>) -> Result<Vec<Value>> {
     let all = client.get("/api/comments").await?;
-    let find = |id: &str| -> Option<Value> {
-        all.as_array()?
-            .iter()
-            .flat_map(|change| change["comments"].as_array().into_iter().flatten())
-            .find(|c| c["id"].as_str() == Some(id))
-            .cloned()
-    };
+    let comments: Vec<&Value> = all
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|change| change["comments"].as_array().into_iter().flatten())
+        .collect();
 
     Ok(events
         .into_iter()
         .map(|mut event| {
-            if let Some(found) = event["id"].as_str().and_then(find) {
-                event["comment"] = found;
+            if let Some(id) = event["id"].as_str() {
+                event["thread"] = Value::Array(thread_of(&comments, id));
             }
             event
         })
         .collect())
+}
+
+/// The remark `id` and its replies, oldest first.
+fn thread_of(comments: &[&Value], id: &str) -> Vec<Value> {
+    let mut thread: Vec<Value> = comments
+        .iter()
+        .filter(|c| c["id"].as_str() == Some(id) || c["parent"].as_str() == Some(id))
+        .map(|c| (*c).clone())
+        .collect();
+    thread.sort_by(|a, b| {
+        let first = |c: &Value| c["parent"].is_string();
+        first(a)
+            .cmp(&first(b))
+            .then_with(|| a["createdAt"].as_str().cmp(&b["createdAt"].as_str()))
+    });
+    thread
 }
 
 /// A key as one segment of a path. A Change-Id and `sha-<hash>` need no
@@ -336,6 +366,38 @@ mod tests {
         assert!(parse_place("a.c:new:0").is_err());
         assert!(parse_place("a.c:new:5-3").is_err());
         assert!(parse_place("").is_err());
+    }
+
+    #[test]
+    fn only_a_request_wakes_the_agent() {
+        let events = json!([
+            { "kind": "comment", "author": "reader", "id": "c-1" },
+            { "kind": "deleted", "author": "reader", "id": "c-1" },
+            { "kind": "ask", "author": "reader", "id": "c-2" },
+            { "kind": "reply", "author": "agent", "id": "c-3" },
+        ]);
+
+        let asked = requests(&events);
+
+        assert_eq!(asked.len(), 1);
+        assert_eq!(asked[0]["id"], "c-2");
+    }
+
+    #[test]
+    fn a_thread_is_the_remark_then_its_replies_in_order() {
+        let remark = json!({ "id": "c-1", "parent": null, "createdAt": "3" });
+        let later = json!({ "id": "c-3", "parent": "c-1", "createdAt": "2" });
+        let earlier = json!({ "id": "c-2", "parent": "c-1", "createdAt": "1" });
+        let other = json!({ "id": "c-4", "parent": null, "createdAt": "0" });
+
+        let thread = thread_of(&[&later, &other, &remark, &earlier], "c-1");
+
+        let ids: Vec<_> = thread.iter().map(|c| c["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["c-1", "c-2", "c-3"]);
+        assert!(
+            thread_of(&[&other], "c-gone").is_empty(),
+            "a deleted thread"
+        );
     }
 
     #[test]

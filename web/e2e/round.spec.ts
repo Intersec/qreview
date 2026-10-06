@@ -22,7 +22,7 @@ async function remark(page: Page, line: string, body: string) {
   });
   await row.locator('td.gutter-comment[data-column="new"]').click();
   await page.getByRole('textbox').first().fill(body);
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(card(page, body)).toBeVisible();
 }
 

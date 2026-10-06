@@ -26,6 +26,8 @@ pub enum Kind {
     Done,
     Deleted,
     Refresh,
+    /// The reader asks the agent to answer one thread.
+    Ask,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]

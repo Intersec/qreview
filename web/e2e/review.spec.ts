@@ -70,7 +70,7 @@ test('a comment on a line comes back after a reload', async ({ page }) => {
 
   await page.locator('td.gutter-comment').first().click();
   await page.getByRole('textbox').first().fill('This loop never ends.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(card(page, 'This loop never ends.')).toBeVisible();
 
@@ -124,7 +124,7 @@ test('c writes on the line the keyboard is on', async ({ page }) => {
 
   await expect(page.getByRole('textbox')).toHaveCount(1);
   await page.getByRole('textbox').fill('Written from the keyboard.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(card(page, 'Written from the keyboard.')).toBeVisible();
 });
 
@@ -226,7 +226,7 @@ test('a comment sits under the side it was written on', async ({ page }) => {
 
   await page.locator('td.gutter-comment[data-column="new"]').nth(2).click();
   await page.getByRole('textbox').first().fill('On the new side.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   const row = page.locator('tr.talk', { hasText: 'On the new side.' }).first();
   await expect(row.locator('td')).toHaveCount(2);
@@ -283,7 +283,7 @@ test('a comment can be written on a line the diff did not carry', async ({ page 
   const row = page.locator('tr', { hasText: 'line 20' }).first();
   await row.locator('td.gutter-comment').first().click();
   await page.getByRole('textbox').first().fill('Context lines take comments too.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(card(page, 'Context lines take comments too.')).toBeVisible();
 });

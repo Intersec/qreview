@@ -106,7 +106,7 @@ for (const [button, line] of [
     // set the state and nothing appeared.
     await expect(page.getByRole('textbox')).toHaveCount(1);
     await page.getByRole('textbox').fill(`A remark on ${line}.`);
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(card(page, `A remark on ${line}.`)).toBeVisible();
   });
 }

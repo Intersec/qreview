@@ -632,6 +632,7 @@ mod tests {
             parent: None,
             done: None,
             blocked: false,
+            ask: false,
         }
     }
 
@@ -654,6 +655,7 @@ mod tests {
             parent: None,
             done: None,
             blocked: false,
+            ask: false,
         }
     }
 
@@ -700,6 +702,7 @@ mod tests {
                     parent: None,
                     done: None,
                     blocked: false,
+                    ask: false,
                 },
             )
             .await
@@ -905,6 +908,7 @@ mod tests {
                     parent: None,
                     done: None,
                     blocked: false,
+                    ask: false,
                 },
             )
             .await
@@ -991,6 +995,7 @@ mod tests {
                         parent: None,
                         done: None,
                         blocked: false,
+                        ask: false,
                     },
                 )
                 .await
@@ -1061,6 +1066,7 @@ mod tests {
                     parent: None,
                     done: None,
                     blocked: false,
+                    ask: false,
                 },
             )
             .await
@@ -1419,6 +1425,7 @@ mod tests {
                         parent: None,
                         done: None,
                         blocked: false,
+                        ask: false,
                     },
                 )
                 .await

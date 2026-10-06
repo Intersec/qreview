@@ -4,7 +4,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
-import { isBlocked, repliesBy } from '@/diff/threads';
+import { awaitsAgent, isBlocked, repliesBy } from '@/diff/threads';
 import { isCurrent, open } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
@@ -569,9 +569,17 @@ export const useReview = defineStore('review', () => {
     return replies.value.get(id) ?? [];
   }
 
-  async function reply(id: string, body: string) {
+  async function reply(id: string, body: string, ask = false) {
     // The scope is the one of the thread; the server reads the parent.
-    await addComment({ scope: 'line', parent: id, body });
+    await addComment({ scope: 'line', parent: id, body, ask });
+  }
+
+  async function askAgent(id: string) {
+    const key = changeKey.value;
+    const remark = review.value?.comments.find((c) => c.id === id);
+    if (key && remark && awaitsAgent(remark, repliesOf(id))) {
+      await guard(() => api.ask(key, id));
+    }
   }
 
   async function setDone(id: string, done: boolean) {
@@ -710,6 +718,7 @@ export const useReview = defineStore('review', () => {
     deleteComment,
     repliesOf,
     reply,
+    askAgent,
     setDone,
     blockedThreads,
     blockedChanges,

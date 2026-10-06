@@ -49,6 +49,9 @@ pub struct NewComment {
     /// On a reply of the agent, the thread waits for the reader.
     #[serde(default)]
     pub blocked: bool,
+    /// Ask the agent to answer the thread once the comment is saved.
+    #[serde(default)]
+    pub ask: bool,
 }
 
 /// What the interface sends to change one.
@@ -501,6 +504,7 @@ mod tests {
             parent: None,
             done: None,
             blocked: false,
+            ask: false,
         }
     }
 

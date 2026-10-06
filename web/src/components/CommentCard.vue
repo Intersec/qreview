@@ -2,7 +2,7 @@
 import { computed, inject, ref, watch } from 'vue';
 import CommentBox from './CommentBox.vue';
 import { render } from '@/diff/markdown';
-import { THREADS, isBlocked } from '@/diff/threads';
+import { THREADS, awaitsAgent, isBlocked } from '@/diff/threads';
 import { isCurrent } from '@/diff/versions';
 import type { Comment, PatchSet } from '@/api/types';
 
@@ -32,6 +32,7 @@ const replies = computed(() => threads?.repliesOf(props.comment.id) ?? []);
 /// The agent asked the reader, and waits for the answer.
 const blocked = computed(() => isBlocked(replies.value));
 const agent = computed(() => props.comment.author === 'agent');
+const askable = computed(() => awaitsAgent(props.comment, replies.value));
 
 /// A done thread is folded, and one click on its head unfolds it without
 /// a change of state. A thread that waits for the reader is never folded.
@@ -51,9 +52,26 @@ function author(comment: Comment): string {
   return comment.author === 'agent' ? 'Agent' : 'You';
 }
 
-async function sendReply(body: string) {
+async function sendReply(body: string, ask: boolean) {
   replying.value = false;
-  await threads?.reply(props.comment.id, body);
+  await threads?.reply(props.comment.id, body, ask);
+  asked.value = ask;
+}
+
+/// The thread was sent to the agent, and no answer has come back yet.
+const asked = ref(false);
+watch(
+  () => replies.value.length,
+  () => {
+    if (replies.value[replies.value.length - 1]?.author === 'agent') {
+      asked.value = false;
+    }
+  },
+);
+
+async function askAgent() {
+  asked.value = true;
+  await threads?.ask(props.comment.id);
 }
 
 async function toggleDone(event: Event) {
@@ -176,7 +194,7 @@ const frozen = computed(() => props.readOnly || version.value !== '');
       </div>
 
       <div v-if="replying" class="talk-body">
-        <CommentBox label="Reply" @save="sendReply" @cancel="replying = false" />
+        <CommentBox label="Reply" askable @save="sendReply" @cancel="replying = false" />
       </div>
 
       <div v-if="!editing && !replying && !frozen" class="talk-foot">
@@ -185,6 +203,16 @@ const frozen = computed(() => props.readOnly || version.value !== '');
           Done
         </label>
         <span class="spacer"></span>
+        <span v-if="asked" class="talk-hint">Asked</span>
+        <button
+          v-else-if="threads && !comment.done && askable"
+          type="button"
+          class="action"
+          title="Ask the agent to answer this thread"
+          @click="askAgent"
+        >
+          Ask agent
+        </button>
         <button v-if="threads" type="button" class="action" @click="replying = true">Reply</button>
         <button type="button" class="action" @click="editing = true">Edit</button>
         <button type="button" class="action" @click="emit('remove', comment.id)">Delete</button>

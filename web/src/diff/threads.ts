@@ -9,7 +9,9 @@ import type { Comment } from '@/api/types';
 export interface Threads {
   /// The replies of a remark, in the order they were written.
   repliesOf(id: string): Comment[];
-  reply(id: string, body: string): Promise<void>;
+  reply(id: string, body: string, ask?: boolean): Promise<void>;
+  /// Ask the agent to answer the thread.
+  ask(id: string): Promise<void>;
   setDone(id: string, done: boolean): Promise<void>;
   /// The changes, and the files of the change on the screen, that hold a
   /// thread waiting for the reader.
@@ -38,4 +40,11 @@ export function repliesBy(comments: Comment[]): Map<string, Comment[]> {
 export function isBlocked(replies: Comment[]): boolean {
   const last = replies[replies.length - 1];
   return last !== undefined && last.blocked && last.author === 'agent';
+}
+
+/// True when the last word of the thread is the reader's, so there is
+/// something for the agent to answer. Under its own answer, asking again
+/// would only buy the same answer twice.
+export function awaitsAgent(remark: Comment, replies: Comment[]): boolean {
+  return (replies[replies.length - 1] ?? remark).author === 'reader';
 }
