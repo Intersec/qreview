@@ -7,6 +7,7 @@ import type {
   Config,
   Comment,
   EditComment,
+  EventBatch,
   FileDiff,
   FileEntry,
   MergeListItem,
@@ -134,6 +135,9 @@ export const api = {
 
   /// Every comment of the session, in the order a review reads them.
   allComments: () => call<ChangeComments[]>('/api/comments'),
+
+  /// The writes to the store after a number, held until one comes.
+  events: (after?: number) => call<EventBatch>(`/api/events${query({ after: num(after) })}`),
 
   posted: (key: string, ps?: number, base?: string) =>
     call<Posted>(`/api/changes/${encodeURIComponent(key)}/posted${query({ ps: num(ps), base })}`),

@@ -28,6 +28,11 @@
   --draft: #fff9d6;
   --draft-edge: #e6d78a;
   --action: #1a73e8;
+  --agent: #eef4fe;
+  --agent-edge: #c6dafc;
+  --waiting: #fce8e6;
+  --waiting-edge: #d93025;
+  --waiting-ink: #b3261e;
 
   --tok-keyword: #a626a4;
   --tok-string: #1a7f37;
@@ -74,6 +79,11 @@
     --draft: #2c2712;
     --draft-edge: #4d4326;
     --action: #8ab4f8;
+    --agent: #17202e;
+    --agent-edge: #2d3f5c;
+    --waiting: #3a1715;
+    --waiting-edge: #f28b82;
+    --waiting-ink: #f28b82;
 
     --tok-keyword: #c678dd;
     --tok-string: #98c379;
@@ -106,6 +116,11 @@
   --draft: #2c2712;
   --draft-edge: #4d4326;
   --action: #8ab4f8;
+  --agent: #17202e;
+  --agent-edge: #2d3f5c;
+  --waiting: #3a1715;
+  --waiting-edge: #f28b82;
+  --waiting-ink: #f28b82;
 
   --tok-keyword: #c678dd;
   --tok-string: #98c379;
@@ -646,6 +661,84 @@ tr.talk td {
 }
 .talk-previous .talk-tag {
   background: var(--edge);
+}
+/* A remark the agent wrote. Blue, so the reader tells at a glance which
+   remarks are their own. */
+.talk-agent {
+  border-color: var(--agent-edge);
+  background: var(--agent);
+}
+.talk-agent > .talk-head {
+  border-bottom-color: var(--agent-edge);
+}
+/* A done thread: grey and folded, the way Gerrit shows one. */
+.talk-done {
+  border-color: var(--edge);
+  background: var(--pane);
+}
+.talk-done > .talk-head {
+  border-bottom-color: var(--edge);
+}
+.talk-done.talk-folded > .talk-head {
+  border-bottom: none;
+}
+.talk-fold {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+  color: inherit;
+}
+.talk-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-faint);
+}
+/* A thread that waits for the reader. It must catch the eye. */
+.talk-blocked {
+  border-color: var(--waiting-edge);
+  box-shadow: 0 0 0 1px var(--waiting-edge);
+}
+.talk-tag-waiting,
+.awaits {
+  border-radius: 2px;
+  padding: 0 4px;
+  background: var(--waiting);
+  color: var(--waiting-ink);
+  font-weight: 600;
+}
+.awaits {
+  margin-left: 4px;
+  font-size: 10px;
+}
+.talk-reply {
+  margin: 0 10px 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--draft-edge);
+}
+.talk-reply-agent {
+  border-left-color: var(--agent-edge);
+  background: var(--agent);
+}
+.talk-reply-waiting {
+  border-left-color: var(--waiting-edge);
+}
+.talk-reply-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink-quiet);
+}
+.talk-done-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: var(--ink-quiet);
 }
 .was-on {
   font-family: var(--code-font);

@@ -26,6 +26,17 @@ server answers with a session cookie. A request without the cookie or the
 token gets 401. This stops another local user, and a page in another tab, from
 reading the repository.
 
+The token is also in `server.json` (section 11), a file only its owner can
+read, so the commands of an agent in a terminal of the same user reach the
+server. Another local user still cannot.
+
+The server also listens on a Unix socket, `/tmp/qreview-<uid>/<repo-id>.sock`,
+for the commands of an agent. An agent in a sandbox runs each command in a
+network of its own, where `127.0.0.1` is not the machine of the user, but it
+shares `/tmp`. The directory is made with mode `0700` and refused when
+another user owns it or others can enter it; the socket has mode `0600`.
+The token is asked for there as on the port. The browser uses the port.
+
 The server never writes to the working tree. It never reads it either. Every
 commit, tree, and blob comes from the object database, so a series under
 review does not have to be the checkout, and a dirty worktree changes nothing.
@@ -446,7 +457,7 @@ read, and one file is written.
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "key": "I8f3a...c21",
   "subject": "net: fix the retry loop",
   "reviewed": false,
@@ -467,11 +478,29 @@ read, and one file is written.
         "blob": "b7a1...",
         "lineHash": "sha256:9c1f...",
         "context": ["    for (;;) {", "        rc = read(fd);", "..."]
-      }
+      },
+      "author": "reader",
+      "done": false
+    },
+    {
+      "id": "c-01J...",
+      "parent": "c-01H...",
+      "author": "agent",
+      "patchSet": 2,
+      "commit": "af448g15...",
+      "createdAt": "2026-08-20T14:05:40Z",
+      "updatedAt": "2026-08-20T14:05:40Z",
+      "scope": "line",
+      "body": "Should a closed socket end the loop, or retry the connect?",
+      "blocked": true
     }
   ]
 }
 ```
+
+Format 4 added `author`, `parent`, `done` and `blocked`. Each one carries a
+default, so a file of format 3 reads as a set of remarks by the reader, each
+alone in its thread, none of them done.
 
 The versions of a change are not stored. They are read from git, and the
 `commit` of each comment says which one a remark was written against. See
@@ -494,10 +523,9 @@ units**, the units the browser measures a selection in, and the units every
 offset that crosses the wire already uses. A range with no characters covers
 whole lines.
 
-A comment stands alone. There is no author, no draft, no reply and no
-resolving: all four are for a conversation with a reviewer, and a review of
-your own series before the push has none. You write a remark, you correct the
-code, you delete the remark.
+A comment can open a thread. The reader is one author; an agent that works
+on the same series in a terminal is the other. Both write remarks, both
+reply, and either one closes a thread with Done. See section 5.5.
 
 What a reader has typed and not saved is not a comment, and it never reaches
 the store or the export. The browser keeps it under `qreview.drafts` in its
@@ -609,6 +637,55 @@ Everything that belongs to no line of the file stands **before the first
 line**, inside the code, the way Gerrit puts a remark about a file above line
 1. A band above the diff took the top of every screen, on every file, whether
 it held anything or not.
+
+### 5.5 Threads and the agent
+
+An agent, such as a Claude Code session, works on the series in a terminal.
+It starts qreview, writes remarks, answers the ones of the reader, and
+amends the commits itself. qreview never starts the agent and never calls a
+network service for it: it reads what the agent commits, and it stores what
+the agent writes through the commands of section 11.
+
+**A thread is a remark and its replies.** A reply names its remark in
+`parent`, and only a remark that opens a thread is a parent: a reply to a
+reply is a reply to the thread. A reply carries no anchor and no scope of
+its own; it stands where its thread stands. Its `commit` is the version the
+change carried when it was written. The round a thread belongs to is the
+`commit` of its remark, and section 5.4 reads that one only.
+
+**`author` is `reader` or `agent`.** The commands of section 11 send
+`"author": "agent"`; the interface sends no author, and a write without one
+is the reader's. Both hold the same session token, so this is a label and
+not a permission. The interface draws the writing of the agent in a style of
+its own.
+
+**`done` is on the remark that opens the thread**, the way Gerrit has a
+Done box on a thread. The agent or the reader checks it. A done thread is
+grey and folded, and one click on its header folds or unfolds it without a
+change of state. Clearing the box opens the thread again, and so does a new
+reply of the reader.
+
+**A done thread is counted nowhere and left out of the export.** The work is
+done; the agent must not get it again. It is still on its line, and it is
+never deleted by qreview on its own.
+
+**`blocked` is on a reply of the agent.** It says that the agent needs the
+reader before it can change the code: it asked a question, or it met a
+problem it cannot solve alone. A thread is blocked while its last reply is a
+blocked one, so the next reply of the reader ends it, with no flag to clear.
+
+A blocked thread asks for the reader:
+
+- it opens unfolded, in a strong color;
+- its change in the series and its file in the file list carry a mark;
+- the title of the browser tab starts with the number of blocked threads, so
+  the reader sees it from another window.
+
+**A previous thread is read, and never written on**, the rule of section
+5.4. It takes no reply and no change of `done`.
+
+**Deleting a remark deletes its thread.** A reply deleted alone leaves the
+thread as it was.
 
 ## 6. Gerrit integration
 
@@ -773,9 +850,10 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/comments` | Every comment of the session, in reading order |
 | `GET /api/update` | Whether a newer qreview is out. Empty when nothing answers |
 | `GET /api/changes/:key/comments` | Every comment of the change |
-| `POST /api/changes/:key/comments` | Create a comment or a reply |
-| `PATCH /api/changes/:key/comments/:id` | Change the body, or resolve the thread |
+| `POST /api/changes/:key/comments` | Create a remark, or a reply when the body names a `parent`. `"author": "agent"` writes as the agent, and a reply may carry `"done": true` or `"blocked": true` |
+| `PATCH /api/changes/:key/comments/:id` | Change the body, or check or clear `done` on a thread |
 | `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |
+| `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. See section 8.3 |
 | `POST /api/changes/:key/patchsets/fetch` | Fetch one Gerrit patch set |
 | `GET /api/export?scope=change&key=...` | The export text |
 | `GET /api/config` | The three layers, folded |
@@ -840,6 +918,39 @@ not two.
 A fragment that names a change the series does not hold is not a failure. The
 newest change opens, the way a run with no fragment starts.
 
+### 8.3 Events
+
+Two parties write to the store now, and each must see what the other wrote
+without a reload. The server is the only writer of the store, so it knows
+every write the moment it is made. It numbers them, and keeps the last few
+hundred in memory.
+
+`GET /api/events` with no `after` answers at once, with no event and the
+number to start from. `GET /api/events?after=<n>` answers at once with every
+event numbered above `n`, or holds the request until one comes, for at most 30 seconds, and then
+answers with an empty list. Each answer carries the number to ask after
+next. An `after` the server no longer holds, because it restarted or the
+event fell out of memory, answers with `"reset": true`, and the reader reads
+everything again.
+
+```ts
+type Event = {
+  seq: number;
+  kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh';
+  author: 'reader' | 'agent';
+  key: string;             // the change
+  id: string | null;       // the comment, absent on a refresh
+};
+```
+
+A write names its author: in the body of a comment or of an edit, and as
+`?author=agent` on a delete and on a refresh, which carry no body.
+
+The interface holds one such request open, and reloads the comments of a
+change when an event of the agent names it. `qreview wait` holds one too and
+returns on the first event of the reader. One route serves both, so there is
+one way to learn of a write.
+
 ## 9. Export for a Claude session
 
 Two ways out: a button in the interface that copies to the clipboard, and
@@ -898,7 +1009,17 @@ Rules for the format:
   column is a count in units it does not know. Bounds that fall on the ends
   of the lines quote nothing, because the lines say it already. A text that
   occurs more than once on its line says which one: `` on the second `%d` ``.
-- No author. One person wrote every line of it.
+- A remark alone, by the reader, carries no author: it reads the way it did
+  before threads existed. A remark of the agent opens with
+  `(written by the agent)`.
+- A reply follows its remark, in the order it was written, as
+  `Reply from the reader:` or `Reply from the agent:` and its body. A blocked
+  reply of the agent adds `(waiting for an answer)`.
+- When a thread holds a reply, the opening adds one sentence: "Some comments
+  hold a conversation; when the last reply is a question to you, answer it
+  instead of changing the code."
+- Only open threads are in it. A done thread is left out, the way a previous
+  one is, and the line under the count says how many.
 - The comments are numbered, so the answer can name one.
 - The export names the commit and the patch set, so the session knows the
   state the remarks were written against.
@@ -916,6 +1037,32 @@ The comments are ordered the way a reader walks the code:
   belongs to no file;
 - inside a file, top to bottom. Two remarks on one line keep the order they
   were written in.
+
+**`qreview export --json`** prints the same threads, in the same order, for
+a program. The Markdown names a comment by its number, which changes when a
+remark is added; the JSON names it by its `id`, which a command of section
+11 can act on.
+
+```ts
+type ExportJson = {
+  repo: string;
+  changes: {
+    key: string;
+    subject: string;
+    commit: string;
+    patchSet: number;
+    threads: {
+      id: string;
+      place: string;       // "src/net.blk:42", the way the Markdown says it
+      side: 'old' | 'new' | null;
+      line: number | null;
+      excerpt: string;     // the excerpt of the Markdown, `>` marks included
+      blocked: boolean;
+      comments: { id: string; author: 'reader' | 'agent'; body: string }[];
+    }[];
+  }[];
+};
+```
 
 ## 10. Configuration
 
@@ -1009,8 +1156,55 @@ qreview --port <n>            use a fixed port
 qreview -v                    print the series and the files before the URL
 qreview --trace               print on standard error what the work costs
 qreview export [--key <id>]   print the export text to stdout
+qreview export --json         the same threads as JSON, with their ids
 qreview list                  list the stored reviews of this repository
 ```
+
+**The commands of the agent.** They write as the agent, through the server
+that runs on the repository:
+
+```
+qreview comment <place> --body <text> [--key <id>]
+                              write a remark on the newest version
+qreview reply <id> --body <text> [--done] [--blocked]
+                              reply to a thread
+qreview wait [--after <n>] [--timeout <s>]
+                              print the next writes of the reader as JSON
+qreview refresh               read the repository again, as the ⟳ button
+```
+
+`<place>` is `<file>`, `<file>:<side>:<line>` or `<file>:<side>:<from>-<to>`,
+with `<side>` `old` or `new`, the place of section 4. A file alone writes a
+remark about the file. A path may hold a colon: the side and the line are
+read from the right. `--key` names the change; without it, the change is
+the newest one of the series that touches the file. A body of `-` is read
+from standard input, so a long answer needs no quoting.
+
+`comment` and `reply` print the comment they wrote, its `id` included.
+`wait` prints `{ "events": [...], "next": <n> }`: each event carries the
+comment it names, and `next` is the `--after` of the next wait, so nothing
+the reader writes between two waits is missed. Without `--after`, it waits
+from now. It exits 0 with events, and 1 when the time runs out, 600 seconds
+by default. A `"reset": true` says the server restarted: read the review
+again with `export --json`.
+
+**The server of a repository.** At startup the server writes
+`server.json` beside `repo.json` in the directory of the repository
+(section 5.1), with mode `0600`:
+
+```json
+{ "pid": 41207, "port": 38412, "token": "...", "socket": "/tmp/qreview-1000/4f5959a8bfd8b629.sock" }
+```
+
+It removes the file, and the socket, when it stops. The commands above
+read it to find the server, and try the socket before the port; none of them starts one, and each says to run `qreview` when no
+server answers. A file whose server does not answer is a stale one, left by
+a crash, and is ignored.
+
+`qreview` itself reads it too. When a server already answers on the
+repository, it prints that URL and stops, and opens no second tab: an agent
+that starts qreview twice gets the review that is open. Reviewing another
+range means stopping that server first.
 
 **The trace.** `--trace`, or `QREVIEW_TRACE=1`, prints one line per piece of
 work to standard error: every git child process, every highlight pass, every

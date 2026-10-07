@@ -12,7 +12,11 @@ use serde::{Deserialize, Serialize};
 /// 3 added the commit a comment was written against, which is what lets a
 /// second round find the version that was reviewed. A comment of format 2
 /// names none, and takes no part in that.
-pub const VERSION: u32 = 3;
+///
+/// 4 added threads: the author of a comment, the remark a reply belongs to,
+/// and the Done and blocked states. A file of format 3 reads as remarks of
+/// the reader, each alone in its thread, none of them done.
+pub const VERSION: u32 = 4;
 
 /// Everything a review of one change holds.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -78,6 +82,35 @@ pub struct Comment {
     pub body: String,
     #[serde(default)]
     pub anchor: Option<Anchor>,
+    #[serde(default)]
+    pub author: Author,
+    /// The remark that opens the thread, on a reply. A reply has no anchor:
+    /// it stands where its thread stands.
+    #[serde(default)]
+    pub parent: Option<String>,
+    /// The thread is done. Only the remark that opens it carries this.
+    #[serde(default)]
+    pub done: bool,
+    /// A reply of the agent that waits for the reader before the code can
+    /// change.
+    #[serde(default)]
+    pub blocked: bool,
+}
+
+impl Comment {
+    /// True when this comment opens a thread.
+    pub fn is_remark(&self) -> bool {
+        self.parent.is_none()
+    }
+}
+
+/// Who wrote a comment. A label, not a permission: both hold the same token.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Author {
+    #[default]
+    Reader,
+    Agent,
 }
 
 /// Where a comment sits, and enough context to find that place again in

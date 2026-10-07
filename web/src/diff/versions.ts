@@ -17,6 +17,8 @@ export function isCurrent(comment: Comment, commit: string): boolean {
 }
 
 /// The remarks of the version a change carries now, and the ones before.
+///
+/// A reply is not a remark: it stands in the thread of one.
 export function rounds<T extends { comments: Comment[]; commit: string }>(
   change: T,
 ): { current: Comment[]; previous: Comment[] } {
@@ -24,9 +26,17 @@ export function rounds<T extends { comments: Comment[]; commit: string }>(
   const previous: Comment[] = [];
 
   for (const comment of change.comments) {
-    (isCurrent(comment, change.commit) ? current : previous).push(comment);
+    if (comment.parent === null) {
+      (isCurrent(comment, change.commit) ? current : previous).push(comment);
+    }
   }
   return { current, previous };
+}
+
+/// The threads of the current version that are not done: what every count
+/// on the screen counts, and what the export holds.
+export function open<T extends { comments: Comment[]; commit: string }>(change: T): Comment[] {
+  return rounds(change).current.filter((comment) => !comment.done);
 }
 
 /// The previous remarks of a change, in groups, one per version they were

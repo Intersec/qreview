@@ -17,12 +17,13 @@ use tokio::sync::RwLock;
 
 use crate::anchor::{self, Placed};
 use crate::comments::{EditComment, NewComment};
+use crate::events::{Batch, Events, Kind};
 use crate::git::merge::Base;
 use crate::model::{ChangeSummary, FileDiff, FileEntry, Series};
 use crate::patchset::PatchSet;
 use crate::session::Against;
 use crate::session::Session;
-use crate::store::model::{ChangeFile, Comment, Side};
+use crate::store::model::{Author, ChangeFile, Comment, Side};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -38,6 +39,8 @@ pub struct AppState {
     /// What the server has in hand. The task that reads ahead waits for a
     /// quiet moment, so it never competes with the reader.
     busy: Arc<std::sync::Mutex<Busy>>,
+    /// The writes to the store, for the party that did not make them.
+    pub events: Arc<Events>,
 }
 
 /// What the server is doing, as the read-ahead task needs to know it.
@@ -61,6 +64,7 @@ impl AppState {
                 in_hand: 0,
                 ended: std::time::Instant::now(),
             })),
+            events: Arc::new(Events::default()),
         }
     }
 
@@ -108,6 +112,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/mergelist", get(mergelist))
         .route("/api/comments", get(all_comments))
+        .route("/api/events", get(events))
         .route("/api/update", get(update))
         .route("/api/export", get(export))
         .route("/api/config", get(config).put(save_config))
@@ -144,7 +149,10 @@ async fn timed(
     let started = crate::trace::start();
     let what = started.map(|_| format!("{} {}", request.method(), without_token(request.uri())));
 
-    let _in_hand = InHand::new(state);
+    // A wait on the events is held for half a minute and does no work. It
+    // must not keep the read-ahead from its quiet moment.
+    let waits = request.uri().path() == "/api/events";
+    let _in_hand = (!waits).then(|| InHand::new(state));
     let response = next.run(request).await;
 
     crate::trace::since(started, || {
@@ -307,11 +315,17 @@ async fn session(State(state): State<AppState>) -> Json<SessionBody> {
 /// `GET /api/session` catches up with the working tree alone, because a page
 /// load must not walk the history a second time. Here the reader asked for
 /// it, so the whole series is resolved again.
-async fn refresh(State(state): State<AppState>) -> Result<Json<SessionBody>, ApiError> {
+async fn refresh(
+    State(state): State<AppState>,
+    Query(by): Query<ByQuery>,
+) -> Result<Json<SessionBody>, ApiError> {
     let mut session = state.session.write().await;
     session.refresh().await?;
     let answer = body(&session, &state);
     drop(session);
+    state
+        .events
+        .push(Kind::Refresh, by.author.unwrap_or_default(), "", None);
 
     // An amend gives a change a new commit, and with it a file list nothing
     // has read yet.
@@ -831,6 +845,13 @@ async fn add_comment(
 ) -> Result<(StatusCode, Json<Comment>), ApiError> {
     let session = state.session.read().await;
     let comment = session.add_comment(&key, new).await?;
+    let kind = match comment.is_remark() {
+        true => Kind::Comment,
+        false => Kind::Reply,
+    };
+    state
+        .events
+        .push(kind, comment.author, &key, Some(&comment.id));
 
     Ok((StatusCode::CREATED, Json(comment)))
 }
@@ -841,8 +862,14 @@ async fn edit_comment(
     Json(edit): Json<EditComment>,
 ) -> Result<Json<Comment>, ApiError> {
     let session = state.session.read().await;
+    let (kind, author) = match edit.done {
+        Some(_) => (Kind::Done, edit.author),
+        None => (Kind::Edited, edit.author),
+    };
+    let comment = session.edit_comment(&key, &id, edit)?;
+    state.events.push(kind, author, &key, Some(&id));
 
-    Ok(Json(session.edit_comment(&key, &id, edit)?))
+    Ok(Json(comment))
 }
 
 #[derive(Serialize)]
@@ -854,11 +881,41 @@ struct Deleted {
 async fn delete_comment(
     State(state): State<AppState>,
     Path((key, id)): Path<(String, String)>,
+    Query(by): Query<ByQuery>,
 ) -> Result<Json<Deleted>, ApiError> {
     let session = state.session.read().await;
     let deleted = session.delete_comment(&key, &id)?;
+    state.events.push(
+        Kind::Deleted,
+        by.author.unwrap_or_default(),
+        &key,
+        Some(&id),
+    );
 
     Ok(Json(Deleted { deleted }))
+}
+
+/// Who asks, on a route with no body to say it in.
+#[derive(Deserialize)]
+struct ByQuery {
+    author: Option<Author>,
+}
+
+#[derive(Deserialize)]
+struct EventsQuery {
+    after: Option<u64>,
+}
+
+/// How long a wait on the events is held before it answers empty. Short
+/// enough that a proxy or a browser never gives up on it first.
+const EVENTS_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The writes after a number, as soon as there is one. See section 8.3.
+///
+/// The session lock is not held: a wait of 30 seconds must not stop a
+/// refresh.
+async fn events(State(state): State<AppState>, Query(query): Query<EventsQuery>) -> Json<Batch> {
+    Json(state.events.after(query.after, EVENTS_WAIT).await)
 }
 
 /// One error shape for every route.
@@ -2804,5 +2861,81 @@ mod tests {
         );
         assert_eq!(changes[2]["subject"], "Merge side into main");
         assert_eq!(changes[3]["subject"], "main work");
+    }
+
+    #[tokio::test]
+    async fn an_agent_replies_and_the_reader_hears_of_it() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+        let (_, start) = json(server.clone(), get_with_cookie("/api/events", TOKEN)).await;
+        let after = start["next"].as_u64().unwrap();
+
+        let (_, remark) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", LINE_COMMENT),
+        )
+        .await;
+        let id = remark["id"].as_str().unwrap();
+        let reply = format!(
+            r#"{{"scope":"line","parent":"{id}","author":"agent","body":"why?","blocked":true}}"#
+        );
+        let (status, answer) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", &reply),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(answer["parent"], id);
+        assert_eq!(answer["author"], "agent");
+        assert_eq!(answer["blocked"], true);
+
+        let (_, batch) = json(
+            server.clone(),
+            get_with_cookie(&format!("/api/events?after={after}"), TOKEN),
+        )
+        .await;
+        let kinds: Vec<_> = batch["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| (e["kind"].as_str().unwrap(), e["author"].as_str().unwrap()))
+            .collect();
+        assert_eq!(kinds, [("comment", "reader"), ("reply", "agent")]);
+        assert_eq!(batch["events"][1]["key"], "I8f3ac21");
+    }
+
+    #[tokio::test]
+    async fn the_done_box_is_checked_and_cleared_on_the_remark() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+        let (_, remark) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", LINE_COMMENT),
+        )
+        .await;
+        let uri = format!(
+            "/api/changes/I8f3ac21/comments/{}",
+            remark["id"].as_str().unwrap()
+        );
+
+        let (status, checked) = json(server.clone(), send("PATCH", &uri, r#"{"done":true}"#)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(checked["done"], true);
+
+        let (_, cleared) = json(server.clone(), send("PATCH", &uri, r#"{"done":false}"#)).await;
+        assert_eq!(cleared["done"], false);
+    }
+
+    #[tokio::test]
+    async fn a_wait_on_the_events_leaves_the_server_quiet() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        let server = app(state.clone());
+        let waiting = tokio::spawn(server.oneshot(get_with_cookie("/api/events?after=0", TOKEN)));
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(state.busy.lock().unwrap().in_hand, 0);
+        waiting.abort();
     }
 }

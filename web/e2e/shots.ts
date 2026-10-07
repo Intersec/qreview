@@ -139,6 +139,78 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.locator('.list-row').nth(1).waitFor();
   await page.screenshot({ path: join(OUT, `${scheme}-comment-list.png`) });
 
+  // A conversation with the agent, written the way the agent writes it:
+  // through the API, with the page told by the events route. A question
+  // that waits for the reader, and a remark of the agent marked done.
+  const api = (path: string) => new URL(path, server.url).href;
+  const written = (await (await page.request.get(api('/api/comments'))).json()) as {
+    key: string;
+    subject: string;
+    comments: {
+      id: string;
+      parent: string | null;
+      body: string;
+      anchor: { file: string; startLine: number | null } | null;
+    }[];
+  }[];
+  const long = written.find((change) => change.subject.startsWith('long:'));
+  const remark = long?.comments.find(
+    (c) => c.parent === null && c.body.startsWith('This line is the one'),
+  );
+  if (long && remark) {
+    const comments = api(`/api/changes/${long.key}/comments`);
+    await page.request.post(comments, {
+      data: {
+        scope: 'line',
+        parent: remark.id,
+        author: 'agent',
+        blocked: true,
+        body: 'Twice because it locks, or because it reads? I need to know before I split it.',
+      },
+    });
+    const own = await page.request.post(comments, {
+      data: {
+        scope: 'line',
+        // The place of the remark above, which the diff is known to show.
+        file: remark.anchor?.file,
+        side: 'new',
+        startLine: remark.anchor?.startLine ?? 1,
+        author: 'agent',
+        body: 'The name of this function no longer says what it does.',
+      },
+    });
+    if (!own.ok()) {
+      complaints.push(`agent remark: ${own.status()} ${await own.text()}`);
+    }
+    const { id } = (await own.json()) as { id: string };
+    const done = await page.request.patch(`${comments}/${id}`, {
+      data: { done: true, author: 'agent' },
+    });
+    if (!done.ok()) {
+      complaints.push(`done: ${done.status()} ${await done.text()}`);
+    }
+    await page.locator('.talk-blocked').first().waitFor();
+    // Said rather than thrown, so the cards on the page are in the report
+    // and the shots after this one are still taken.
+    const folded = await page
+      .locator('.talk-folded')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!folded) {
+      const cards = await page
+        .locator('article.talk-box')
+        .evaluateAll((all) =>
+          all.map((card) => `${card.className} | ${card.textContent?.slice(0, 80) ?? ''}`),
+        );
+      complaints.push(`no folded thread. The cards:\n    ${cards.join('\n    ')}`);
+    }
+    await page.screenshot({ path: join(OUT, `${scheme}-thread.png`) });
+  } else {
+    complaints.push('no remark to start a conversation on');
+  }
+
   if (complaints.length) {
     console.log(`${scheme}: the page complained\n  ${complaints.join('\n  ')}`);
   }
