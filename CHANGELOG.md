@@ -12,6 +12,14 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.12.5]
+
+### Fixed
+
+- A changed `/**` lost its `/*` in Firefox when the code font had
+  ligatures, such as JetBrains Mono. The diff now draws the code without
+  ligatures.
+
 ## [0.12.4]
 
 ### Fixed
