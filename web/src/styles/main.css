@@ -276,6 +276,10 @@ table.code col.gut {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   tab-size: var(--tab-width);
+  /* A diff shows the characters as typed. A word mark also cuts a line into
+     spans, and a cut through the `/**` ligature of a fallback font made the
+     `/*` vanish. */
+  font-variant-ligatures: none;
 }
 .row-add {
   background: var(--add-line);

@@ -92,6 +92,19 @@ test('a doc comment stays on the line it was written on', async ({ page }) => {
   await expect(row).toContainText('/** Return whether the field is a pointer or not.');
 });
 
+test('the code is drawn without ligatures', async ({ page }) => {
+  await openFile(page, 'doc.h');
+
+  // A font with ligatures draws `/**` as one glyph. A word mark cut it in
+  // two spans, and the `/*` disappeared from the line.
+  const ligatures = await page
+    .locator('td.code-cell')
+    .first()
+    .evaluate((cell) => getComputedStyle(cell).fontVariantLigatures);
+
+  expect(ligatures).toBe('none');
+});
+
 test('the file bar spans the pane, whatever the code does', async ({ page }) => {
   await openFile(page, 'long.c');
 
