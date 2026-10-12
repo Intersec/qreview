@@ -157,6 +157,10 @@ its writes, then shows the whole fix at once when the agent waits again. A
 remark you are typing meanwhile stays in its box, and follows its line to
 the new version.
 
+When a fix ends, or the agent answers, while you look at another window,
+the browser notifies you. It asks for leave the first time you press Fix
+or Ask. If you refuse, the tab title starts with ✓ instead.
+
 **Clean** deletes the done threads of the change, once you agree with the
 work. It lists them and asks first, then waits three seconds with an
 **Undo**.

@@ -15,8 +15,9 @@ function page(now = () => 0) {
     refresh: vi.fn(async () => {}),
     reload: vi.fn(async () => {}),
     readWritten: vi.fn(async () => {}),
+    told: vi.fn(),
   };
-  return { act, held: new Catchup(act, now) };
+  return { act, held: new Catchup(act, false, now) };
 }
 
 describe('the catch-up of a page', () => {
@@ -71,6 +72,32 @@ describe('the catch-up of a page', () => {
 
     expect(act.reload).not.toHaveBeenCalled();
     expect(act.readWritten).not.toHaveBeenCalled();
+  });
+
+  it('tells the end of a fix once, after the page caught up', async () => {
+    const { act, held } = page();
+    act.refresh.mockImplementation(async () => {
+      expect(act.told).not.toHaveBeenCalled();
+    });
+
+    await held.settle([event('fix', { author: 'reader' })], true);
+    await held.settle([event('reply'), event('migrated')], true);
+    expect(act.told).not.toHaveBeenCalled();
+    await held.settle([event('idle', { key: '' })], false);
+    await held.settle([], false);
+
+    expect(act.told).toHaveBeenCalledTimes(1);
+    expect(act.told).toHaveBeenCalledWith('fix');
+  });
+
+  it('tells an answer outside a fix, and not a write of the reader', async () => {
+    const { act, held } = page();
+
+    await held.settle([event('comment', { author: 'reader' })], false);
+    expect(act.told).not.toHaveBeenCalled();
+    await held.settle([event('reply')], false);
+
+    expect(act.told).toHaveBeenCalledWith('answer');
   });
 
   it('reads the counts again for another change', async () => {

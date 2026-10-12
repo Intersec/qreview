@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
 import { format, parse, same, type Place } from '@/place';
 import { storeToRefs } from 'pinia';
+import { unseen } from './notify';
 import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
 import CleanDialog from './components/CleanDialog.vue';
@@ -381,10 +382,18 @@ watch(
 /// A thread that waits for the reader puts its count first, so the reader
 /// sees it from another window.
 watch(
-  [() => series.value?.repo.name, () => change.value?.subject, () => blockedThreads.value.length],
-  ([repo, subject, waiting]) => {
+  [
+    () => series.value?.repo.name,
+    () => change.value?.subject,
+    () => blockedThreads.value.length,
+    () => unseen.value,
+  ],
+  ([repo, subject, waiting, news]) => {
     const name = ['qreview', repo, subject].filter(Boolean).join(' · ');
-    document.title = waiting ? `(${waiting}) ${name}` : name;
+    // The mark of news is for a reader who refused notifications: the tab
+    // still says the agent is done.
+    const head = [news ? '✓' : '', waiting ? `(${waiting})` : ''].filter(Boolean).join(' ');
+    document.title = head ? `${head} ${name}` : name;
   },
   { immediate: true },
 );
