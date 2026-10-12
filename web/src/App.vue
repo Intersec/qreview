@@ -53,6 +53,8 @@ const {
   blockedChanges,
   blockedFiles,
   agent,
+  working,
+  draftsMoved,
   openHere,
   doneHere,
   waitingHere,
@@ -62,7 +64,7 @@ const {
 const fixing = ref(false);
 
 function openFix() {
-  if (agent.value && changeKey.value) {
+  if (agent.value && !working.value && changeKey.value) {
     fixing.value = true;
   }
 }
@@ -417,13 +419,18 @@ onBeforeUnmount(() => {
       <p v-if="series" class="repo">{{ series.repo.remote ?? series.repo.root }}</p>
 
       <span class="bar-actions">
+        <span v-if="working" class="agent-working" role="status">Agent working…</span>
         <button
           type="button"
           class="chip chip-fix"
           :title="
-            agent ? 'Ask the agent to fix this change (a)' : 'No agent listens: run qreview wait'
+            working
+              ? 'The agent is fixing. The page catches up when it is done'
+              : agent
+                ? 'Ask the agent to fix this change (a)'
+                : 'No agent listens: run qreview wait'
           "
-          :disabled="!agent || !changeKey"
+          :disabled="!agent || working || !changeKey"
           @click="openFix"
         >
           Fix<span v-if="openHere.length" class="count"> · {{ openHere.length }}</span>
@@ -550,6 +557,7 @@ onBeforeUnmount(() => {
             ref="diffView"
             class="grow"
             :change-key="changeKey ?? ''"
+            :drafts-moved="draftsMoved"
             :diff="diff"
             :split="split"
             :wrap="wrap"

@@ -153,7 +153,10 @@ The user asked for a fix of a change: deal with every open thread of it.
 3. Make all the fixes, amend once, and run one `qreview migrate` with
    `--done` for the threads you fixed and `--blocked` for your questions.
    Nothing else is Done.
-4. Wait again.
+4. Wait again, **only once the whole fix is over**: the code, the amend,
+   every migrate and every reply. Your next `qreview wait` tells the page
+   that the fix is done, and the page then shows it all at once. Do not
+   start the wait early, in the background, while you still work.
 
 ## Review on your own
 

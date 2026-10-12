@@ -12,7 +12,14 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ save: [body: string, ask: boolean]; cancel: [] }>();
 
-const body = ref(props.start ?? (props.draft ? read(props.draft) : ''));
+/// What the reader typed and did not save wins over the text the box starts
+/// from: an edit that a reload interrupted comes back as it was left.
+function initial(): string {
+  const kept = props.draft ? read(props.draft) : '';
+  return kept !== '' ? kept : (props.start ?? '');
+}
+
+const body = ref(initial());
 const area = ref<HTMLTextAreaElement | null>(null);
 
 // A box that opens is a box the reader asked for, so the keyboard goes into
@@ -24,11 +31,20 @@ onMounted(() => {
   }
 });
 
+// A new version of the change moved the draft under another place.
+watch(
+  () => props.draft,
+  () => {
+    body.value = initial();
+  },
+);
+
 // Every key stroke, so that opening another file costs nothing. The store
 // is the browser's own: an unfinished remark is not a comment.
 watch(body, (text) => {
+  // An edit brought back to the text it started from is not a draft.
   if (props.draft) {
-    write(props.draft, text);
+    write(props.draft, text === props.start ? '' : text);
   }
 });
 

@@ -1364,3 +1364,37 @@ kbd {
   font-size: 11px;
   text-align: center;
 }
+
+/* The agent works on a fix: the page holds its writes until it is done. */
+.agent-working {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--agent-edge);
+  border-radius: 999px;
+  background: var(--agent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.agent-working::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--agent-edge);
+  animation: agent-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes agent-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-working::before {
+    animation: none;
+  }
+}

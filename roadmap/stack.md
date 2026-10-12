@@ -694,3 +694,31 @@ stands, the way a reviewer replies in Gerrit. A request for the whole
 series would answer threads that were not finished.
 
 Issue #23.
+
+## 2026-10-12 — A page catches up once a fix is over
+
+During a fix, the page reloaded at every reply and every migrate of the
+agent, and read the whole series again for each commit a rebase rewrote.
+It flickered for minutes, and a reload could close a box the reader was
+typing in.
+
+**Decision.** The end of a fix is the next `qreview wait` of the agent: it
+goes back to waiting once its work is done, so that costs it no command.
+The server writes an `idle` event then, and says `working` on every answer
+of `/api/events` until it does. The page holds the writes of the agent
+while it works, says so, and reads once at the end, or once every ten
+minutes of a long fix. While a fix runs the agent counts as present, for 30
+minutes at most, where it was taken for gone two minutes after its last
+wait.
+
+The drafts follow the new version: the `migrated` event names both
+versions, and `POST /api/map` gives the page the new place of each draft by
+the line map of the threads. Replies and edits keep a draft too, under
+their thread.
+
+Rejected: a reload after some seconds of quiet. The agent goes quiet while
+it thinks, so a fix still reloaded several times. Rejected too: a command
+that says the fix is over. One more rule for the agent to forget, where
+the wait comes on its own.
+
+Issue #24.
