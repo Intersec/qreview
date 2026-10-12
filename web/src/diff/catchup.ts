@@ -22,6 +22,8 @@ export interface Actions {
   reload(): Promise<void>;
   /// Read the counts of the other changes again.
   readWritten(): Promise<void>;
+  /// The page shows what the agent did: a fix it ended, or an answer.
+  told(what: 'fix' | 'answer'): void;
 }
 
 export class Catchup {
@@ -31,8 +33,10 @@ export class Catchup {
   private elsewhere = false;
   private since: number;
 
+  /// `working`: a fix runs when the page starts listening.
   constructor(
     private readonly act: Actions,
+    private working = false,
     private readonly now: () => number = Date.now,
   ) {
     this.since = now();
@@ -40,9 +44,21 @@ export class Catchup {
 
   /// Take the events of one answer, and show them unless the agent works.
   async settle(events: StoreEvent[], working: boolean) {
+    const ended = this.working && !working;
+    this.working = working;
+    // An answer outside a fix: during one, the end of the fix tells it all.
+    const answered =
+      !working &&
+      events.some((e) => e.author === 'agent' && (e.kind === 'reply' || e.kind === 'comment'));
+
     this.note(events);
     if (!working || this.now() - this.since > CATCH_UP_EVERY) {
       await this.apply();
+    }
+    if (ended) {
+      this.act.told('fix');
+    } else if (answered) {
+      this.act.told('answer');
     }
   }
 

@@ -802,6 +802,13 @@ than ten minutes is shown once every ten minutes, and held again, so a long
 fix shows where it stands without a reload at each step. A page opened
 during a fix learns of it from the first answer of `/api/events`.
 
+**A reader who looks elsewhere is told.** When a fix ends, or the agent
+answers outside one, and the tab is hidden, the page shows a notification
+of the browser: the fix is done, or the agent answered, and how many
+questions wait. The browser asks for leave on the first Fix or Ask, the
+clicks that start work for the agent, and its answer is the only setting.
+Without leave, the tab title starts with ✓ until the reader comes back.
+
 **Clean** deletes for good every done thread of the change on the screen. A
 thread reopened since is not done, and stays. The browser waits three
 seconds with an Undo before it asks the server, because nothing brings a

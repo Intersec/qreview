@@ -6,6 +6,7 @@ import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
 import { Catchup } from '@/diff/catchup';
 import { moveDrafts } from '@/diff/drafts';
+import { askLeave, tell } from '@/notify';
 import { awaitsAgent, isBlocked, repliesBy } from '@/diff/threads';
 import { isCurrent, open, rounds } from '@/diff/versions';
 import type { Place } from '@/place';
@@ -544,6 +545,9 @@ export const useReview = defineStore('review', () => {
   }
 
   async function addComment(comment: NewComment) {
+    if (comment.ask) {
+      askLeave();
+    }
     const key = changeKey.value;
     if (!key) {
       return;
@@ -578,6 +582,7 @@ export const useReview = defineStore('review', () => {
   }
 
   async function askAgent(id: string) {
+    askLeave();
     const key = changeKey.value;
     const remark = review.value?.comments.find((c) => c.id === id);
     if (key && remark && awaitsAgent(remark, repliesOf(id))) {
@@ -634,6 +639,7 @@ export const useReview = defineStore('review', () => {
   );
 
   async function askFix() {
+    askLeave();
     const key = changeKey.value;
     if (key) {
       await guard(() => api.fix(key));
@@ -669,13 +675,17 @@ export const useReview = defineStore('review', () => {
         let after = start.next;
         agent.value = start.agent;
         working.value = start.working;
-        const held = new Catchup({
-          current: () => changeKey.value,
-          followDrafts,
-          refresh,
-          reload,
-          readWritten,
-        });
+        const held = new Catchup(
+          {
+            current: () => changeKey.value,
+            followDrafts,
+            refresh,
+            reload,
+            readWritten,
+            told,
+          },
+          start.working,
+        );
         for (;;) {
           const batch = await api.events(after);
           after = batch.next;
@@ -690,6 +700,19 @@ export const useReview = defineStore('review', () => {
       } catch {
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
+    }
+  }
+
+  /// Tell a reader who looks elsewhere what the agent did.
+  function told(what: 'fix' | 'answer') {
+    const waiting = blockedThreads.value.length;
+    const questions = waiting
+      ? `${waiting} ${waiting === 1 ? 'question waits' : 'questions wait'} for you.`
+      : '';
+    if (what === 'fix') {
+      tell('The fix is done', questions || 'Its work is on the page.');
+    } else {
+      tell('The agent answered', questions || 'Its reply is on the thread.');
     }
   }
 
