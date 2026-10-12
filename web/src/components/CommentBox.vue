@@ -23,11 +23,14 @@ const body = ref(initial());
 const area = ref<HTMLTextAreaElement | null>(null);
 
 // A box that opens is a box the reader asked for, so the keyboard goes into
-// it. A box that comes back with an unfinished remark does not take the
+// it, and the browser scrolls it into view. A box that comes back with an unfinished remark does not take the
 // keyboard: the reader opened a file, not that box.
 onMounted(() => {
-  if (body.value === '') {
+  // An edit is asked for too, and its box may open far from the click.
+  if (body.value === '' || body.value === props.start) {
     area.value?.focus();
+    const end = body.value.length;
+    area.value?.setSelectionRange(end, end);
   }
 });
 

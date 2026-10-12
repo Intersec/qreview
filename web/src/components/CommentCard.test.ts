@@ -28,7 +28,7 @@ function comment(id: string, extra: Partial<Comment> = {}): Comment {
   };
 }
 
-function card(remark: Comment, replies: Comment[] = []) {
+function card(remark: Comment, replies: Comment[] = [], attach = false) {
   const threads: Threads = {
     repliesOf: () => replies,
     reply: vi.fn(async () => {}),
@@ -40,6 +40,7 @@ function card(remark: Comment, replies: Comment[] = []) {
   const wrapper = mount(CommentCard, {
     props: { comment: remark, at: 'abc' },
     global: { provide: { [THREADS as symbol]: threads } },
+    ...(attach ? { attachTo: document.body } : {}),
   });
   return { wrapper, threads };
 }
@@ -181,6 +182,47 @@ describe('a thread', () => {
     again.unmount();
 
     expect(card(comment('a')).wrapper.find('textarea').exists()).toBe(false);
+  });
+
+  it('edits a reply of the reader in place, in a box that takes the keyboard', async () => {
+    localStorage.clear();
+    const { wrapper } = card(
+      comment('a'),
+      [
+        comment('b', { parent: 'a', author: 'agent', body: 'An answer.' }),
+        comment('c', { parent: 'a', body: 'My reply.' }),
+      ],
+      true,
+    );
+    const mine = wrapper.findAll('.talk-reply')[1]!;
+    expect(wrapper.findAll('.talk-reply')[0]!.find('button').exists()).toBe(false);
+
+    await mine
+      .findAll('button')
+      .find((b) => b.text() === 'Edit')
+      ?.trigger('click');
+    await nextTick();
+    const area = wrapper.get('textarea');
+    expect(area.element.value).toBe('My reply.');
+    expect(document.activeElement).toBe(area.element);
+    await area.setValue('My reply, better.');
+    await wrapper.get('form').trigger('submit');
+
+    expect(wrapper.emitted('edit')).toEqual([['c', 'My reply, better.']]);
+    expect(wrapper.find('textarea').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('deletes a reply of the reader alone', async () => {
+    const { wrapper } = card(comment('a'), [comment('c', { parent: 'a', body: 'My reply.' })]);
+
+    await wrapper
+      .get('.talk-reply')
+      .findAll('button')
+      .find((b) => b.text() === 'Delete')
+      ?.trigger('click');
+
+    expect(wrapper.emitted('remove')).toEqual([['c']]);
   });
 
   it('takes no reply and no Done on a previous remark', () => {

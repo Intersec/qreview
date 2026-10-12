@@ -24,7 +24,9 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ edit: [id: string, body: string]; remove: [id: string] }>();
 
-const editing = ref(false);
+/// The comment of the thread being edited: the remark or one reply.
+const editingId = ref<string | null>(null);
+const editing = computed(() => editingId.value !== null);
 const replying = ref(false);
 
 /// Absent where no review provides it, as in a test of this card alone.
@@ -115,8 +117,21 @@ const frozen = computed(() => props.readOnly || version.value !== '');
 // A box left with unsaved text opens again when the card comes back, so a
 // reload under the reader's hands costs nothing.
 if (!frozen.value) {
-  editing.value = read(threadSlot(props.comment.id, 'edit')) !== '';
+  editingId.value =
+    [props.comment, ...replies.value].find((c) => read(threadSlot(c.id, 'edit')) !== '')?.id ??
+    null;
   replying.value = read(threadSlot(props.comment.id, 'reply')) !== '';
+}
+
+/// A reply the reader wrote, on a thread still open to writing. The agent's
+/// words are its own.
+function mine(answer: Comment): boolean {
+  return !frozen.value && answer.author === 'reader';
+}
+
+function saveEdit(id: string, body: string) {
+  emit('edit', id, body);
+  editingId.value = null;
 }
 </script>
 
@@ -166,17 +181,12 @@ if (!frozen.value) {
     <template v-if="!shut">
       <div class="talk-body">
         <CommentBox
-          v-if="editing"
+          v-if="editingId === comment.id"
           :start="comment.body"
           :draft="threadSlot(comment.id, 'edit')"
           label="Edit the comment"
-          @save="
-            (body) => {
-              emit('edit', comment.id, body);
-              editing = false;
-            }
-          "
-          @cancel="editing = false"
+          @save="(body) => saveEdit(comment.id, body)"
+          @cancel="editingId = null"
         />
         <!-- eslint-disable-next-line vue/no-v-html -- sanitized in diff/markdown.ts -->
         <div v-else class="prose-comment" v-html="render(comment.body)"></div>
@@ -197,9 +207,22 @@ if (!frozen.value) {
           <span v-if="answer.blocked && answer.author === 'agent'" class="talk-tag talk-tag-waiting"
             >question</span
           >
+          <template v-if="mine(answer) && !editing && !replying">
+            <span class="spacer"></span>
+            <button type="button" class="action" @click="editingId = answer.id">Edit</button>
+            <button type="button" class="action" @click="emit('remove', answer.id)">Delete</button>
+          </template>
         </p>
+        <CommentBox
+          v-if="editingId === answer.id"
+          :start="answer.body"
+          :draft="threadSlot(answer.id, 'edit')"
+          label="Edit the reply"
+          @save="(body) => saveEdit(answer.id, body)"
+          @cancel="editingId = null"
+        />
         <!-- eslint-disable-next-line vue/no-v-html -- sanitized in diff/markdown.ts -->
-        <div class="prose-comment" v-html="render(answer.body)"></div>
+        <div v-else class="prose-comment" v-html="render(answer.body)"></div>
       </div>
 
       <div v-if="replying" class="talk-body">
@@ -229,7 +252,7 @@ if (!frozen.value) {
           Ask agent
         </button>
         <button v-if="threads" type="button" class="action" @click="replying = true">Reply</button>
-        <button type="button" class="action" @click="editing = true">Edit</button>
+        <button type="button" class="action" @click="editingId = comment.id">Edit</button>
         <button type="button" class="action" @click="emit('remove', comment.id)">Delete</button>
       </div>
     </template>
