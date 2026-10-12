@@ -114,6 +114,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/comments", get(all_comments))
         .route("/api/events", get(events))
         .route("/api/migrate", post(migrate))
+        .route("/api/map", post(map_places))
         .route("/api/changes/{key}/fix", post(fix))
         .route("/api/changes/{key}/clean", post(clean))
         .route("/api/update", get(update))
@@ -940,9 +941,14 @@ async fn migrate(
     let outcome = crate::migrate::run(&mut session, request).await?;
     drop(session);
 
-    state
-        .events
-        .push(Kind::Migrated, Author::Agent, &outcome.key, None);
+    state.events.push_migrated(
+        &outcome.key,
+        crate::events::Versions {
+            from: &outcome.from,
+            to: &outcome.to,
+            from_key: &outcome.from_key,
+        },
+    );
     for id in &outcome.replies {
         state
             .events
@@ -951,6 +957,30 @@ async fn migrate(
     read_ahead(state.clone());
 
     Ok(Json(outcome))
+}
+
+#[derive(Deserialize)]
+struct MapRequest {
+    from: String,
+    to: String,
+    places: Vec<crate::migrate::Place>,
+}
+
+#[derive(Serialize)]
+struct Mapped {
+    places: Vec<Option<crate::migrate::Place>>,
+}
+
+/// Where places of one version stand in the next. See section 5.6.
+async fn map_places(
+    State(state): State<AppState>,
+    Json(request): Json<MapRequest>,
+) -> Result<Json<Mapped>, ApiError> {
+    let session = state.session.read().await;
+    let places =
+        crate::migrate::map_places(&session, &request.from, &request.to, &request.places).await?;
+
+    Ok(Json(Mapped { places }))
 }
 
 /// Who asks, on a route with no body to say it in.
@@ -3123,5 +3153,9 @@ mod tests {
         let batch: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(batch["events"][0]["kind"], "fix");
         assert_eq!(batch["agent"], true);
+        assert_eq!(
+            batch["working"], true,
+            "the agent works until it waits again"
+        );
     }
 }

@@ -4,6 +4,8 @@
 import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 import { api } from '@/api/client';
+import { Catchup } from '@/diff/catchup';
+import { moveDrafts } from '@/diff/drafts';
 import { awaitsAgent, isBlocked, repliesBy } from '@/diff/threads';
 import { isCurrent, open, rounds } from '@/diff/versions';
 import type { Place } from '@/place';
@@ -24,6 +26,7 @@ import type {
   Release,
   Review,
   Series,
+  StoreEvent,
 } from '@/api/types';
 
 /// The settings the server reads when it builds a diff. A change to one of
@@ -648,6 +651,13 @@ export const useReview = defineStore('review', () => {
   }
 
   let listening = false;
+  /// The agent works on a fix. The page holds what the agent writes until
+  /// it is done, then catches up once, rather than reloading at every step.
+  const working = ref(false);
+  /// Goes up each time a new version moved the unsaved remarks, so the diff
+  /// opens their boxes on their new lines.
+  const draftsMoved = ref(0);
+
   async function listen() {
     if (listening) {
       return;
@@ -658,28 +668,44 @@ export const useReview = defineStore('review', () => {
         const start = await api.events();
         let after = start.next;
         agent.value = start.agent;
+        working.value = start.working;
+        const held = new Catchup({
+          current: () => changeKey.value,
+          followDrafts,
+          refresh,
+          reload,
+          readWritten,
+        });
         for (;;) {
           const batch = await api.events(after);
           after = batch.next;
           agent.value = batch.agent;
-          const theirs = batch.events.filter((event) => event.author === 'agent');
+          working.value = batch.working;
           if (batch.reset) {
             await reload();
             break;
           }
-          // A migrate moves threads to a new commit, and a change without a
-          // Change-Id to a new key: the whole series is read again.
-          if (theirs.some((event) => event.kind === 'refresh' || event.kind === 'migrated')) {
-            await refresh();
-          } else if (theirs.some((event) => event.key === changeKey.value)) {
-            await reload();
-          } else if (theirs.length > 0) {
-            await readWritten();
-          }
+          await held.settle(batch.events, batch.working);
         }
       } catch {
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
+    }
+  }
+
+  /// Move the unsaved remarks of a version a migrate replaced.
+  async function followDrafts(event: StoreEvent) {
+    const { from, to, fromKey } = event;
+    if (!from || !to || !fromKey) {
+      return;
+    }
+    const moved = await moveDrafts(
+      fromKey,
+      event.key,
+      async (places) => (await api.map(from, to, places)).places,
+    ).catch(() => 0);
+    if (moved > 0) {
+      draftsMoved.value += 1;
     }
   }
 
@@ -762,6 +788,8 @@ export const useReview = defineStore('review', () => {
     blockedFiles,
     listen,
     agent,
+    working,
+    draftsMoved,
     openHere,
     doneHere,
     waitingHere,

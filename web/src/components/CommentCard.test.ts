@@ -121,9 +121,9 @@ describe('a thread', () => {
       wrapper.findAll('button').some((b) => b.text() === 'Ask agent');
 
     expect(asks(card(comment('a', { author: 'agent' })).wrapper)).toBe(false);
-    expect(
-      asks(card(comment('a'), [comment('b', { parent: 'a', author: 'agent' })]).wrapper),
-    ).toBe(false);
+    expect(asks(card(comment('a'), [comment('b', { parent: 'a', author: 'agent' })]).wrapper)).toBe(
+      false,
+    );
     expect(
       asks(
         card(comment('a'), [
@@ -145,6 +145,42 @@ describe('a thread', () => {
     await area.trigger('keydown', { key: 'Enter', ctrlKey: true, shiftKey: true });
 
     expect(threads.reply).toHaveBeenCalledWith('a', 'And this one?', true);
+  });
+
+  it('keeps a reply typed and not saved when the card comes back', async () => {
+    localStorage.clear();
+    const first = card(comment('a')).wrapper;
+    await first
+      .findAll('button')
+      .find((b) => b.text() === 'Reply')
+      ?.trigger('click');
+    await nextTick();
+    await first.get('textarea').setValue('Half an answer');
+    first.unmount();
+
+    const again = card(comment('a')).wrapper;
+
+    expect(again.get('textarea').element.value).toBe('Half an answer');
+    localStorage.clear();
+  });
+
+  it('keeps an edit typed and not saved, and drops one brought back', async () => {
+    localStorage.clear();
+    const first = card(comment('a')).wrapper;
+    await first
+      .findAll('button')
+      .find((b) => b.text() === 'Edit')
+      ?.trigger('click');
+    await nextTick();
+    await first.get('textarea').setValue('Body of a, better');
+    first.unmount();
+
+    const again = card(comment('a')).wrapper;
+    expect(again.get('textarea').element.value).toBe('Body of a, better');
+    await again.get('textarea').setValue('Body of a');
+    again.unmount();
+
+    expect(card(comment('a')).wrapper.find('textarea').exists()).toBe(false);
   });
 
   it('takes no reply and no Done on a previous remark', () => {

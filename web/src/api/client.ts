@@ -5,6 +5,7 @@ import type {
   ChangeComments,
   ChangeSummary,
   Config,
+  DraftPlace,
   Comment,
   EditComment,
   EventBatch,
@@ -138,6 +139,15 @@ export const api = {
 
   /// The writes to the store after a number, held until one comes.
   events: (after?: number) => call<EventBatch>(`/api/events${query({ after: num(after) })}`),
+
+  /// Where places of one version stand in the next one. Null for a file the
+  /// next one deleted.
+  map: (from: string, to: string, places: DraftPlace[]) =>
+    call<{ places: (DraftPlace | null)[] }>('/api/map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to, places }),
+    }),
 
   posted: (key: string, ps?: number, base?: string) =>
     call<Posted>(`/api/changes/${encodeURIComponent(key)}/posted${query({ ps: num(ps), base })}`),

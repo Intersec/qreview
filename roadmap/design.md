@@ -760,6 +760,15 @@ range keeps its length, as in section 5.3.
 `--done` and `--blocked` reply as the agent, on the new version, after the
 move. One command, so the reader never sees the threads half moved.
 
+**The unsaved remarks move too.** The browser keeps what the reader typed
+and did not save (section 10.1), and the server never sees it, so a migrate
+cannot move it. The `migrated` event names both versions and the key the old
+one was kept under; the page asks `POST /api/map` where each of its places
+landed, by the same line map, and moves each draft there. A draft whose file
+the new version deleted goes to the commit message, with a first line that
+says where it was typed. The drafts of a reply or an edit are kept under the
+id of their thread, which a move does not change, so they need nothing.
+
 ### 5.7 Fix and Clean
 
 **Fix** asks the agent to correct the change on the screen. A button, and
@@ -773,9 +782,25 @@ move. One command, so the reader never sees the threads half moved.
   threads instead and sends nothing. `Enter` jumps to the first one.
 - Without an agent, the button is disabled and `a` opens nothing. The server
   knows an agent listens while a `qreview wait` is open, or ended less than
-  two minutes ago, and says so on every answer of `/api/events`.
+  two minutes ago, or while a fix runs, and says so on every answer of
+  `/api/events`.
 - Sending writes a `fix` event, author the reader, naming the change.
   `qreview wait` returns it like any other.
+
+**A fix runs until the agent waits again.** The agent works with no wait
+open, for minutes, so the end of its work is the next wait it opens. The
+server then writes an `idle` event, once, when the agent wrote since its
+last wait. Until then every answer of `/api/events` carries `"working":
+true`, and the agent counts as listening, for 30 minutes at most: past
+that, it is taken for gone.
+
+While the agent works, the page holds what the agent writes: it notes which
+change to read again, and whether a migrate asks for the whole series, and
+reads nothing. It says **Agent working…** beside a disabled Fix. When the
+work ends, it moves the drafts (section 5.6) and reads once. A fix longer
+than ten minutes is shown once every ten minutes, and held again, so a long
+fix shows where it stands without a reload at each step. A page opened
+during a fix learns of it from the first answer of `/api/events`.
 
 **Clean** deletes for good every done thread of the change on the screen. A
 thread reopened since is not done, and stays. The browser waits three
@@ -951,6 +976,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |
 | `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. See section 8.3 |
 | `POST /api/migrate` | Link a new version to its previous one and move its threads. Body: `{ "from", "to", "done": [ids], "blocked": [{ "id", "body" }] }`. See section 5.6 |
+| `POST /api/map` | Where places of one version stand in the next. Body: `{ "from", "to", "places": [{ "file", "side", "line" }] }`. Answers `{ "places": [...] }`, `null` for a file the new version deleted. See section 5.6 |
 | `POST /api/changes/:key/fix` | Ask the agent to fix the change. See section 5.7 |
 | `POST /api/changes/:key/clean` | Delete the done threads of the change |
 | `POST /api/changes/:key/patchsets/fetch` | Fetch one Gerrit patch set |
@@ -1028,7 +1054,8 @@ hundred in memory.
 number to start from. `GET /api/events?after=<n>` answers at once with every
 event numbered above `n`, or holds the request until one comes, for at most 30 seconds, and then
 answers with an empty list. Each answer carries the number to ask after
-next, and `agent`, true while an agent listens (section 5.7). An `after`
+next, `agent`, true while an agent listens, and `working`, true while it
+works on a fix (section 5.7). An `after`
 the server no longer holds, because it restarted or the
 event fell out of memory, answers with `"reset": true`, and the reader reads
 everything again.
@@ -1037,10 +1064,13 @@ everything again.
 type Event = {
   seq: number;
   kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh' | 'ask'
-      | 'migrated' | 'fix' | 'clean';
+      | 'migrated' | 'fix' | 'clean' | 'idle';
   author: 'reader' | 'agent';
-  key: string;             // the change
+  key: string;             // the change, empty on a refresh and an idle
   id: string | null;       // the comment, absent on a refresh
+  from?: string;           // on a migrated: the old version,
+  to?: string;             //   the new one,
+  fromKey?: string;        //   and the key the old one was kept under
 };
 ```
 
@@ -1048,7 +1078,8 @@ A write names its author: in the body of a comment or of an edit, and as
 `?author=agent` on a delete and on a refresh, which carry no body.
 
 The interface holds one such request open, and reloads the comments of a
-change when an event of the agent names it. `qreview wait` holds one too and
+change when an event of the agent names it, or once at the end of a fix
+(section 5.7). `qreview wait` holds one too and
 returns on the first request of the reader: an `ask`, never a mere write. One route serves both, so there is
 one way to learn of a write.
 
@@ -1237,7 +1268,7 @@ configuration file never sees it:
 | `qreview.side` | The series pane is shown or hidden |
 | `qreview.side.width` | How wide the series pane is |
 | `qreview.comments.height` | How tall the list of comments is |
-| `qreview.drafts` | Remarks typed and not saved, by change, file and line |
+| `qreview.drafts` | Remarks typed and not saved, by change, file and line, and replies and edits by thread |
 
 A size dragged with the mouse would be a poor thing to write to a file that
 the command line reads, and the same file on two screens would be wrong on

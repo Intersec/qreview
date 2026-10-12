@@ -41,6 +41,8 @@ pub struct Blocked {
 pub struct Outcome {
     pub from: String,
     pub to: String,
+    /// The change the threads were kept under before the move.
+    pub from_key: String,
     /// The change the threads now belong to.
     pub key: String,
     pub moved: Vec<Moved>,
@@ -137,6 +139,7 @@ pub async fn run(session: &mut Session, request: Request) -> Result<Outcome> {
     }
 
     Ok(Outcome {
+        from_key: old_info.key(),
         from,
         to,
         key,
@@ -319,6 +322,57 @@ impl Pair<'_> {
             .await
             .ok()
     }
+}
+
+/// A place in a file, as the page keeps an unfinished remark.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Place {
+    pub file: String,
+    pub side: Side,
+    pub line: Option<usize>,
+}
+
+/// Where places of `from` stand in `to`, by the line map that moves the
+/// threads. `None` for a place whose file the new version deleted.
+///
+/// The page asks this for the remarks it holds unsaved, which the server
+/// never sees: a migrate cannot move them itself.
+pub async fn map_places(
+    session: &Session,
+    from: &str,
+    to: &str,
+    places: &[Place],
+) -> Result<Vec<Option<Place>>> {
+    let from = resolve(session, from).await?;
+    let to = resolve(session, to).await?;
+    let old_base = session.base_of(&from, &Against::Parent).await?;
+    let new_base = session.base_of(&to, &Against::Parent).await?;
+    let pair = Pair {
+        session,
+        from: &from,
+        to: &to,
+        old_base: &old_base,
+        new_base: &new_base,
+    };
+
+    let mut out = Vec::with_capacity(places.len());
+    for place in places {
+        let (old_rev, new_rev) = match place.side {
+            Side::New => (pair.from, pair.to),
+            Side::Old => (pair.old_base, pair.new_base),
+        };
+        let mapped = pair
+            .map_of(old_rev, new_rev, &place.file)
+            .await
+            .map(|map| Place {
+                line: place.line.map(|line| map.map(line).line),
+                file: map.path,
+                side: place.side,
+            });
+        out.push(mapped);
+    }
+    Ok(out)
 }
 
 fn agent_reply(parent: &str, body: &str, done: Option<bool>, blocked: bool) -> NewComment {
@@ -542,6 +596,48 @@ mod tests {
         let moved = &session.store.load(&outcome.key, "").unwrap().comments[0];
         assert_eq!(moved.scope, Scope::File);
         assert_eq!(moved.body, "three is wrong", "never dropped");
+    }
+
+    #[tokio::test]
+    async fn an_unsaved_place_follows_its_line_and_knows_its_old_key() {
+        let repo = build_repo(&[
+            commit("first").file("a.c", "one\n"),
+            commit("work: a change")
+                .file("a.c", "one\ntwo\nthree\n")
+                .file("b.c", "gone\n"),
+        ])
+        .await;
+        let mut session = session_of(&repo).await;
+        let old = repo.sha("HEAD").await;
+        std::fs::remove_file(repo.path().join("b.c")).unwrap();
+        let new = amend(&repo, "a.c", "one\nzero\ntwo\nthree\n", "work: a change").await;
+
+        let outcome = run(&mut session, request(&old)).await.unwrap();
+        assert_eq!(outcome.from_key, format!("sha-{old}"));
+
+        let at = |file: &str, side, line| Place {
+            file: file.to_owned(),
+            side,
+            line,
+        };
+        let mapped = map_places(
+            &session,
+            &old,
+            &new,
+            &[
+                at("a.c", Side::New, Some(2)),
+                at("a.c", Side::Old, Some(1)),
+                at("a.c", Side::New, None),
+                at("b.c", Side::New, Some(1)),
+            ],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(mapped[0], Some(at("a.c", Side::New, Some(3))));
+        assert_eq!(mapped[1], Some(at("a.c", Side::Old, Some(1))));
+        assert_eq!(mapped[2], Some(at("a.c", Side::New, None)));
+        assert_eq!(mapped[3], None, "a deleted file has no place left");
     }
 
     #[tokio::test]

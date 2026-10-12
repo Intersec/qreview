@@ -34,6 +34,9 @@ pub enum Kind {
     Fix,
     /// The reader deleted the done threads of the change.
     Clean,
+    /// The agent waits again after it wrote: its work is over, and a page
+    /// that held its reloads catches up once.
+    Idle,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -45,6 +48,21 @@ pub struct Event {
     /// The change. Empty on a refresh, which is about the whole series.
     pub key: String,
     pub id: Option<String>,
+    /// On a `migrated` event: the old version, the new one, and the change
+    /// the old one was kept under, so a page can move what it holds of it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_key: Option<String>,
+}
+
+/// The versions a `migrated` event names.
+pub struct Versions<'a> {
+    pub from: &'a str,
+    pub to: &'a str,
+    pub from_key: &'a str,
 }
 
 /// What one wait answers.
@@ -59,11 +77,18 @@ pub struct Batch {
     pub reset: bool,
     /// An agent listens: a `qreview wait` is open, or ended a moment ago.
     pub agent: bool,
+    /// The agent works on a fix: the reader asked for one, and the agent has
+    /// not waited again since.
+    pub working: bool,
 }
 
 /// How long after its last wait an agent still counts as listening. It
 /// reads and answers between two waits, and that is not leaving.
 const LISTENS_FOR: Duration = Duration::from_secs(120);
+
+/// How long a fix counts as under way with no word of the agent. A fix
+/// takes minutes with no wait open; past this, the agent is taken for gone.
+const WORKS_FOR: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Default)]
 pub struct Events {
@@ -79,6 +104,10 @@ pub struct Events {
 struct Listening {
     open: usize,
     ended: Option<std::time::Instant>,
+    /// The agent wrote since its last wait opened.
+    wrote: bool,
+    /// When the reader asked for a fix that the agent has not finished.
+    fixing: Option<std::time::Instant>,
 }
 
 /// Held while an agent waits. A guard, because the agent can hang up.
@@ -101,17 +130,58 @@ struct Log {
 
 impl Events {
     /// Mark an agent as waiting until the guard is dropped.
+    ///
+    /// A wait that opens after the agent wrote ends its work: the agent goes
+    /// back to waiting once it is done, so this says so with no command.
     pub fn agent_waits(&self) -> AgentWaits<'_> {
-        self.agent.lock().expect("the agent state is poisoned").open += 1;
+        let ended = {
+            let mut agent = self.agent.lock().expect("the agent state is poisoned");
+            agent.open += 1;
+            agent.fixing = None;
+            std::mem::take(&mut agent.wrote)
+        };
+        if ended {
+            self.push(Kind::Idle, Author::Agent, "", None);
+        }
         AgentWaits(self)
     }
 
     pub fn agent_listens(&self) -> bool {
         let agent = self.agent.lock().expect("the agent state is poisoned");
-        agent.open > 0 || agent.ended.is_some_and(|at| at.elapsed() < LISTENS_FOR)
+        agent.open > 0
+            || agent.ended.is_some_and(|at| at.elapsed() < LISTENS_FOR)
+            || working(&agent)
+    }
+
+    pub fn agent_works(&self) -> bool {
+        working(&self.agent.lock().expect("the agent state is poisoned"))
     }
 
     pub fn push(&self, kind: Kind, author: Author, key: &str, id: Option<&str>) {
+        self.push_with(kind, author, key, id, None);
+    }
+
+    pub fn push_migrated(&self, key: &str, versions: Versions<'_>) {
+        self.push_with(Kind::Migrated, Author::Agent, key, None, Some(versions));
+    }
+
+    fn push_with(
+        &self,
+        kind: Kind,
+        author: Author,
+        key: &str,
+        id: Option<&str>,
+        versions: Option<Versions<'_>>,
+    ) {
+        {
+            let mut agent = self.agent.lock().expect("the agent state is poisoned");
+            if kind == Kind::Fix {
+                agent.fixing = Some(std::time::Instant::now());
+            }
+            if author == Author::Agent && kind != Kind::Idle {
+                agent.wrote = true;
+            }
+        }
         {
             let mut log = self.log.lock().expect("the event log is poisoned");
             log.last += 1;
@@ -121,6 +191,9 @@ impl Events {
                 author,
                 key: key.to_owned(),
                 id: id.map(str::to_owned),
+                from: versions.as_ref().map(|v| v.from.to_owned()),
+                to: versions.as_ref().map(|v| v.to.to_owned()),
+                from_key: versions.as_ref().map(|v| v.from_key.to_owned()),
             };
             log.kept.push_back(event);
             if log.kept.len() > KEPT {
@@ -160,6 +233,8 @@ impl Events {
     }
 
     fn since(&self, after: u64) -> Batch {
+        let working = self.agent_works();
+        let agent = self.agent_listens();
         let log = self.log.lock().expect("the event log is poisoned");
         let next = log.last;
 
@@ -168,7 +243,8 @@ impl Events {
                 events: Vec::new(),
                 next,
                 reset: false,
-                agent: self.agent_listens(),
+                agent,
+                working,
             };
         }
         let first = log.kept.front().map_or(log.last + 1, |e| e.seq);
@@ -179,16 +255,22 @@ impl Events {
                 events: Vec::new(),
                 next,
                 reset: true,
-                agent: self.agent_listens(),
+                agent,
+                working,
             };
         }
         Batch {
             events: log.kept.iter().filter(|e| e.seq > after).cloned().collect(),
             next,
             reset: false,
-            agent: self.agent_listens(),
+            agent,
+            working,
         }
     }
+}
+
+fn working(agent: &Listening) -> bool {
+    agent.fixing.is_some_and(|at| at.elapsed() < WORKS_FOR)
 }
 
 #[cfg(test)]
@@ -293,6 +375,69 @@ mod tests {
         events.agent.lock().unwrap().ended =
             Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
         assert!(!events.agent_listens());
+    }
+
+    #[tokio::test]
+    async fn a_wait_after_the_agent_wrote_says_it_is_idle() {
+        let events = Events::default();
+        drop(events.agent_waits());
+        assert_eq!(
+            events.after(None, SHORT).await.next,
+            0,
+            "nothing written yet"
+        );
+
+        events.push(Kind::Reply, Author::Agent, "I1", Some("c-1"));
+        events.push(Kind::Comment, Author::Reader, "I1", Some("c-2"));
+        drop(events.agent_waits());
+        drop(events.agent_waits());
+
+        let batch = events.after(Some(2), SHORT).await;
+        assert_eq!(batch.events.len(), 1, "one idle, not one per wait");
+        assert_eq!(batch.events[0].kind, Kind::Idle);
+    }
+
+    #[tokio::test]
+    async fn a_fix_keeps_the_agent_present_until_it_waits_again() {
+        let events = Events::default();
+        drop(events.agent_waits());
+        events.push(Kind::Fix, Author::Reader, "I1", None);
+        events.agent.lock().unwrap().ended =
+            Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
+
+        assert!(events.agent_works());
+        assert!(events.agent_listens(), "a long fix is not leaving");
+
+        let waits = events.agent_waits();
+        assert!(!events.agent_works());
+        drop(waits);
+
+        events.push(Kind::Fix, Author::Reader, "I1", None);
+        events.agent.lock().unwrap().fixing =
+            Some(std::time::Instant::now() - WORKS_FOR - Duration::from_secs(1));
+        assert!(!events.agent_works(), "an agent that died is gone at last");
+    }
+
+    #[tokio::test]
+    async fn a_migrated_event_names_both_versions() {
+        let events = Events::default();
+        events.push_migrated(
+            "sha-b",
+            Versions {
+                from: "a",
+                to: "b",
+                from_key: "sha-a",
+            },
+        );
+
+        let json = serde_json::to_value(&events.after(Some(0), SHORT).await.events[0]).unwrap();
+        assert_eq!(json["from"], "a");
+        assert_eq!(json["to"], "b");
+        assert_eq!(json["fromKey"], "sha-a");
+        let other = Events::default();
+        other.push(Kind::Reply, Author::Agent, "I1", None);
+        let json = serde_json::to_value(&other.after(Some(0), SHORT).await.events[0]).unwrap();
+        assert!(json.get("from").is_none());
     }
 
     #[tokio::test]

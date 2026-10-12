@@ -205,10 +205,23 @@ export interface StoreEvent {
     | 'ask'
     | 'migrated'
     | 'fix'
-    | 'clean';
+    | 'clean'
+    | 'idle';
   author: Author;
   key: string;
   id: string | null;
+  /// On a `migrated` event: the old version, the new one, and the change the
+  /// old one was kept under.
+  from?: string;
+  to?: string;
+  fromKey?: string;
+}
+
+/// A place in a file, as an unfinished remark is kept.
+export interface DraftPlace {
+  file: string;
+  side: Side;
+  line: number | null;
 }
 
 export interface EventBatch {
@@ -218,6 +231,8 @@ export interface EventBatch {
   reset: boolean;
   /// An agent listens, so Fix has someone to ask.
   agent: boolean;
+  /// The agent works on a fix, and has not waited again since.
+  working: boolean;
 }
 
 export interface ChangeFile {

@@ -152,6 +152,11 @@ on the screen. A dialog lists them, and `Enter` sends. If the agent waits
 for an answer, the dialog lists those questions instead and sends nothing.
 The button is greyed out while no agent runs `qreview wait`.
 
+While the agent works on a fix, the page says **Agent working…** and holds
+its writes, then shows the whole fix at once when the agent waits again. A
+remark you are typing meanwhile stays in its box, and follows its line to
+the new version.
+
 **Clean** deletes the done threads of the change, once you agree with the
 work. It lists them and asks first, then waits three seconds with an
 **Undo**.

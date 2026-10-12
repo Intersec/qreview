@@ -27,6 +27,8 @@ import type {
 const props = defineProps<{
   /// The change being read. An unfinished remark is kept under it.
   changeKey: string;
+  /// Goes up when a new version moved the unfinished remarks.
+  draftsMoved?: number;
   diff: FileDiff;
   split: boolean;
   comments: Comment[];
@@ -191,6 +193,11 @@ const opened = reactive(new Map<string, Row[]>());
 const left = reactive(new Map<string, { from: number; to: number }>());
 const loading = ref(false);
 
+/// The moves of the drafts this file has followed. A new version that moved
+/// them reopens their boxes where they landed, not where they were.
+let seenMoves = props.draftsMoved;
+let seenKey = props.changeKey;
+
 /// A new file starts with nothing opened.
 watch(
   () => props.diff,
@@ -201,7 +208,10 @@ watch(
     // The rows under the pointer are not the ones it was read from.
     hovered.value = null;
 
-    if (fresh.path !== before?.path) {
+    const moved = props.draftsMoved !== seenMoves || props.changeKey !== seenKey;
+    seenMoves = props.draftsMoved;
+    seenKey = props.changeKey;
+    if (fresh.path !== before?.path || moved) {
       // A box left open would come back on whatever line of the new file
       // happens to carry the same number. What the reader typed and did not
       // save comes back instead, on the lines it was typed on.

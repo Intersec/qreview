@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue';
 import CommentBox from './CommentBox.vue';
+import { read, threadSlot } from '@/diff/drafts';
 import { render } from '@/diff/markdown';
 import { THREADS, awaitsAgent, isBlocked } from '@/diff/threads';
 import { isCurrent } from '@/diff/versions';
@@ -110,6 +111,13 @@ const patchSet = computed(
 /// freezes the current remarks too: the newest version is where a review is
 /// written.
 const frozen = computed(() => props.readOnly || version.value !== '');
+
+// A box left with unsaved text opens again when the card comes back, so a
+// reload under the reader's hands costs nothing.
+if (!frozen.value) {
+  editing.value = read(threadSlot(props.comment.id, 'edit')) !== '';
+  replying.value = read(threadSlot(props.comment.id, 'reply')) !== '';
+}
 </script>
 
 <template>
@@ -160,6 +168,7 @@ const frozen = computed(() => props.readOnly || version.value !== '');
         <CommentBox
           v-if="editing"
           :start="comment.body"
+          :draft="threadSlot(comment.id, 'edit')"
           label="Edit the comment"
           @save="
             (body) => {
@@ -194,7 +203,13 @@ const frozen = computed(() => props.readOnly || version.value !== '');
       </div>
 
       <div v-if="replying" class="talk-body">
-        <CommentBox label="Reply" askable @save="sendReply" @cancel="replying = false" />
+        <CommentBox
+          label="Reply"
+          :draft="threadSlot(comment.id, 'reply')"
+          askable
+          @save="sendReply"
+          @cancel="replying = false"
+        />
       </div>
 
       <div v-if="!editing && !replying && !frozen" class="talk-foot">
