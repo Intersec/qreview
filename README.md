@@ -145,7 +145,8 @@ the same work twice.
 **After an amend**, the agent runs `qreview migrate --from <old sha>`. It
 tells qreview that the new commit replaces the old one, and every thread
 moves to its line in the new version, open or done. The old commit stays
-readable as an earlier patch set. This needs no `Change-Id`.
+readable as an earlier patch set, with each thread where it stood, as it
+stood, and a link to where it went. This needs no `Change-Id`.
 
 **Fix** (or `a`) asks the agent to deal with the open threads of the change
 on the screen. A dialog lists them, and `Enter` sends. If the agent waits

@@ -100,6 +100,12 @@ const version = computed(() =>
   isCurrent(props.comment, props.at) ? '' : props.comment.commit.slice(0, 8),
 );
 
+/// The thread this copy became, when it left this version by a migrate.
+const moved = computed(() => threads?.movedTo?.(props.comment.id));
+const movedSet = computed(
+  () => props.sets?.find((set) => set.commit === moved.value?.commit)?.number,
+);
+
 /// The patch set that version was, when the change still has it in its list.
 const patchSet = computed(
   () => props.sets?.find((set) => set.commit === props.comment.commit)?.number,
@@ -170,7 +176,16 @@ function saveEdit(id: string, body: string) {
         <span v-if="agent" class="talk-tag">agent</span>
         <span v-if="blocked" class="talk-tag talk-tag-waiting">waits for you</span>
       </template>
-      <span v-if="version" class="talk-tag">previous</span>
+      <button
+        v-if="moved"
+        type="button"
+        class="talk-tag talk-moved"
+        title="This thread moved on with the code. Open it on the newest version"
+        @click="threads?.follow?.(moved.id)"
+      >
+        moved to {{ movedSet ? `patch set ${movedSet}` : moved.commit.slice(0, 8) }} →
+      </button>
+      <span v-else-if="version" class="talk-tag">previous</span>
       <span v-if="stranded" class="talk-tag">no line here</span>
       <code v-if="stranded" class="was-on">{{ place }}</code>
       <span class="spacer"></span>

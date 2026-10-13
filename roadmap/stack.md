@@ -722,3 +722,21 @@ that says the fix is over. One more rule for the agent to forget, where
 the wait comes on its own.
 
 Issue #24.
+
+## 2026-10-13 — A moved thread stays readable on its old version
+
+A migrate moved a thread to the new version and kept its old place in
+`moves`, but nothing read `moves`: on the old patch set, the thread was
+gone. The record of a round must stay readable where it was written.
+
+**Decision.** The comments route rebuilds, for the versions on the screen,
+a read-only copy of each thread that left them: at its old place, with the
+replies written on that version, tagged with where it went. The copies are
+built on each read and never stored, so the format does not change, and
+the thread stays one thread for the counts and the export.
+
+Rejected: copying the thread at the migrate, one copy per version. Two
+stored threads would drift apart, and the counts would need to tell them
+apart.
+
+Issue #24.

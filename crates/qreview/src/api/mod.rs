@@ -671,6 +671,9 @@ struct Review {
     /// One entry per comment. A comment whose place is gone is marked lost
     /// and is never dropped.
     placed: Vec<Placed>,
+    /// The copies of the threads that left a version on the screen, by the
+    /// id of the copy: where each one went. See section 5.6.
+    moved: std::collections::HashMap<String, crate::comments::MovedTo>,
 }
 
 async fn fetch_patch_set(
@@ -742,8 +745,22 @@ async fn comments(
         .map(|c| c.subject.clone())
         .unwrap_or_default();
 
-    let file = session.comments(&key, &subject)?;
+    let mut file = session.comments(&key, &subject)?;
     let rev = target(&session, &key, view.ps).await?;
+    let against = resolve_base(&session, &key, parse_base(view.base.as_deref())?).await?;
+
+    // The threads that left a version on the screen stand there again, as
+    // they were. They answer this read alone: nothing stores them twice.
+    let mut on_screen = vec![rev.as_str()];
+    if let Against::Tree(left) = &against {
+        on_screen.push(left);
+    }
+    let mut moved = std::collections::HashMap::new();
+    for (copy, to) in crate::comments::moved_from(&file.comments, &on_screen) {
+        moved.insert(copy.id.clone(), to);
+        file.comments.push(copy);
+    }
+
     // A comment on a removed line is anchored on the base, so the placement
     // needs both trees, not only the one being read.
     let base = session.base_of(&rev, &Against::Parent).await?;
@@ -752,9 +769,7 @@ async fn comments(
     // Another version on the left is on the screen too, and its remarks
     // stand there, on its own lines. A remark on a removed line of it
     // speaks of its parent, which no column shows.
-    if let Against::Tree(left) =
-        resolve_base(&session, &key, parse_base(view.base.as_deref())?).await?
-    {
+    if let Against::Tree(left) = against {
         for (comment, place) in file.comments.iter().zip(placed.iter_mut()) {
             let on_left = comment.commit == left
                 && comment.anchor.as_ref().is_some_and(|a| a.side == Side::New);
@@ -767,7 +782,11 @@ async fn comments(
         }
     }
 
-    Ok(Json(Review { file, placed }))
+    Ok(Json(Review {
+        file,
+        placed,
+        moved,
+    }))
 }
 
 /// What the interface reads for the remarks already on the server.
@@ -2145,6 +2164,108 @@ mod tests {
         // exported. See `design.md` 5.4.
         assert_eq!(body["comments"][0]["commit"], first);
         assert_eq!(body["comments"][1]["commit"], first);
+    }
+
+    #[tokio::test]
+    async fn a_migrated_thread_stands_on_its_old_version_as_it_was() {
+        let repo = build_repo(&[
+            commit("base").file("base.txt", "0\n"),
+            commit("work: no Change-Id here").file("a.txt", "one\ntwo\n"),
+        ])
+        .await;
+        let before = repo.sha("HEAD").await;
+        let old_key = format!("sha-{before}");
+        let (_, remark) = json(
+            server(&repo).await,
+            post(
+                &format!("/api/changes/{old_key}/comments"),
+                r#"{"scope":"line","file":"a.txt","side":"new","startLine":2,"body":"why two"}"#,
+            ),
+        )
+        .await;
+        let id = remark["id"].as_str().unwrap().to_owned();
+        json(
+            server(&repo).await,
+            post(
+                &format!("/api/changes/{old_key}/comments"),
+                &format!(r#"{{"scope":"line","parent":"{id}","body":"then"}}"#),
+            ),
+        )
+        .await;
+
+        std::fs::write(repo.path().join("a.txt"), "zero\none\ntwo\n").unwrap();
+        repo.git(&["add", "-A"]).await;
+        repo.git(&["commit", "--amend", "--no-edit"]).await;
+        let after = repo.sha("HEAD").await;
+        let new_key = format!("sha-{after}");
+        let (status, _) = json(
+            server(&repo).await,
+            post("/api/migrate", &format!(r#"{{"from":"{before}"}}"#)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        json(
+            server(&repo).await,
+            post(
+                &format!("/api/changes/{new_key}/comments"),
+                &format!(r#"{{"scope":"line","parent":"{id}","body":"later","author":"agent"}}"#),
+            ),
+        )
+        .await;
+
+        // The old version: the thread as it stood there, on its old line.
+        let (_, old) = json(
+            server(&repo).await,
+            get_with_cookie(&format!("/api/changes/{new_key}/comments?ps=1"), TOKEN),
+        )
+        .await;
+        let copy_id = format!("{id}@{}", &before[..12]);
+        let copies: Vec<&serde_json::Value> = old["comments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["id"].as_str().unwrap().contains('@'))
+            .collect();
+        assert_eq!(copies.len(), 2, "the remark and the reply written there");
+        assert_eq!(copies[0]["id"], copy_id);
+        assert_eq!(copies[0]["commit"], before);
+        assert_eq!(copies[0]["anchor"]["startLine"], 2);
+        assert_eq!(copies[1]["body"], "then");
+        assert_eq!(copies[1]["parent"], copy_id);
+        assert_eq!(old["moved"][&copy_id]["id"], id);
+        assert_eq!(old["moved"][&copy_id]["commit"], after);
+        let placed = old["placed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == copy_id)
+            .unwrap();
+        assert_eq!(placed["line"], 2);
+
+        // The new version: the thread alone, on its new line, and no copy.
+        let (_, new) = json(
+            server(&repo).await,
+            get_with_cookie(&format!("/api/changes/{new_key}/comments"), TOKEN),
+        )
+        .await;
+        let ids: Vec<&str> = new["comments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect();
+        assert!(ids.iter().all(|id| !id.contains('@')), "{ids:?}");
+        assert_eq!(new["moved"], serde_json::json!({}));
+
+        // And nothing of it is counted or exported twice.
+        let (_, body) = json(server(&repo).await, get_with_cookie("/api/session", TOKEN)).await;
+        let change = body["series"]["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["key"] == new_key)
+            .unwrap();
+        assert_eq!(change["commentCount"], 1);
     }
 
     #[tokio::test]

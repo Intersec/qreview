@@ -17,6 +17,11 @@ export interface Threads {
   /// thread waiting for the reader.
   blockedChanges: ComputedRef<Set<string>>;
   blockedFiles: ComputedRef<Set<string>>;
+  /// Where a thread that left this version went: the thread, and its
+  /// version. Undefined for a thread that is still here.
+  movedTo?(id: string): { id: string; commit: string } | undefined;
+  /// Open a thread where it stands now, on the newest version.
+  follow?(id: string): Promise<void>;
 }
 
 export const THREADS: InjectionKey<Threads> = Symbol('threads');

@@ -28,7 +28,12 @@ function comment(id: string, extra: Partial<Comment> = {}): Comment {
   };
 }
 
-function card(remark: Comment, replies: Comment[] = [], attach = false) {
+function card(
+  remark: Comment,
+  replies: Comment[] = [],
+  attach = false,
+  moved: Record<string, { id: string; commit: string }> = {},
+) {
   const threads: Threads = {
     repliesOf: () => replies,
     reply: vi.fn(async () => {}),
@@ -36,6 +41,8 @@ function card(remark: Comment, replies: Comment[] = [], attach = false) {
     setDone: vi.fn(async () => {}),
     blockedChanges: computed(() => new Set<string>()),
     blockedFiles: computed(() => new Set<string>()),
+    movedTo: (id: string) => moved[id],
+    follow: vi.fn(async () => {}),
   };
   const wrapper = mount(CommentCard, {
     props: { comment: remark, at: 'abc' },
@@ -223,6 +230,21 @@ describe('a thread', () => {
       ?.trigger('click');
 
     expect(wrapper.emitted('remove')).toEqual([['c']]);
+  });
+
+  it('says where a moved thread went, and leads there', async () => {
+    const { wrapper, threads } = card(comment('a@old', { commit: 'old' }), [], false, {
+      'a@old': { id: 'a', commit: 'abc' },
+    });
+
+    const tag = wrapper.get('.talk-moved');
+    expect(tag.text()).toContain('moved to abc');
+    expect(wrapper.text()).not.toContain('previous');
+    expect(wrapper.find('textarea').exists()).toBe(false);
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Reply')).toBe(false);
+    await tag.trigger('click');
+
+    expect(threads.follow).toHaveBeenCalledWith('a');
   });
 
   it('takes no reply and no Done on a previous remark', () => {
