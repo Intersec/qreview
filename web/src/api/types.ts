@@ -351,4 +351,7 @@ export interface Release {
 
 export interface Review extends ChangeFile {
   placed: Placed[];
+  /// The copies of the threads that left a version on the screen, by the id
+  /// of the copy: the thread they became, and the version it went to.
+  moved?: Record<string, { id: string; commit: string }>;
 }

@@ -438,6 +438,10 @@ export const useReview = defineStore('review', () => {
   }
 
   /// Where a comment lands in the patch set being read.
+  function movedTo(id: string): { id: string; commit: string } | undefined {
+    return review.value?.moved?.[id];
+  }
+
   function placement(id: string): Placed | undefined {
     return review.value?.placed.find((p) => p.id === id);
   }
@@ -792,6 +796,7 @@ export const useReview = defineStore('review', () => {
     against,
     openPatchSet,
     placement,
+    movedTo,
     stranded,
     readingOlder,
     currentSha,

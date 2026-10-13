@@ -122,6 +122,8 @@ provide(THREADS, {
   setDone: review.setDone,
   blockedChanges,
   blockedFiles,
+  movedTo: review.movedTo,
+  follow: followThread,
 });
 
 const comments = computed(() => review.comments());
@@ -212,6 +214,18 @@ async function goToComment(key: string, file: string, side: Side, line: number |
   if (line !== null) {
     await nextTick();
     diffView.value?.revealLine(side, line);
+  }
+}
+
+/// Open a thread on the newest version, from the copy that stands where it
+/// was before a migrate.
+async function followThread(id: string) {
+  const last = patchSets.value[patchSets.value.length - 1]?.number;
+  await goToVersion(last, undefined);
+  const thread = review.review?.comments.find((c) => c.id === id);
+  const anchor = thread?.anchor;
+  if (changeKey.value && anchor) {
+    await goToComment(changeKey.value, anchor.file, anchor.side, anchor.startLine);
   }
 }
 

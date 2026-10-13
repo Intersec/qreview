@@ -479,6 +479,7 @@ tr.talk td {
   color: var(--ink);
 }
 .talk-tag {
+  border: 0;
   border-radius: 2px;
   padding: 0 4px;
   background: var(--draft-edge);
@@ -1397,4 +1398,15 @@ kbd {
   .agent-working::before {
     animation: none;
   }
+}
+
+/* A moved thread on its old version leads to where it went. */
+.talk-moved {
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+}
+.talk-moved:hover,
+.talk-moved:focus-visible {
+  background: var(--agent-edge);
 }

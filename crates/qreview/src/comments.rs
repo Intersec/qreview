@@ -314,6 +314,81 @@ pub fn of_version(comment: &Comment, commit: &str) -> bool {
     comment.commit.is_empty() || comment.commit == commit
 }
 
+/// Where a moved thread went next: the stored thread, and its version.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MovedTo {
+    pub id: String,
+    pub commit: String,
+}
+
+/// The threads that left one of `versions`, as they stood there.
+///
+/// A migrate moves a thread and keeps its old place in `moves`. Read on the
+/// old version, the thread stands there again, at that place, with the
+/// replies written on that version: a record of the round, read only. Each
+/// copy takes an id of its own, so it is never mistaken for the thread.
+pub fn moved_from(comments: &[Comment], versions: &[&str]) -> Vec<(Comment, MovedTo)> {
+    let mut out = Vec::new();
+    for remark in comments.iter().filter(|c| c.is_remark()) {
+        for (n, was) in remark.moves.iter().enumerate() {
+            if !versions.contains(&was.commit.as_str()) {
+                continue;
+            }
+            let next = remark
+                .moves
+                .get(n + 1)
+                .map_or(&remark.commit, |m| &m.commit);
+            let to = MovedTo {
+                id: remark.id.clone(),
+                commit: next.clone(),
+            };
+            let copy_id = format!("{}@{}", remark.id, short(&was.commit));
+            let copy = Comment {
+                id: copy_id.clone(),
+                commit: was.commit.clone(),
+                scope: scope_of(remark.scope, was.anchor.as_ref()),
+                anchor: was.anchor.clone(),
+                done: false,
+                moves: Vec::new(),
+                ..remark.clone()
+            };
+            out.push((copy, to.clone()));
+            for reply in comments
+                .iter()
+                .filter(|c| c.parent.as_deref() == Some(&remark.id) && c.commit == was.commit)
+            {
+                let reply = Comment {
+                    id: format!("{}@{}", reply.id, short(&was.commit)),
+                    parent: Some(copy_id.clone()),
+                    ..reply.clone()
+                };
+                out.push((reply, to.clone()));
+            }
+        }
+    }
+    out
+}
+
+/// The scope a remark had at an earlier place. A move to the commit
+/// message, when its file was deleted, made it a file remark.
+fn scope_of(now: Scope, was: Option<&Anchor>) -> Scope {
+    match was {
+        Some(a) if a.start_line.is_some() && matches!(now, Scope::File | Scope::Change) => {
+            if a.end_line.is_some_and(|end| Some(end) != a.start_line) {
+                Scope::Range
+            } else {
+                Scope::Line
+            }
+        }
+        _ => now,
+    }
+}
+
+fn short(sha: &str) -> &str {
+    &sha[..sha.len().min(12)]
+}
+
 /// True when the comment opens a thread of this version that is not done:
 /// work the review still asks for.
 pub fn is_open(comment: &Comment, commit: &str) -> bool {

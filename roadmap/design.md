@@ -742,6 +742,14 @@ So the move is explicit, stored, and readable afterwards: the rule that a
 comment is never moved in silence holds. A done thread moves too, grey and
 folded, until the reader cleans it. Older rounds stay on their own version.
 
+**The old version keeps its record.** A thread that moved is stored once,
+on its new version. Read on a version it left, it stands there again: at
+its place in `moves`, with the replies written on that version, read only,
+and a tag that says where it went and leads there. The comments route
+builds these copies for the versions on the screen; each takes the id
+`<id>@<sha>`, and `moved` in the answer maps it to the thread and the
+version it went to. Nothing stores them, counts them, or exports them.
+
 The new key is written before the old one is emptied. A write that fails
 between the two leaves a thread in both places, never in neither.
 
@@ -976,7 +984,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
 | `GET /api/comments` | Every comment of the session, in reading order |
 | `GET /api/update` | Whether a newer qreview is out. Empty when nothing answers |
-| `GET /api/changes/:key/comments` | Every comment of the change |
+| `GET /api/changes/:key/comments` | Every comment of the change, placed on the version read, and the copies of the threads that moved away from a version on the screen. See section 5.6 |
 | `POST /api/changes/:key/comments` | Create a remark, or a reply when the body names a `parent`. `"author": "agent"` writes as the agent, and a reply may carry `"done": true` or `"blocked": true`. `"ask": true` asks the agent about the thread once it is saved |
 | `POST /api/changes/:key/comments/:id/ask` | Ask the agent to answer the thread of a comment. See section 5.5 |
 | `PATCH /api/changes/:key/comments/:id` | Change the body, or check or clear `done` on a thread |
