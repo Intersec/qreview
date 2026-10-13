@@ -551,6 +551,7 @@ export const useReview = defineStore('review', () => {
   async function addComment(comment: NewComment) {
     if (comment.ask) {
       askLeave();
+      asking.value = true;
     }
     const key = changeKey.value;
     if (!key) {
@@ -587,6 +588,7 @@ export const useReview = defineStore('review', () => {
 
   async function askAgent(id: string) {
     askLeave();
+    asking.value = true;
     const key = changeKey.value;
     const remark = review.value?.comments.find((c) => c.id === id);
     if (key && remark && awaitsAgent(remark, repliesOf(id))) {
@@ -695,6 +697,8 @@ export const useReview = defineStore('review', () => {
           after = batch.next;
           agent.value = batch.agent;
           working.value = batch.working;
+          // An agent that left answers nothing: the hourglass would lie.
+          asking.value &&= batch.agent;
           if (batch.reset) {
             await reload();
             break;
@@ -708,7 +712,11 @@ export const useReview = defineStore('review', () => {
   }
 
   /// Tell a reader who looks elsewhere what the agent did.
+  /// The reader asked the agent about a thread, and no answer came yet.
+  const asking = ref(false);
+
   function told(what: 'fix' | 'answer') {
+    asking.value = false;
     const waiting = blockedThreads.value.length;
     const questions = waiting
       ? `${waiting} ${waiting === 1 ? 'question waits' : 'questions wait'} for you.`
@@ -817,6 +825,7 @@ export const useReview = defineStore('review', () => {
     listen,
     agent,
     working,
+    asking,
     draftsMoved,
     openHere,
     doneHere,

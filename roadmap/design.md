@@ -811,11 +811,18 @@ fix shows where it stands without a reload at each step. A page opened
 during a fix learns of it from the first answer of `/api/events`.
 
 **A reader who looks elsewhere is told.** When a fix ends, or the agent
-answers outside one, and the tab is hidden, the page shows a notification
-of the browser: the fix is done, or the agent answered, and how many
-questions wait. The browser asks for leave on the first Fix or Ask, the
-clicks that start work for the agent, and its answer is the only setting.
-Without leave, the tab title starts with ✓ until the reader comes back.
+answers outside one, and the page does not have the focus, the page shows
+a notification of the browser: the fix is done, or the agent answered, and
+how many questions wait. The browser asks for leave on the first Fix or
+Ask, the clicks that start work for the agent, and its answer is the only
+setting.
+
+**The tab title says whose turn it is.** It starts with ⏳ while the agent
+works on a fix or on a question asked, and with ◑◒◐◓, turning once a
+second, once the agent is done and until the page has the focus again.
+While a question of the agent waits, the turn stays the reader's whatever
+the focus: looking at the page answers nothing. A tab among many, or a
+notification refused, still says it.
 
 **Clean** deletes for good every done thread of the change on the screen. A
 thread reopened since is not done, and stays. The browser waits three

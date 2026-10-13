@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
 import { format, parse, same, type Place } from '@/place';
 import { storeToRefs } from 'pinia';
-import { unseen } from './notify';
+import { questions, turnMark } from './notify';
 import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
 import CleanDialog from './components/CleanDialog.vue';
@@ -55,6 +55,7 @@ const {
   blockedFiles,
   agent,
   working,
+  asking,
   draftsMoved,
   openHere,
   doneHere,
@@ -400,13 +401,16 @@ watch(
     () => series.value?.repo.name,
     () => change.value?.subject,
     () => blockedThreads.value.length,
-    () => unseen.value,
+    () => turnMark.value,
+    () => working.value || asking.value,
   ],
-  ([repo, subject, waiting, news]) => {
+  ([repo, subject, waiting, turn, busy]) => {
+    questions.value = waiting;
     const name = ['qreview', repo, subject].filter(Boolean).join(' · ');
-    // The mark of news is for a reader who refused notifications: the tab
-    // still says the agent is done.
-    const head = [news ? '✓' : '', waiting ? `(${waiting})` : ''].filter(Boolean).join(' ');
+    // The tab says whose turn it is, seen from among many: the agent's while
+    // it works, the reader's once it is done and until they come back.
+    // The hourglass first: a question asked on another thread still runs.
+    const head = [busy ? '⏳' : turn, waiting ? `(${waiting})` : ''].filter(Boolean).join(' ');
     document.title = head ? `${head} ${name}` : name;
   },
   { immediate: true },

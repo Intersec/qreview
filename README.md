@@ -160,7 +160,9 @@ the new version.
 
 When a fix ends, or the agent answers, while you look at another window,
 the browser notifies you. It asks for leave the first time you press Fix
-or Ask. If you refuse, the tab title starts with ✓ instead.
+or Ask. The tab title says whose turn it is too: ⏳ while the agent works,
+then a turning ◑ once it is done, until you come back to the tab, or
+until you answer when the agent asked you something.
 
 **Clean** deletes the done threads of the change, once you agree with the
 work. It lists them and asks first, then waits three seconds with an

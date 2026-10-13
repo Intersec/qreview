@@ -1,22 +1,50 @@
 // Tell a reader who looks elsewhere that the agent is done.
 //
 // A fix takes minutes, and an answer comes when it comes, so the reader goes
-// to another window. The browser's own notification reaches them there. The
-// browser asks for leave once, and its answer is the only setting: a reader
-// who refused is told by the tab title instead.
+// to another window. The browser's own notification reaches them there, and
+// the tab title says it too: a notification goes away, a tab stays. The
+// browser asks for leave once, and its answer is the only setting.
 
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
-/// Something happened while the tab was hidden. The tab title says so until
-/// the reader comes back.
-export const unseen = ref(false);
+/// The agent finished while the reader looked elsewhere: their turn, until
+/// the page has the focus again.
+export const yourTurn = ref(false);
 
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      unseen.value = false;
-    }
-  });
+/// The questions of the agent that wait for the reader. Looking at the page
+/// answers none of them, so the turn stays theirs while one is open.
+export const questions = ref(0);
+
+/// The symbol that turns in the title while it is the reader's turn, the
+/// one Terraforming Mars spins for a player whose turn it is.
+const TURN = '◑◒◐◓';
+const frame = ref(0);
+let spin: ReturnType<typeof setInterval> | undefined;
+
+const turn = computed(() => yourTurn.value || questions.value > 0);
+
+/// What the title starts with for the turn: a symbol that turns, so a tab
+/// among many catches the eye.
+export const turnMark = computed(() => (turn.value ? TURN[frame.value] : ''));
+
+// A hidden tab runs its timers once a second at most: one step a second.
+watch(turn, (now) => {
+  if (now) {
+    spin ??= setInterval(() => {
+      frame.value = (frame.value + 1) % TURN.length;
+    }, 1000);
+  } else {
+    clearInterval(spin);
+    spin = undefined;
+  }
+});
+
+function endTurn() {
+  yourTurn.value = false;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', endTurn);
 }
 
 /// Ask for leave to notify. A browser asks only from a click, so this runs
@@ -27,12 +55,14 @@ export function askLeave() {
   }
 }
 
-/// Tell the reader, unless they are looking at the page already.
+/// Tell the reader, unless the page has their attention already. A tab
+/// on the screen behind another window does not.
 export function tell(title: string, body: string) {
-  if (!document.hidden) {
+  if (document.hasFocus()) {
     return;
   }
-  unseen.value = true;
+  yourTurn.value = true;
+
   if (!('Notification' in window) || Notification.permission !== 'granted') {
     return;
   }
