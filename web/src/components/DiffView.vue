@@ -1035,6 +1035,7 @@ function toggle(row: Row | null, column: Side) {
       <CommentBox
         v-if="aboutFile"
         :label="isHome ? 'A remark about the change' : 'A remark about the file'"
+        askable
         @save="(body, ask) => writeAboutFile(body, ask)"
         @cancel="aboutFile = false"
       />
@@ -1085,6 +1086,7 @@ function toggle(row: Row | null, column: Side) {
               <CommentBox
                 v-if="aboutFile"
                 :label="isHome ? 'A remark about the change' : 'A remark about the file'"
+                askable
                 @save="(body, ask) => writeAboutFile(body, ask)"
                 @cancel="aboutFile = false"
               />
@@ -1296,6 +1298,7 @@ function toggle(row: Row | null, column: Side) {
               <CommentBox
                 v-if="aboutFile"
                 :label="isHome ? 'A remark about the change' : 'A remark about the file'"
+                askable
                 @save="(body, ask) => writeAboutFile(body, ask)"
                 @cancel="aboutFile = false"
               />
