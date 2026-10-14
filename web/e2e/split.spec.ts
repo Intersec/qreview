@@ -120,6 +120,8 @@ test('a remark about the file stands before the first line', async ({ page }) =>
   await openFile(page, 'long.c');
   await page.getByRole('button', { name: 'Comment on the file' }).click();
   await page.getByRole('textbox').first().fill('This file does two things.');
+  // A remark about the file asks the agent as a remark on a line does.
+  await expect(page.getByRole('button', { name: 'Save and ask' })).toBeVisible();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(card(page, 'This file does two things.')).toBeVisible();
 
