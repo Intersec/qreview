@@ -117,4 +117,64 @@ pub enum Command {
         #[arg(long, value_name = "ID=TEXT")]
         blocked: Vec<String>,
     },
+
+    /// Print the procedure that an agent follows to review with this
+    /// release.
+    Skill,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// The subcommands that the procedure names in its code: inline code
+    /// that opens with `qreview `, and the lines of a code block.
+    fn named_commands(text: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        let mut in_block = false;
+
+        for line in text.lines() {
+            if line.trim_start().starts_with("```") {
+                in_block = !in_block;
+                continue;
+            }
+            let calls: Vec<&str> = match in_block {
+                true => line.strip_prefix("qreview ").into_iter().collect(),
+                false => line.split("`qreview ").skip(1).collect(),
+            };
+            for call in calls {
+                let word: String = call
+                    .chars()
+                    .take_while(|c| c.is_ascii_lowercase() || *c == '-')
+                    .collect();
+                // An option or a placeholder such as `<rev>` is no command.
+                if !word.is_empty() && !word.starts_with('-') {
+                    found.push(word);
+                }
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn the_procedure_names_only_commands_of_this_release() {
+        let cli = Cli::command();
+        let named = named_commands(qreview::agent::SKILL);
+
+        assert!(named.contains(&"wait".to_owned()), "{named:?}");
+        for word in named {
+            assert!(
+                cli.find_subcommand(&word).is_some(),
+                "the procedure names `qreview {word}`, which this release does not have"
+            );
+        }
+    }
+
+    #[test]
+    fn a_placeholder_or_an_option_is_no_command() {
+        let text = "Run `qreview <rev>` or `qreview --base x`.\n```sh\nqreview wait\n```\n";
+
+        assert_eq!(named_commands(text), ["wait"]);
+    }
 }

@@ -100,14 +100,31 @@ amend keeps them.
 
 An agent that works on the series in a terminal, such as Claude Code, can
 take part in the review. For Claude Code, install the skill in
-[`skills/qreview`](skills/qreview/SKILL.md), and it knows the procedure:
+[`skills/qreview`](skills/qreview/SKILL.md):
 
 ```sh
 mkdir -p ~/.claude/skills
 cp -r skills/qreview ~/.claude/skills/
 ```
 
-Then ask it to open qreview and answer your remarks.
+The skill holds no procedure of its own. It runs `qreview skill`, which
+prints the procedure of the binary on your PATH, so the skill and the binary
+are always the same release. A new release of qreview needs no new copy of
+the skill.
+
+A plugin marketplace can serve the same skill from this repository. The
+file of the skill changes only when the way to read the procedure changes,
+so the entry pins a version of its own:
+
+```json
+{
+  "name": "qreview",
+  "version": "1.0.0",
+  "source": { "source": "github", "repo": "Intersec/qreview" }
+}
+```
+
+Then ask Claude to open qreview and answer your remarks.
 
 The agent starts `qreview` itself, and the review opens in your browser. If
 a server already runs on the repository, `qreview` prints its address and

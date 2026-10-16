@@ -1312,6 +1312,7 @@ qreview --trace               print on standard error what the work costs
 qreview export [--key <id>]   print the export text to stdout
 qreview export --json         the same threads as JSON, with their ids
 qreview list                  list the stored reviews of this repository
+qreview skill                 print the procedure of an agent, for this release
 ```
 
 **The commands of the agent.** They write as the agent, through the server
