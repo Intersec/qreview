@@ -20,6 +20,12 @@ use client::Client;
 use crate::git::exec::Git;
 use crate::store::Store;
 
+/// The procedure that an agent follows, printed by `qreview skill`.
+///
+/// It ships in the binary, so it names the commands of this release, and
+/// the skill that an agent installs only points at it.
+pub const SKILL: &str = include_str!("skill.md");
+
 /// The directory of the store of the repository that holds `cwd`.
 pub async fn store_dir(cwd: &Path) -> Result<std::path::PathBuf> {
     let git = Git::discover(cwd).await?;
