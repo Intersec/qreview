@@ -740,3 +740,27 @@ stored threads would drift apart, and the counts would need to tell them
 apart.
 
 Issue #24.
+
+## 2026-10-16 — The binary carries the procedure of the skill
+
+The skill was a file to copy into `~/.claude/skills`, and nothing tied it
+to a binary. A team that installs qreview for everybody installs one
+release. A skill copied from another checkout names commands that this
+release does not have, or misses the ones it has.
+
+**Decision.** The procedure lives in the binary, and `qreview skill`
+prints it. `skills/qreview/SKILL.md` keeps its description, which tells the
+agent when to load the skill. Its body only says to run `qreview skill`.
+The skill and the binary are then the same release by construction,
+whatever installed the binary. A test fails when the procedure names a
+command that the binary does not have.
+
+The file of the skill changes only when the way to read the procedure
+changes. A plugin marketplace can serve it from this repository with a
+version of its own, and a release of qreview needs no change there.
+
+Rejected: a plugin that downloads the binary of its release. It puts a
+second qreview beside the one that a team installs, and a server started
+with one answers the commands of the other. Rejected too: the skill beside
+the binary, in the directory that a team installs. Each reader then links
+it into their agent by hand.

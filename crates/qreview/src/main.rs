@@ -170,6 +170,7 @@ async fn agent_command(cli: &cli::Cli, cwd: &std::path::Path) -> Result<Option<i
             let client = agent::connect(cwd).await?;
             print(&agent::migrate(&client, from, to.as_deref(), done, blocked).await?);
         }
+        Some(cli::Command::Skill) => print!("{}", agent::SKILL),
         _ => return Ok(None),
     }
     Ok(Some(0))
