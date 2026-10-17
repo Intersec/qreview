@@ -12,6 +12,33 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.13.0]
+
+### Added
+
+- **Conversation with an agent** — an agent that works on the series in a
+  terminal writes into the review: `qreview comment`, `qreview reply` and
+  `qreview wait`. A remark opens a thread, with replies and a Done box as in
+  Gerrit. A done thread is grey and folded. The agent answers a thread when
+  you ask it: **Ask agent**, or **Save and ask** (Ctrl+Shift+Enter). A
+  question of the agent marks its thread, its change and the tab title.
+- **Fix, migrate and Clean** — after an amend, `qreview migrate --from
+  <old sha>` declares the new version, with no need for a `Change-Id`, and
+  moves every thread to its new line. The old version still shows each
+  thread where it stood, with a link to where it went. **Fix** (or `a`) asks
+  the agent to deal with the open threads of a change, behind a dialog.
+  **Clean** deletes the done threads, with an Undo.
+- **A fix shows once** — while the agent works on a fix, the page says
+  **Agent working…** and shows the whole fix when the agent is done, rather
+  than reloading at every step. A remark, a reply or an edit you are typing
+  is kept, and follows its line to the new version. When a fix ends, or
+  the agent answers, while you look elsewhere, the browser notifies you.
+  The tab title shows ⏳ while the agent works, then a turning ◑ until you
+  come back, or until you answer the questions the agent left.
+- **`qreview skill`** — prints the procedure that an agent follows, from the
+  binary itself. The skill in `skills/qreview` only runs it, so the skill and
+  the binary are always the same release.
+
 ## [0.12.5]
 
 ### Fixed
