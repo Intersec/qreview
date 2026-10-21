@@ -895,6 +895,16 @@ tr.talk td {
   font-weight: 600;
 }
 
+.agent-left {
+  flex: none;
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--agent-edge);
+  background: var(--agent);
+  color: var(--ink);
+  font-size: 13px;
+}
+
 .error {
   flex: none;
   padding: 6px 10px;

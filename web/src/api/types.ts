@@ -233,6 +233,8 @@ export interface EventBatch {
   agent: boolean;
   /// The agent works on a fix, and has not waited again since.
   working: boolean;
+  /// An agent listened to this server, and listens no more.
+  left: boolean;
 }
 
 export interface ChangeFile {

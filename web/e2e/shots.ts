@@ -253,6 +253,17 @@ for (const scheme of ['light', 'dark'] as const) {
   await second.locator('.talk-box:not(.posted-box)').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-posted.png`) });
 
+  // The banner of an agent that left. An agent counts as gone two minutes
+  // after its last wait, so the answer says it rather than the clock.
+  await second.route('**/api/events**', async (route) => {
+    const answer = await route.fetch({ timeout: 0 });
+    await route.fulfill({ response: answer, json: { ...(await answer.json()), left: true } });
+  });
+  await second.reload();
+  await second.locator('.agent-left').waitFor({ timeout: 40_000 });
+  await second.screenshot({ path: join(OUT, `${scheme}-agent-left.png`) });
+  await second.unrouteAll({ behavior: 'ignoreErrors' });
+
   // The banner of a server that stopped. The requests fail rather than the
   // server stopping, because the next scheme still reads it.
   await second.route('**/api/events**', (route) => route.abort());

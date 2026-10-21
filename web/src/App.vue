@@ -55,6 +55,7 @@ const {
   blockedChanges,
   blockedFiles,
   agent,
+  agentLeft,
   working,
   stopped,
   asking,
@@ -472,7 +473,9 @@ onBeforeUnmount(() => {
               ? 'The agent is fixing. The page catches up when it is done'
               : agent
                 ? 'Ask the agent to fix this change (a)'
-                : 'No agent listens: run qreview wait'
+                : agentLeft
+                  ? 'The agent left: ask it to run qreview wait again'
+                  : 'No agent listens: run qreview wait'
           "
           :disabled="!agent || working || !changeKey"
           @click="openFix"
@@ -542,6 +545,9 @@ onBeforeUnmount(() => {
       <template v-if="unsaved">
         Copy your unsaved remarks first: a new server may not see them.
       </template>
+    </p>
+    <p v-else-if="agentLeft" role="status" class="agent-left">
+      The agent stopped listening. To reattach it, ask it to run <code>qreview wait</code> again.
     </p>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
 

@@ -80,11 +80,18 @@ pub struct Batch {
     /// The agent works on a fix: the reader asked for one, and the agent has
     /// not waited again since.
     pub working: bool,
+    /// An agent listened to this server, and listens no more. The page asks
+    /// the reader to start it again.
+    pub left: bool,
 }
 
 /// How long after its last wait an agent still counts as listening. It
 /// reads and answers between two waits, and that is not leaving.
 const LISTENS_FOR: Duration = Duration::from_secs(120);
+
+/// How long an ask keeps the agent present while it answers. A long answer
+/// is not leaving.
+const ANSWERS_FOR: Duration = Duration::from_secs(10 * 60);
 
 /// How long a fix counts as under way with no word of the agent. A fix
 /// takes minutes with no wait open; past this, the agent is taken for gone.
@@ -131,6 +138,10 @@ struct Listening {
     wrote: bool,
     /// When the reader asked for a fix that the agent has not finished.
     fixing: Option<std::time::Instant>,
+    /// When the reader asked the agent about a thread, while it listened.
+    answering: Option<std::time::Instant>,
+    /// An agent waited once on this server.
+    seen: bool,
 }
 
 /// Held while an agent waits. A guard, because the agent can hang up.
@@ -160,7 +171,9 @@ impl Events {
         let ended = {
             let mut agent = self.agent.lock().expect("the agent state is poisoned");
             agent.open += 1;
+            agent.seen = true;
             agent.fixing = None;
+            agent.answering = None;
             std::mem::take(&mut agent.wrote)
         };
         if ended {
@@ -189,10 +202,13 @@ impl Events {
     }
 
     pub fn agent_listens(&self) -> bool {
+        listens(&self.agent.lock().expect("the agent state is poisoned"))
+    }
+
+    /// An agent listened, and listens no more.
+    pub fn agent_left(&self) -> bool {
         let agent = self.agent.lock().expect("the agent state is poisoned");
-        agent.open > 0
-            || agent.ended.is_some_and(|at| at.elapsed() < LISTENS_FOR)
-            || working(&agent)
+        agent.seen && !listens(&agent)
     }
 
     pub fn agent_works(&self) -> bool {
@@ -219,6 +235,9 @@ impl Events {
             let mut agent = self.agent.lock().expect("the agent state is poisoned");
             if kind == Kind::Fix {
                 agent.fixing = Some(std::time::Instant::now());
+            }
+            if kind == Kind::Ask && listens(&agent) {
+                agent.answering = Some(std::time::Instant::now());
             }
             if author == Author::Agent && kind != Kind::Idle {
                 agent.wrote = true;
@@ -277,6 +296,7 @@ impl Events {
     fn since(&self, after: u64) -> Batch {
         let working = self.agent_works();
         let agent = self.agent_listens();
+        let left = self.agent_left();
         let log = self.log.lock().expect("the event log is poisoned");
         let next = log.last;
 
@@ -287,6 +307,7 @@ impl Events {
                 reset: false,
                 agent,
                 working,
+                left,
             };
         }
         let first = log.kept.front().map_or(log.last + 1, |e| e.seq);
@@ -299,6 +320,7 @@ impl Events {
                 reset: true,
                 agent,
                 working,
+                left,
             };
         }
         Batch {
@@ -307,8 +329,16 @@ impl Events {
             reset: false,
             agent,
             working,
+            left,
         }
     }
+}
+
+fn listens(agent: &Listening) -> bool {
+    agent.open > 0
+        || agent.ended.is_some_and(|at| at.elapsed() < LISTENS_FOR)
+        || agent.answering.is_some_and(|at| at.elapsed() < ANSWERS_FOR)
+        || working(agent)
 }
 
 fn working(agent: &Listening) -> bool {
@@ -435,6 +465,46 @@ mod tests {
 
         events.agent.lock().unwrap().ended =
             Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
+        assert!(!events.agent_listens());
+    }
+
+    #[tokio::test]
+    async fn an_agent_that_listened_and_stopped_has_left() {
+        let events = Events::default();
+        assert!(!events.after(None, SHORT).await.left, "no agent came yet");
+
+        drop(events.agent_waits());
+        assert!(!events.after(None, SHORT).await.left);
+
+        events.agent.lock().unwrap().ended =
+            Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
+        assert!(events.after(None, SHORT).await.left);
+
+        drop(events.agent_waits());
+        assert!(!events.after(None, SHORT).await.left, "it came back");
+    }
+
+    #[tokio::test]
+    async fn an_ask_keeps_the_agent_present_while_it_answers() {
+        let events = Events::default();
+        drop(events.agent_waits());
+        events.push(Kind::Ask, Author::Reader, "I1", Some("c-1"));
+        events.agent.lock().unwrap().ended =
+            Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
+
+        assert!(events.agent_listens(), "a long answer is not leaving");
+
+        drop(events.agent_waits());
+        events.agent.lock().unwrap().ended =
+            Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
+        assert!(!events.agent_listens(), "the wait ended the answer");
+    }
+
+    #[tokio::test]
+    async fn an_ask_with_no_agent_keeps_no_agent_present() {
+        let events = Events::default();
+        events.push(Kind::Ask, Author::Reader, "I1", Some("c-1"));
+
         assert!(!events.agent_listens());
     }
 

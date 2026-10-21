@@ -1082,8 +1082,13 @@ hundred in memory.
 number to start from. `GET /api/events?after=<n>` answers at once with every
 event numbered above `n`, or holds the request until one comes, for at most 30 seconds, and then
 answers with an empty list. Each answer carries the number to ask after
-next, `agent`, true while an agent listens, and `working`, true while it
-works on a fix (section 5.7). An `after`
+next, `agent`, true while an agent listens, `working`, true while it
+works on a fix (section 5.7), and `left`, true when an agent listened to
+this server and listens no more. An agent listens while a `qreview wait`
+is open, for two minutes after it ends, during a fix, and for ten minutes
+after an `ask` that it has not answered with a new wait: a long answer is
+not leaving. While `left` is true, the page says that the agent stopped
+listening, and to ask it to run `qreview wait` again. An `after`
 the server no longer holds, because it restarted or the
 event fell out of memory, answers with `"reset": true`, and the reader reads
 everything again.

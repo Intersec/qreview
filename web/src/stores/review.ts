@@ -631,6 +631,8 @@ export const useReview = defineStore('review', () => {
   /// the review goes on without the agent.
   /// An agent listens, as the last answer of the events route said.
   const agent = ref(false);
+  /// An agent listened, and stopped: the reader starts it again.
+  const agentLeft = ref(false);
 
   /// The change on the screen, as every count reads it.
   const here = computed(() => written.value.find((change) => change.key === changeKey.value));
@@ -683,6 +685,7 @@ export const useReview = defineStore('review', () => {
         const start = await api.events();
         let after = start.next;
         agent.value = start.agent;
+        agentLeft.value = start.left;
         working.value = start.working;
         const held = new Catchup(
           {
@@ -699,6 +702,7 @@ export const useReview = defineStore('review', () => {
           const batch = await api.events(after);
           after = batch.next;
           agent.value = batch.agent;
+          agentLeft.value = batch.left;
           working.value = batch.working;
           // An agent that left answers nothing: the hourglass would lie.
           asking.value &&= batch.agent;
@@ -842,6 +846,7 @@ export const useReview = defineStore('review', () => {
     blockedFiles,
     listen,
     agent,
+    agentLeft,
     working,
     stopped,
     asking,
