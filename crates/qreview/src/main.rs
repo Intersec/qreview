@@ -36,15 +36,15 @@ async fn main() -> Result<()> {
     }
 
     let root = Git::discover(&cwd).await?.root().to_path_buf();
-    let store_dir = agent::store_dir(&cwd).await?;
+    let home = agent::home(&cwd).await?;
 
     // An agent that starts qreview twice gets the review that is open, not
     // a second server and a second tab.
     if cli.command.is_none()
-        && let Some(server) = agent::running(&store_dir).await
+        && let Some(server) = agent::running(&home).await
     {
         println!(
-            "qreview already runs on this repository, at {}",
+            "qreview already runs on this worktree, at {}",
             server.address().url()
         );
         return Ok(());
@@ -120,7 +120,7 @@ async fn main() -> Result<()> {
         events,
         &token,
         cli.no_open,
-        &store_dir,
+        &home,
     )
     .await
 }
@@ -227,7 +227,7 @@ async fn serve(
     events: std::sync::Arc<qreview::events::Events>,
     token: &str,
     no_open: bool,
-    store_dir: &std::path::Path,
+    home: &agent::Home,
 ) -> Result<()> {
     // The loopback address only. Never another interface.
     let listener = TcpListener::bind(("127.0.0.1", port))
@@ -241,7 +241,7 @@ async fn serve(
 
     // The way in for an agent in a sandbox. The review works without it,
     // so a socket that cannot be made is only said.
-    let unix = match unix_listener(store_dir) {
+    let unix = match unix_listener(home) {
         Ok(found) => Some(found),
         Err(error) => {
             eprintln!("qreview: an agent in a sandbox will not reach this server: {error:#}");
@@ -256,7 +256,7 @@ async fn serve(
 
     // The commands of an agent find the server here. A review still works
     // without them, so a file that cannot be written is only said.
-    let announced = match agent::announce(store_dir, addr.port(), token, on_socket.as_deref()) {
+    let announced = match agent::announce(home, addr.port(), token, on_socket.as_deref()) {
         Ok(address) => Some(address),
         Err(error) => {
             eprintln!("qreview: the commands of an agent will not find this server: {error:#}");
@@ -289,7 +289,7 @@ async fn serve(
     };
 
     if let Some(address) = announced {
-        agent::address::remove(store_dir, &address);
+        agent::address::remove(home, &address);
     }
     if let Some(task) = socket_task {
         task.abort();
@@ -301,10 +301,8 @@ async fn serve(
 }
 
 /// A Unix socket for the server, in the private directory of the user.
-fn unix_listener(
-    store_dir: &std::path::Path,
-) -> Result<(tokio::net::UnixListener, std::path::PathBuf)> {
-    let path = agent::socket::path_for(store_dir)?;
+fn unix_listener(home: &agent::Home) -> Result<(tokio::net::UnixListener, std::path::PathBuf)> {
+    let path = agent::socket::path_for(home)?;
     // A server that crashed left its socket behind, and a bind on it fails.
     // A server that runs has been asked already, before this one started.
     agent::socket::clear(&path);

@@ -8,7 +8,7 @@ pub mod address;
 pub mod client;
 pub mod socket;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -26,31 +26,48 @@ use crate::store::Store;
 /// the skill that an agent installs only points at it.
 pub const SKILL: &str = include_str!("skill.md");
 
-/// The directory of the store of the repository that holds `cwd`.
-pub async fn store_dir(cwd: &Path) -> Result<std::path::PathBuf> {
+/// Where the server of a worktree says how to reach it.
+///
+/// The worktrees of a clone share one store, but each runs a server of its
+/// own. So the address file and the socket carry the worktree in their
+/// name, and the store is the directory they sit in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Home {
+    /// The directory of the store of the repository.
+    pub dir: PathBuf,
+    pub repo: String,
+    pub worktree: String,
+}
+
+/// The home of the worktree that holds `cwd`.
+pub async fn home(cwd: &Path) -> Result<Home> {
     let git = Git::discover(cwd).await?;
     let repo = crate::repo::info(&git).await?;
 
-    Ok(Store::open(&repo.id)?.dir().to_path_buf())
+    Ok(Home {
+        dir: Store::open(&repo.id)?.dir().to_path_buf(),
+        worktree: crate::repo::worktree_id(git.root()),
+        repo: repo.id,
+    })
 }
 
-/// The server that runs on the repository, when one answers.
+/// The server that runs on the worktree, when one answers.
 ///
 /// A file whose server does not answer was left by a crash, and is no
 /// server at all.
-pub async fn running(dir: &Path) -> Option<Client> {
-    let client = Client::new(address::read(dir)?);
+pub async fn running(home: &Home) -> Option<Client> {
+    let client = Client::new(address::read(home)?);
 
     client.get("/api/events").await.ok().map(|_| client)
 }
 
-/// The server of the repository, or an error that says what to run.
+/// The server of the worktree, or an error that says what to run.
 pub async fn connect(cwd: &Path) -> Result<Client> {
-    let dir = store_dir(cwd).await?;
+    let home = home(cwd).await?;
 
-    running(&dir)
+    running(&home)
         .await
-        .context("no qreview server runs on this repository. Run `qreview` first")
+        .context("no qreview server runs on this worktree. Run `qreview` first")
 }
 
 /// A body, or standard input when it is `-`, so a long answer needs no
@@ -343,14 +360,14 @@ fn segment(key: &str) -> String {
 }
 
 /// Write the address of a server that starts.
-pub fn announce(dir: &Path, port: u16, token: &str, socket: Option<&Path>) -> Result<Address> {
+pub fn announce(home: &Home, port: u16, token: &str, socket: Option<&Path>) -> Result<Address> {
     let address = Address {
         pid: std::process::id(),
         port,
         token: token.to_owned(),
         socket: socket.map(|path| path.display().to_string()),
     };
-    address::write(dir, &address)?;
+    address::write(home, &address)?;
 
     Ok(address)
 }

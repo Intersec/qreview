@@ -1,4 +1,4 @@
-//! `server.json`: where the server of a repository listens.
+//! `server-<worktree>.json`: where the server of a worktree listens.
 //!
 //! The commands of an agent run in another process, and need the port and
 //! the token. The file holds both, and only its owner can read it, so
@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-const NAME: &str = "server.json";
+use super::Home;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Address {
@@ -31,14 +31,15 @@ impl Address {
     }
 }
 
-fn path_in(dir: &Path) -> PathBuf {
-    dir.join(NAME)
+fn path_in(home: &Home) -> PathBuf {
+    home.dir.join(format!("server-{}.json", home.worktree))
 }
 
 /// Write the address, readable by its owner alone.
-pub fn write(dir: &Path, address: &Address) -> Result<()> {
+pub fn write(home: &Home, address: &Address) -> Result<()> {
+    let dir = &home.dir;
     fs::create_dir_all(dir).with_context(|| format!("cannot make {}", dir.display()))?;
-    let path = path_in(dir);
+    let path = path_in(home);
     let temp = path.with_extension("json.tmp");
 
     let mut handle = open_private(&temp)?;
@@ -70,23 +71,31 @@ fn open_private(path: &Path) -> Result<fs::File> {
 
 /// The address written last. Nothing says its server still runs: a crash
 /// leaves the file behind, so a caller asks the server before it trusts it.
-pub fn read(dir: &Path) -> Option<Address> {
-    let text = fs::read_to_string(path_in(dir)).ok()?;
+pub fn read(home: &Home) -> Option<Address> {
+    let text = fs::read_to_string(path_in(home)).ok()?;
 
     serde_json::from_str(&text).ok()
 }
 
 /// Remove the address, when it is still the one this process wrote. A
 /// second server that started since owns the file now.
-pub fn remove(dir: &Path, mine: &Address) {
-    if read(dir).as_ref() == Some(mine) {
-        let _ = fs::remove_file(path_in(dir));
+pub fn remove(home: &Home, mine: &Address) {
+    if read(home).as_ref() == Some(mine) {
+        let _ = fs::remove_file(path_in(home));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn home(dir: &tempfile::TempDir, worktree: &str) -> Home {
+        Home {
+            dir: dir.path().to_path_buf(),
+            repo: "4f59".to_owned(),
+            worktree: worktree.to_owned(),
+        }
+    }
 
     fn address(port: u16) -> Address {
         Address {
@@ -100,9 +109,10 @@ mod tests {
     #[test]
     fn an_address_is_read_back() {
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), &address(4100)).unwrap();
+        let home = home(&dir, "w1");
+        write(&home, &address(4100)).unwrap();
 
-        assert_eq!(read(dir.path()), Some(address(4100)));
+        assert_eq!(read(&home), Some(address(4100)));
     }
 
     #[cfg(unix)]
@@ -111,11 +121,9 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), &address(4100)).unwrap();
-        let mode = fs::metadata(path_in(dir.path()))
-            .unwrap()
-            .permissions()
-            .mode();
+        let home = home(&dir, "w1");
+        write(&home, &address(4100)).unwrap();
+        let mode = fs::metadata(path_in(&home)).unwrap().permissions().mode();
 
         assert_eq!(mode & 0o777, 0o600);
     }
@@ -123,26 +131,36 @@ mod tests {
     #[test]
     fn a_server_removes_its_own_address_and_no_other() {
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), &address(4100)).unwrap();
-        write(dir.path(), &address(4200)).unwrap();
+        let home = home(&dir, "w1");
+        write(&home, &address(4100)).unwrap();
+        write(&home, &address(4200)).unwrap();
 
-        remove(dir.path(), &address(4100));
-        assert_eq!(
-            read(dir.path()),
-            Some(address(4200)),
-            "a later server owns it"
-        );
+        remove(&home, &address(4100));
+        assert_eq!(read(&home), Some(address(4200)), "a later server owns it");
 
-        remove(dir.path(), &address(4200));
-        assert_eq!(read(dir.path()), None);
+        remove(&home, &address(4200));
+        assert_eq!(read(&home), None);
     }
 
     #[test]
     fn a_missing_or_broken_file_is_no_address() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(read(dir.path()), None);
+        let home = home(&dir, "w1");
+        assert_eq!(read(&home), None);
 
-        fs::write(path_in(dir.path()), "{ not json").unwrap();
-        assert_eq!(read(dir.path()), None);
+        fs::write(path_in(&home), "{ not json").unwrap();
+        assert_eq!(read(&home), None);
+    }
+
+    #[test]
+    fn two_worktrees_of_one_store_keep_their_own_address() {
+        let dir = tempfile::tempdir().unwrap();
+        let one = home(&dir, "w1");
+        let two = home(&dir, "w2");
+        write(&one, &address(4100)).unwrap();
+        write(&two, &address(4200)).unwrap();
+
+        assert_eq!(read(&one), Some(address(4100)));
+        assert_eq!(read(&two), Some(address(4200)));
     }
 }

@@ -3,6 +3,8 @@
 //! The comment store is keyed by this, so it must be the same for two clones
 //! of the same project and for two worktrees of the same clone.
 
+use std::path::Path;
+
 use anyhow::Result;
 use sha2::{Digest, Sha256};
 
@@ -97,6 +99,16 @@ pub fn canonical(url: &str) -> String {
         .trim_end_matches(".git");
 
     format!("{}/{}", host.to_lowercase(), path)
+}
+
+/// What tells two worktrees of one clone apart.
+///
+/// The store is shared by the worktrees of a clone, but each one runs a
+/// server of its own, and its commands must reach that one.
+pub fn worktree_id(root: &Path) -> String {
+    let real = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+
+    id_of(&real.to_string_lossy())
 }
 
 fn id_of(seed: &str) -> String {
@@ -200,6 +212,11 @@ mod tests {
         let two = info(&Git::discover(&tree).await.unwrap()).await.unwrap();
 
         assert_eq!(one.id, two.id);
+        assert_ne!(
+            worktree_id(Path::new(&one.root)),
+            worktree_id(Path::new(&two.root)),
+            "each worktree runs a server of its own"
+        );
         repo.git(&["worktree", "remove", "--force", tree.to_str().unwrap()])
             .await;
     }

@@ -19,6 +19,11 @@ pub struct Store {
     changes: PathBuf,
 }
 
+/// The store, held by this process until the guard is dropped.
+pub struct Lock {
+    _file: fs::File,
+}
+
 impl Store {
     /// The store of a repository, under the state directory of the user.
     pub fn open(repo_id: &str) -> Result<Self> {
@@ -34,10 +39,31 @@ impl Store {
         }
     }
 
-    /// The directory of the repository, where `server.json` sits beside
-    /// the changes.
+    /// The directory of the repository, where the address of each server
+    /// sits beside the changes.
     pub fn dir(&self) -> &Path {
         self.changes.parent().unwrap_or(&self.changes)
+    }
+
+    /// Hold the store for one read and the write that follows it.
+    ///
+    /// The worktrees of a clone share the store, and each runs a server.
+    /// Two writes of one file that cross would lose one of them. The lock
+    /// ends when the guard is dropped, so never hold it across an `await`.
+    pub fn lock(&self) -> Result<Lock> {
+        let dir = self.dir();
+        fs::create_dir_all(dir).with_context(|| format!("cannot make {}", dir.display()))?;
+        let path = dir.join("lock");
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&path)
+            .with_context(|| format!("cannot open {}", path.display()))?;
+        file.lock()
+            .with_context(|| format!("cannot lock {}", path.display()))?;
+
+        Ok(Lock { _file: file })
     }
 
     fn path_of(&self, key: &str) -> PathBuf {
@@ -207,6 +233,21 @@ mod tests {
             blocked: false,
             moves: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_second_holder_waits_for_the_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::at(dir.path());
+
+        let held = store.lock().unwrap();
+        let other = fs::File::open(dir.path().join("lock")).unwrap();
+        assert!(other.try_lock().is_err(), "another server must wait");
+
+        // A blocking lock, as a server takes it: a child process that a
+        // parallel test starts holds a copy of the lock until it runs git.
+        drop(held);
+        other.lock().unwrap();
     }
 
     #[test]

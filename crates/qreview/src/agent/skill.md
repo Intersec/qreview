@@ -25,13 +25,14 @@ Outside a fix: no edit, no `git commit`, no amend, no rebase, no
 If your commands run in a sandbox, the user starts the server, not you. A
 server started inside the sandbox cannot save comments, and the browser of
 the user cannot reach it. You know you are in one when `qreview` prints
-`Read-only file system` about `server.json`: stop that server, and ask the
-user to run `qreview` in their own terminal. Your commands then reach their
-server through its Unix socket under `/tmp`, with nothing to configure.
+`Read-only file system` about a `server-<id>.json` file: stop that server,
+and ask the user to run `qreview` in their own terminal. Your commands then
+reach their server through its Unix socket under `/tmp`, with nothing to
+configure.
 
-1. Run `qreview` in the background, from the repository. It opens the review
+1. Run `qreview` in the background, from the worktree. It opens the review
    in the browser of the user and prints its address.
-   - If a server already runs on the repository, `qreview` prints its
+   - If a server already runs on this worktree, `qreview` prints its
      address and stops. That is not an error: use that server. Check first
      with `qreview wait --timeout 1`: exit code 1 with JSON means a server
      answers.

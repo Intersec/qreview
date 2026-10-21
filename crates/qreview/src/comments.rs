@@ -116,6 +116,7 @@ pub fn counts(store: &Store, key: &str, commit: &str) -> Counts {
 
 /// Mark a change read, or unread.
 pub fn mark(store: &Store, key: &str, subject: &str, reviewed: bool) -> Result<bool> {
+    let _lock = store.lock()?;
     let mut file = store.load(key, subject)?;
     file.reviewed = reviewed;
     store.save(&file)?;
@@ -130,8 +131,9 @@ impl Target<'_> {
             bail!("a comment with no text says nothing");
         }
 
-        let mut file = self.store.load(self.key, self.subject)?;
         if new.parent.is_some() {
+            let _lock = self.store.lock()?;
+            let mut file = self.store.load(self.key, self.subject)?;
             let reply = self.reply(&mut file, new)?;
             self.store.save(&file)?;
             return Ok(reply);
@@ -162,6 +164,10 @@ impl Target<'_> {
             moves: Vec::new(),
         };
 
+        // Read after the anchor: git may take a while, and the lock must
+        // not wait on it.
+        let _lock = self.store.lock()?;
+        let mut file = self.store.load(self.key, self.subject)?;
         file.comments.push(comment.clone());
         self.store.save(&file)?;
 
@@ -237,6 +243,7 @@ pub fn edit(
     id: &str,
     edit: EditComment,
 ) -> Result<Comment> {
+    let _lock = store.lock()?;
     let mut file = store.load(key, "")?;
     let found = file
         .comments
@@ -271,6 +278,7 @@ pub fn edit(
 /// Delete a comment. A remark goes with its replies, which answer nothing
 /// once it is gone.
 pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
+    let _lock = store.lock()?;
     let mut file = store.load(key, "")?;
     let before = file.comments.len();
 
@@ -288,6 +296,7 @@ pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
 /// Delete the done threads of the version under review, replies with them.
 /// A thread opened again since is not done, and stays.
 pub fn clean(store: &Store, key: &str, current: &str) -> Result<usize> {
+    let _lock = store.lock()?;
     let mut file = store.load(key, "")?;
     let before = file.comments.len();
     let done: Vec<String> = file

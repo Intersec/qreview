@@ -84,7 +84,7 @@ impl Client {
         }
         let mut stream = TcpStream::connect(("127.0.0.1", self.address.port))
             .await
-            .context("no qreview server answers on this repository. Run `qreview` first")?;
+            .context("no qreview server answers on this worktree. Run `qreview` first")?;
         talk(&mut stream, &request).await
     }
 }

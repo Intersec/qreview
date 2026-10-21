@@ -764,3 +764,21 @@ second qreview beside the one that a team installs, and a server started
 with one answers the commands of the other. Rejected too: the skill beside
 the binary, in the directory that a team installs. Each reader then links
 it into their agent by hand.
+
+## 2026-10-21 — One server per worktree
+
+The address of a server was `server.json` in the store of the repository,
+and the store is shared by the worktrees of a clone. A second worktree then
+found the server of the first one: `qreview` said that a server already ran
+and stopped. Two worktrees could not be reviewed at the same time.
+
+**Decision.** The store stays one per repository, so a remark follows its
+commit from one worktree to another. The address file and the socket carry
+an id of the worktree: `server-<worktree-id>.json` and
+`<repo-id>-<worktree-id>.sock`. The id is a hash of the real path of the
+worktree. Two servers can now write one store, so each read of a change
+file and the write that follows it hold a file lock on the store.
+
+Rejected: one store per worktree. The remarks would not follow a commit
+from one worktree to another, and the store of a second worktree would look
+empty after the upgrade.

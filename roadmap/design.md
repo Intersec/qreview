@@ -26,12 +26,13 @@ server answers with a session cookie. A request without the cookie or the
 token gets 401. This stops another local user, and a page in another tab, from
 reading the repository.
 
-The token is also in `server.json` (section 11), a file only its owner can
-read, so the commands of an agent in a terminal of the same user reach the
-server. Another local user still cannot.
+The token is also in `server-<worktree-id>.json` (section 11), a file only
+its owner can read, so the commands of an agent in a terminal of the same
+user reach the server. Another local user still cannot.
 
-The server also listens on a Unix socket, `/tmp/qreview-<uid>/<repo-id>.sock`,
-for the commands of an agent. An agent in a sandbox runs each command in a
+The server also listens on a Unix socket,
+`/tmp/qreview-<uid>/<repo-id>-<worktree-id>.sock`, for the commands of an
+agent. An agent in a sandbox runs each command in a
 network of its own, where `127.0.0.1` is not the machine of the user, but it
 shares `/tmp`. The directory is made with mode `0700` and refused when
 another user owns it or others can enter it; the socket has mode `0600`.
@@ -439,6 +440,8 @@ $XDG_STATE_HOME/qreview/           (default ~/.local/state/qreview)
   repos/
     <repo-id>/
       repo.json                    remote URL, last known path, tool version
+      server-<worktree-id>.json    where the server of a worktree listens (section 11)
+      lock                         held for each read and write of a change file
       changes/
         I8f3a...c21.json           one file per change
         sha-4a91...f0.json
@@ -1347,23 +1350,32 @@ from now. It exits 0 with events, and 1 when the time runs out, 600 seconds
 by default. A `"reset": true` says the server restarted: read the review
 again with `export --json`.
 
-**The server of a repository.** At startup the server writes
-`server.json` beside `repo.json` in the directory of the repository
-(section 5.1), with mode `0600`:
+**The server of a worktree.** The worktrees of a clone share one store
+(section 5.1), but each one runs a server of its own. `<worktree-id>` is the
+first 16 hexadecimal characters of the SHA-256 of the real path of the top
+level directory of the worktree. At startup the server writes
+`server-<worktree-id>.json` beside `repo.json` in the directory of the
+repository, with mode `0600`:
 
 ```json
-{ "pid": 41207, "port": 38412, "token": "...", "socket": "/tmp/qreview-1000/4f5959a8bfd8b629.sock" }
+{ "pid": 41207, "port": 38412, "token": "...", "socket": "/tmp/qreview-1000/4f5959a8bfd8b629-c710c85489f3b4c3.sock" }
 ```
 
 It removes the file, and the socket, when it stops. The commands above
-read it to find the server, and try the socket before the port; none of them starts one, and each says to run `qreview` when no
-server answers. A file whose server does not answer is a stale one, left by
-a crash, and is ignored.
+read the file of their worktree to find the server, and try the socket
+before the port. None of them starts a server, and each says to run
+`qreview` when no server answers. A file whose server does not answer is a
+stale one, left by a crash, and is ignored.
 
 `qreview` itself reads it too. When a server already answers on the
-repository, it prints that URL and stops, and opens no second tab: an agent
+worktree, it prints that URL and stops, and opens no second tab: an agent
 that starts qreview twice gets the review that is open. Reviewing another
-range means stopping that server first.
+range in the same worktree means stopping that server first.
+
+Two servers can then write one store. Each read of a change file and the
+write that follows it hold a lock on the file `lock` in the directory of
+the repository, so two writes that cross never lose one of them. A server
+does not see the writes of the other one until its page reads again.
 
 **The trace.** `--trace`, or `QREVIEW_TRACE=1`, prints one line per piece of
 work to standard error: every git child process, every highlight pass, every

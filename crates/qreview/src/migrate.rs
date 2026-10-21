@@ -95,6 +95,7 @@ pub async fn run(session: &mut Session, request: Request) -> Result<Outcome> {
         );
     }
 
+    let lock = session.store.lock()?;
     let old_version = session.store.version(&from).unwrap_or_default();
     let new_version = session.store.version(&to).unwrap_or_default();
     if let Some(next) = old_version.next_version.as_deref()
@@ -124,6 +125,7 @@ pub async fn run(session: &mut Session, request: Request) -> Result<Outcome> {
             ..new_version
         },
     )?;
+    drop(lock);
     session.link_versions().await;
 
     let moved = move_threads(session, &from, &to, &old_info.key(), &key, &now).await?;
@@ -163,7 +165,7 @@ async fn move_threads(
     let old_base = session.base_of(from, &Against::Parent).await?;
     let new_base = session.base_of(to, &Against::Parent).await?;
 
-    let mut source = session.store.load(old_key, "")?;
+    let source = session.store.load(old_key, "")?;
     let remarks: Vec<String> = source
         .comments
         .iter()
@@ -174,14 +176,14 @@ async fn move_threads(
         remarks.contains(&c.id) || c.parent.as_ref().is_some_and(|p| remarks.contains(p))
     };
 
-    let mut leaving: Vec<Comment> = source
+    let mut placed: Vec<Comment> = source
         .comments
         .iter()
-        .filter(|c| in_thread(c))
+        .filter(|c| remarks.contains(&c.id))
         .cloned()
         .collect();
     let mut moved = Vec::new();
-    for comment in leaving.iter_mut().filter(|c| c.is_remark()) {
+    for comment in &mut placed {
         let pair = Pair {
             session,
             from,
@@ -206,6 +208,23 @@ async fn move_threads(
         });
         comment.anchor = anchor;
     }
+
+    // The places took git, so the file is read again under the lock: a
+    // reply written meanwhile by another server moves with its thread.
+    let _lock = session.store.lock()?;
+    let mut source = session.store.load(old_key, "")?;
+    let leaving: Vec<Comment> = source
+        .comments
+        .iter()
+        .filter(|c| in_thread(c))
+        .map(|c| {
+            placed
+                .iter()
+                .find(|p| p.id == c.id)
+                .cloned()
+                .unwrap_or_else(|| c.clone())
+        })
+        .collect();
 
     // The new key is written first. A failure between the two writes
     // leaves a thread in both places, never in neither.

@@ -13,28 +13,25 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
+use super::Home;
+
 /// `/tmp` itself, and not `$TMPDIR`: a sandbox points `$TMPDIR` somewhere
 /// of its own, and the server and the agent must name the same place.
 const ROOT: &str = "/tmp";
 
-/// The socket of the repository whose store is in `store_dir`, its
-/// directory made safe first.
-pub fn path_for(store_dir: &Path) -> Result<PathBuf> {
-    path_in(Path::new(ROOT), store_dir)
+/// The socket of the server of a worktree, its directory made safe first.
+pub fn path_for(home: &Home) -> Result<PathBuf> {
+    path_in(Path::new(ROOT), home)
 }
 
-fn path_in(root: &Path, store_dir: &Path) -> Result<PathBuf> {
-    let repo = store_dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("the store has no repository directory")?;
+fn path_in(root: &Path, home: &Home) -> Result<PathBuf> {
     let uid = fs::metadata("/proc/self")
         .context("cannot read who runs this process")?
         .uid();
     let dir = root.join(format!("qreview-{uid}"));
 
     private_dir(&dir, uid)?;
-    Ok(dir.join(format!("{repo}.sock")))
+    Ok(dir.join(format!("{}-{}.sock", home.repo, home.worktree)))
 }
 
 /// Make the directory, or check the one that is there.
@@ -133,13 +130,17 @@ mod tests {
     }
 
     #[test]
-    fn the_socket_is_named_after_the_repository() {
+    fn the_socket_is_named_after_the_repository_and_the_worktree() {
         let root = tempfile::tempdir().unwrap();
-        let store = Path::new("/home/u/.local/state/qreview/repos/4f59");
+        let home = Home {
+            dir: PathBuf::from("/home/u/.local/state/qreview/repos/4f59"),
+            repo: "4f59".to_owned(),
+            worktree: "a1b2".to_owned(),
+        };
 
-        let path = path_in(root.path(), store).unwrap();
+        let path = path_in(root.path(), &home).unwrap();
 
-        assert_eq!(path.file_name().unwrap(), "4f59.sock");
+        assert_eq!(path.file_name().unwrap(), "4f59-a1b2.sock");
         assert_eq!(
             path.parent().unwrap(),
             root.path().join(format!("qreview-{}", uid()))
