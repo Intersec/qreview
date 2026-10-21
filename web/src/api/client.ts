@@ -138,7 +138,12 @@ export const api = {
   allComments: () => call<ChangeComments[]>('/api/comments'),
 
   /// The writes to the store after a number, held until one comes.
-  events: (after?: number) => call<EventBatch>(`/api/events${query({ after: num(after) })}`),
+  /// A wait names the page, so the server says in its terminal when the
+  /// page closes.
+  events: (after?: number) =>
+    call<EventBatch>(
+      `/api/events${query({ after: num(after), who: after === undefined ? undefined : 'reader' })}`,
+    ),
 
   /// Where places of one version stand in the next one. Null for a file the
   /// next one deleted.

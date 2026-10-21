@@ -17,8 +17,11 @@ qreview [rev] [options]
 ```
 
 One process, one binary, no runtime to install. The interface is inside the
-binary. The process stops with Ctrl-C, or after the browser closes and no
-request arrives for the idle timeout.
+binary. The process stops with Ctrl-C. A closed page does not stop it, so
+an agent can go on. The server says in its terminal when the page opens.
+It says when the page closes, with the URL to open it again, and when the
+page comes back. The page counts as closed when no page has held a wait on
+the events (section 8.3) for 3 seconds, so a reload is not a close.
 
 The server binds the loopback address only. It generates a random token at
 startup. The first page request carries the token in the query string, and the
@@ -1102,9 +1105,9 @@ type Event = {
 A write names its author: in the body of a comment or of an edit, and as
 `?author=agent` on a delete and on a refresh, which carry no body.
 
-The interface holds one such request open, and reloads the comments of a
+The interface holds one such request open, with `who=reader`, and reloads the comments of a
 change when an event of the agent names it, or once at the end of a fix
-(section 5.7). `qreview wait` holds one too and
+(section 5.7). `qreview wait` holds one too, with `who=agent`, and
 returns on the first request of the reader: an `ask`, never a mere write. One route serves both, so there is
 one way to learn of a write.
 

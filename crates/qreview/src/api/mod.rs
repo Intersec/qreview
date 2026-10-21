@@ -1012,6 +1012,7 @@ struct ByQuery {
 struct EventsQuery {
     after: Option<u64>,
     /// `agent` on a wait of `qreview wait`, so the server knows one listens.
+    /// `reader` on a wait of the page, so the server knows the page is open.
     who: Option<String>,
 }
 
@@ -1024,7 +1025,8 @@ const EVENTS_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 /// The session lock is not held: a wait of 30 seconds must not stop a
 /// refresh.
 async fn events(State(state): State<AppState>, Query(query): Query<EventsQuery>) -> Json<Batch> {
-    let _waits = (query.who.as_deref() == Some("agent")).then(|| state.events.agent_waits());
+    let _agent = (query.who.as_deref() == Some("agent")).then(|| state.events.agent_waits());
+    let _page = (query.who.as_deref() == Some("reader")).then(|| state.events.page_waits());
 
     Json(state.events.after(query.after, EVENTS_WAIT).await)
 }

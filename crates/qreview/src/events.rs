@@ -90,6 +90,10 @@ const LISTENS_FOR: Duration = Duration::from_secs(120);
 /// takes minutes with no wait open; past this, the agent is taken for gone.
 const WORKS_FOR: Duration = Duration::from_secs(30 * 60);
 
+/// How long no page may wait before the page counts as closed. A reload
+/// opens a new wait within a second.
+const PAGE_GONE_AFTER: Duration = Duration::from_secs(3);
+
 #[derive(Default)]
 pub struct Events {
     log: Mutex<Log>,
@@ -98,6 +102,25 @@ pub struct Events {
     /// not sit behind it.
     closed: std::sync::atomic::AtomicBool,
     agent: Mutex<Listening>,
+    pages: Mutex<Pages>,
+}
+
+/// The pages of the review that hold a wait open.
+#[derive(Default)]
+struct Pages {
+    open: usize,
+    ended: Option<std::time::Instant>,
+}
+
+/// Held while a page waits. A guard, because the reader closes the tab.
+pub struct PageWaits<'a>(&'a Events);
+
+impl Drop for PageWaits<'_> {
+    fn drop(&mut self) {
+        let mut pages = self.0.pages.lock().expect("the page state is poisoned");
+        pages.open = pages.open.saturating_sub(1);
+        pages.ended = Some(std::time::Instant::now());
+    }
 }
 
 #[derive(Default)]
@@ -144,6 +167,25 @@ impl Events {
             self.push(Kind::Idle, Author::Agent, "", None);
         }
         AgentWaits(self)
+    }
+
+    /// Mark a page as waiting until the guard is dropped.
+    pub fn page_waits(&self) -> PageWaits<'_> {
+        self.pages.lock().expect("the page state is poisoned").open += 1;
+        PageWaits(self)
+    }
+
+    /// Whether a page of the review is open. None before the first one.
+    pub fn page_open(&self) -> Option<bool> {
+        self.page_open_within(PAGE_GONE_AFTER)
+    }
+
+    fn page_open_within(&self, grace: Duration) -> Option<bool> {
+        let pages = self.pages.lock().expect("the page state is poisoned");
+        if pages.open > 0 {
+            return Some(true);
+        }
+        pages.ended.map(|at| at.elapsed() < grace)
     }
 
     pub fn agent_listens(&self) -> bool {
@@ -280,6 +322,25 @@ mod tests {
     use super::*;
 
     const SHORT: Duration = Duration::from_millis(20);
+
+    #[test]
+    fn a_page_counts_as_closed_once_no_wait_holds_it() {
+        let events = Events::default();
+        assert_eq!(events.page_open_within(Duration::ZERO), None, "no page yet");
+
+        let first = events.page_waits();
+        let second = events.page_waits();
+        drop(first);
+        assert_eq!(events.page_open_within(Duration::ZERO), Some(true));
+
+        drop(second);
+        assert_eq!(events.page_open_within(Duration::ZERO), Some(false));
+        assert_eq!(
+            events.page_open_within(Duration::from_secs(60)),
+            Some(true),
+            "a reload is not a close"
+        );
+    }
 
     #[tokio::test]
     async fn no_number_answers_at_once_with_the_one_to_start_from() {
