@@ -253,6 +253,12 @@ for (const scheme of ['light', 'dark'] as const) {
   await second.locator('.talk-box:not(.posted-box)').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-posted.png`) });
 
+  // The banner of a server that stopped. The requests fail rather than the
+  // server stopping, because the next scheme still reads it.
+  await second.route('**/api/events**', (route) => route.abort());
+  await second.locator('.stopped').waitFor({ timeout: 40_000 });
+  await second.screenshot({ path: join(OUT, `${scheme}-stopped.png`) });
+
   await second.close();
 }
 

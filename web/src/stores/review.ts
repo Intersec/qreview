@@ -3,7 +3,7 @@
 
 import { defineStore } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
-import { api } from '@/api/client';
+import { api, serverGone } from '@/api/client';
 import { Catchup } from '@/diff/catchup';
 import { moveDrafts } from '@/diff/drafts';
 import { askLeave, tell } from '@/notify';
@@ -663,6 +663,9 @@ export const useReview = defineStore('review', () => {
   }
 
   let listening = false;
+  /// The server stopped. Nothing on this page reaches it again: a new
+  /// server has a new token, and most often a new port.
+  const stopped = ref(false);
   /// The agent works on a fix. The page holds what the agent writes until
   /// it is done, then catches up once, rather than reloading at every step.
   const working = ref(false);
@@ -705,9 +708,24 @@ export const useReview = defineStore('review', () => {
           }
           await held.settle(batch.events, batch.working);
         }
-      } catch {
+      } catch (error) {
+        if (serverGone(error) && (await stillGone())) {
+          stopped.value = true;
+          return;
+        }
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
+    }
+  }
+
+  /// Ask once more, a second later, before the page says the server is gone.
+  async function stillGone(): Promise<boolean> {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      await api.events();
+      return false;
+    } catch (error) {
+      return serverGone(error);
     }
   }
 
@@ -825,6 +843,7 @@ export const useReview = defineStore('review', () => {
     listen,
     agent,
     working,
+    stopped,
     asking,
     draftsMoved,
     openHere,

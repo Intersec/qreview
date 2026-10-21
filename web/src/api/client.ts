@@ -41,9 +41,20 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     const error = body?.error;
-    throw new ApiError(error?.code ?? 'failed', error?.message ?? response.statusText);
+    // The token guard answers in plain text, before any route.
+    const code = response.status === 401 ? 'unauthorized' : 'failed';
+    throw new ApiError(error?.code ?? code, error?.message ?? response.statusText);
   }
   return response.json() as Promise<T>;
+}
+
+/// True when the server that served this page is gone for good.
+///
+/// The server is on the loopback, so a request that reaches nothing means
+/// it stopped. A refused token means another server took its port, and the
+/// cookie of this page opens nothing there.
+export function serverGone(error: unknown): boolean {
+  return error instanceof TypeError || (error instanceof ApiError && error.code === 'unauthorized');
 }
 
 export const api = {

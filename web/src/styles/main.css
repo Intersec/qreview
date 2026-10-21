@@ -884,6 +884,17 @@ tr.talk td {
   font-size: 11px;
   color: #1a7f37;
 }
+.stopped {
+  flex: none;
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--waiting-edge);
+  background: var(--waiting);
+  color: var(--waiting-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .error {
   flex: none;
   padding: 6px 10px;

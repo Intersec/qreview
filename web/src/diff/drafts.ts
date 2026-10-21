@@ -56,6 +56,11 @@ export function drop(at: string) {
   write(at, '');
 }
 
+/// True when the browser holds any draft at all.
+export function any(): boolean {
+  return Object.keys(all()).length > 0;
+}
+
 /// Every place of one change and file that holds a draft.
 export function places(change: string, file: string): string[] {
   const head = `${change}|${file}|`;

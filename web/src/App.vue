@@ -16,6 +16,7 @@ import PatchSetBar from './components/PatchSetBar.vue';
 import SidePane from './components/SidePane.vue';
 import { useReview } from './stores/review';
 import { THREADS } from './diff/threads';
+import { any as anyDraft } from './diff/drafts';
 import type { Comment, Side } from './api/types';
 
 const review = useReview();
@@ -55,12 +56,28 @@ const {
   blockedFiles,
   agent,
   working,
+  stopped,
   asking,
   draftsMoved,
   openHere,
   doneHere,
   waitingHere,
 } = storeToRefs(review);
+
+/// The server stopped, and the reader still holds unsaved remarks. The tab
+/// then stays, so the reader can copy them.
+const unsaved = ref(false);
+
+// A browser lets a page close only a tab that a script opened, or a tab
+// with one entry in its history. When it refuses, the banner says it.
+watch(stopped, (now) => {
+  if (now) {
+    unsaved.value = anyDraft();
+    if (!unsaved.value) {
+      window.close();
+    }
+  }
+});
 
 /// The dialog of Fix is open.
 const fixing = ref(false);
@@ -519,6 +536,13 @@ onBeforeUnmount(() => {
       </span>
     </header>
 
+    <p v-if="stopped" role="alert" class="stopped">
+      The qreview server stopped. Close this tab. To review again, run <code>qreview</code> in the
+      terminal.
+      <template v-if="unsaved">
+        Copy your unsaved remarks first: a new server may not see them.
+      </template>
+    </p>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
 
     <main

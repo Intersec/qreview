@@ -1111,6 +1111,14 @@ change when an event of the agent names it, or once at the end of a fix
 returns on the first request of the reader: an `ask`, never a mere write. One route serves both, so there is
 one way to learn of a write.
 
+When the wait of the page reaches no server, or the server refuses its
+token, the server stopped. The page asks once more a second later, then
+stops listening. A new server has a new token, so this page never reaches
+it again. The page then closes its tab, unless the browser holds unsaved
+remarks. A browser lets a script close only a tab that a script opened, or
+a tab with one entry in its history. Where the tab stays, a banner says
+that the server stopped, and to close the tab.
+
 ## 9. Export for a Claude session
 
 Two ways out: a button in the interface that copies to the clipboard, and
