@@ -267,7 +267,7 @@ async fn serve(
     if !no_open {
         open_browser(&url);
     }
-    let page_task = tokio::spawn(watch_page(events.clone(), url.clone()));
+    let page_task = tokio::spawn(watch_parties(events.clone(), url.clone()));
 
     // On Ctrl-C the waits on the events answer at once, so the requests in
     // flight end. A request that still hangs gets a few seconds, no more:
@@ -303,14 +303,16 @@ async fn serve(
 }
 
 /// Say in the terminal when the page of the review opens, closes, and
-/// comes back. The server goes on without a page, for the agent.
-async fn watch_page(events: std::sync::Arc<qreview::events::Events>, url: String) {
-    let mut last = None;
+/// comes back, and when the agent connects and disconnects. The server goes
+/// on without either one.
+async fn watch_parties(events: std::sync::Arc<qreview::events::Events>, url: String) {
+    let mut page = None;
+    let mut agent = false;
     let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
     loop {
         tick.tick().await;
         let now = events.page_open();
-        match (last, now) {
+        match (page, now) {
             (Some(true), Some(false)) => {
                 println!("The review page closed. To open it again, go to {url}");
                 println!("Press Ctrl-C to stop.");
@@ -319,7 +321,15 @@ async fn watch_page(events: std::sync::Arc<qreview::events::Events>, url: String
             (Some(false), Some(true)) => println!("The review page is open again."),
             _ => {}
         }
-        last = now;
+        page = now;
+
+        let listens = events.agent_listens();
+        if listens && !agent {
+            println!("The agent is connected.");
+        } else if agent && !listens {
+            println!("The agent disconnected. To attach it again, ask it to run `qreview wait`.");
+        }
+        agent = listens;
     }
 }
 

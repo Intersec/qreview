@@ -465,6 +465,13 @@ onBeforeUnmount(() => {
 
       <span class="bar-actions">
         <span v-if="working" class="agent-working" role="status">Agent working…</span>
+        <span
+          v-else-if="agent"
+          class="agent-on"
+          role="status"
+          title="An agent listens: Ask agent and Fix reach it"
+          >Agent connected</span
+        >
         <button
           type="button"
           class="chip chip-fix"

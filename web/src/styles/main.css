@@ -33,6 +33,7 @@
   --waiting: #fce8e6;
   --waiting-edge: #d93025;
   --waiting-ink: #b3261e;
+  --online: #1e8e3e;
 
   --tok-keyword: #a626a4;
   --tok-string: #1a7f37;
@@ -84,6 +85,7 @@
     --waiting: #3a1715;
     --waiting-edge: #f28b82;
     --waiting-ink: #f28b82;
+    --online: #81c995;
 
     --tok-keyword: #c678dd;
     --tok-string: #98c379;
@@ -121,6 +123,7 @@
   --waiting: #3a1715;
   --waiting-edge: #f28b82;
   --waiting-ink: #f28b82;
+  --online: #81c995;
 
   --tok-keyword: #c678dd;
   --tok-string: #98c379;
@@ -1387,8 +1390,10 @@ kbd {
   text-align: center;
 }
 
-/* The agent works on a fix: the page holds its writes until it is done. */
-.agent-working {
+/* The agent works on a fix: the page holds its writes until it is done.
+   Between two fixes, the agent is only there, and says so quietly. */
+.agent-working,
+.agent-on {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1407,6 +1412,20 @@ kbd {
   border-radius: 50%;
   background: var(--agent-edge);
   animation: agent-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-on {
+  border-color: var(--edge);
+  background: none;
+  color: var(--ink-quiet);
+}
+
+.agent-on::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--online);
 }
 
 @keyframes agent-pulse {

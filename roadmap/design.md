@@ -21,7 +21,9 @@ binary. The process stops with Ctrl-C. A closed page does not stop it, so
 an agent can go on. The server says in its terminal when the page opens.
 It says when the page closes, with the URL to open it again, and when the
 page comes back. The page counts as closed when no page has held a wait on
-the events (section 8.3) for 3 seconds, so a reload is not a close.
+the events (section 8.3) for 3 seconds, so a reload is not a close. The
+server also says when an agent connects, and when it disconnects, by the
+rule of section 8.3 for an agent that listens.
 
 The server binds the loopback address only. It generates a random token at
 startup. The first page request carries the token in the query string, and the
@@ -1087,7 +1089,9 @@ works on a fix (section 5.7), and `left`, true when an agent listened to
 this server and listens no more. An agent listens while a `qreview wait`
 is open, for two minutes after it ends, during a fix, and for ten minutes
 after an `ask` that it has not answered with a new wait: a long answer is
-not leaving. While `left` is true, the page says that the agent stopped
+not leaving. While `agent` is true, the top bar of the page says that the
+agent is connected. When `agent` turns false, the page sends a browser
+notification. While `left` is true, the page says that the agent stopped
 listening, and to ask it to run `qreview wait` again. An `after`
 the server no longer holds, because it restarted or the
 event fell out of memory, answers with `"reset": true`, and the reader reads
