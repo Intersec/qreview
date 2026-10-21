@@ -1366,6 +1366,12 @@ from now. It exits 0 with events, and 1 when the time runs out, 600 seconds
 by default. A `"reset": true` says the server restarted: read the review
 again with `export --json`.
 
+`wait` stays attached across a stop of the server. When no server answers,
+it looks for one every second until the time runs out, so it attaches to a
+server that the user starts again. When the server it waited on stops and
+another one starts, it answers `"reset": true`. When no server comes before
+the time runs out, it fails with the message to run `qreview`.
+
 **The server of a worktree.** The worktrees of a clone share one store
 (section 5.1), but each one runs a server of its own. `<worktree-id>` is the
 first 16 hexadecimal characters of the SHA-256 of the real path of the top

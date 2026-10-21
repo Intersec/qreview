@@ -782,3 +782,30 @@ file and the write that follows it hold a file lock on the store.
 Rejected: one store per worktree. The remarks would not follow a commit
 from one worktree to another, and the store of a second worktree would look
 empty after the upgrade.
+
+## 2026-10-21 — The page, the server and the agent say when one is gone
+
+When the server stopped, the page stayed and every click failed. When the
+page closed, the terminal said nothing. When the agent stopped waiting, the
+page only greyed out Fix, and the reader did not know why. A `qreview wait`
+failed as soon as its server stopped.
+
+**Decision.** Each party learns of the others through the wait on
+`/api/events`, which both already hold:
+
+- The page sends `who=reader`. The server prints in its terminal when a
+  page first waits, when no page has waited for 3 seconds, and when a page
+  waits again. A reload opens a new wait within a second, so 3 seconds
+  keep a reload from counting as a close.
+- The page takes a request that reaches nothing, or a refused token, for a
+  stopped server. It closes its tab when the browser lets it, and shows a
+  banner when the browser refuses.
+- The answer carries `left`: an agent listened, and listens no more. The
+  page asks the reader to start the agent again. An unanswered `ask` keeps
+  the agent present for ten minutes, so a long answer is not a false
+  `left`.
+- `qreview wait` looks for a server every second until its time runs out,
+  so the agent attaches again to a server that the user restarts.
+
+Rejected: a server that stops when the page closes. The agent can still
+work, and a reload would kill the review.

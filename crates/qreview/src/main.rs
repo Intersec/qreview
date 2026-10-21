@@ -152,9 +152,9 @@ async fn agent_command(cli: &cli::Cli, cwd: &std::path::Path) -> Result<Option<i
             print(&agent::reply(&client, id, &body, *done, *blocked).await?);
         }
         Some(cli::Command::Wait { after, timeout }) => {
-            let client = agent::connect(cwd).await?;
+            let home = agent::home(cwd).await?;
             let timeout = std::time::Duration::from_secs(*timeout);
-            let (events, any) = agent::wait(&client, *after, timeout).await?;
+            let (events, any) = agent::wait(&home, *after, timeout).await?;
             print(&events);
             return Ok(Some(if any { 0 } else { 1 }));
         }

@@ -276,13 +276,21 @@ fn requests(events: &Value) -> Vec<Value> {
         .collect()
 }
 
+/// How often a wait looks for a server that stopped.
+const RETRY: Duration = Duration::from_secs(1);
+
 /// Wait for the next request of the reader.
 ///
 /// Answers with the requests, each with the thread it names, and the number
 /// to pass as `after` next time. The flag is false when the time ran out
 /// with nothing to report.
-pub async fn wait(client: &Client, after: Option<u64>, timeout: Duration) -> Result<(Value, bool)> {
+///
+/// A server that stops does not end the wait: the user may start it again,
+/// and the agent then stays attached with no word from it. A new server
+/// numbers its events again, so the wait answers `reset` then.
+pub async fn wait(home: &Home, after: Option<u64>, timeout: Duration) -> Result<(Value, bool)> {
     let deadline = Instant::now() + timeout;
+    let mut client = reach(home, deadline).await?;
     let mut after = match after {
         Some(after) => after,
         None => client.get("/api/events").await?["next"]
@@ -291,9 +299,20 @@ pub async fn wait(client: &Client, after: Option<u64>, timeout: Duration) -> Res
     };
 
     loop {
-        let batch = client
+        let Ok(batch) = client
             .get(&format!("/api/events?after={after}&who=agent"))
-            .await?;
+            .await
+        else {
+            let back = reach(home, deadline).await?;
+            if back.address() != client.address() {
+                let next = back.get("/api/events").await?["next"]
+                    .as_u64()
+                    .unwrap_or_default();
+                return Ok((json!({ "events": [], "next": next, "reset": true }), true));
+            }
+            client = back;
+            continue;
+        };
         let next = batch["next"].as_u64().unwrap_or(after);
         if batch["reset"].as_bool() == Some(true) {
             return Ok((json!({ "events": [], "next": next, "reset": true }), true));
@@ -301,7 +320,7 @@ pub async fn wait(client: &Client, after: Option<u64>, timeout: Duration) -> Res
 
         let asked = requests(&batch["events"]);
         if !asked.is_empty() {
-            let events = with_threads(client, asked).await?;
+            let events = with_threads(&client, asked).await?;
             return Ok((json!({ "events": events, "next": next }), true));
         }
 
@@ -309,6 +328,19 @@ pub async fn wait(client: &Client, after: Option<u64>, timeout: Duration) -> Res
         if Instant::now() >= deadline {
             return Ok((json!({ "events": [], "next": after }), false));
         }
+    }
+}
+
+/// The server of the worktree, as soon as one answers before the deadline.
+async fn reach(home: &Home, deadline: Instant) -> Result<Client> {
+    loop {
+        if let Some(client) = running(home).await {
+            return Ok(client);
+        }
+        if Instant::now() >= deadline {
+            bail!("no qreview server runs on this worktree. Run `qreview` first");
+        }
+        tokio::time::sleep(RETRY).await;
     }
 }
 

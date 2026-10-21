@@ -56,6 +56,11 @@ Repeat until the user says the review is over:
    - `"reset": true`: the server restarted. Read everything again with
      `qreview export --json`.
    - Exit code 1 and no event: the time ran out. Wait again.
+   - The error `no qreview server runs on this worktree`: the server
+     stopped and did not come back before the time ran out. Tell the user
+     once, then wait again. A `wait` attaches to the server as soon as the
+     user starts one. If the server stops during a `wait`, the `wait`
+     looks for it again, and a new server answers `"reset": true`.
    - An event of kind `fix`: the user pressed **Fix** on the change `key`.
      See "Fix a change".
 3. Answer the thread. See "Answer a remark". Change nothing. If `thread` is empty, or a
