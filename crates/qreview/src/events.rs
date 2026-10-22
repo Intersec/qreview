@@ -105,9 +105,15 @@ pub enum TaskKind {
     Answer,
 }
 
-/// How long after its last wait an agent still counts as listening. It
-/// reads and answers between two waits, and that is not leaving.
-const LISTENS_FOR: Duration = Duration::from_secs(120);
+/// How long after a wait that answered an agent still counts as listening.
+/// A `qreview wait` that runs out of time returns, and the agent starts the
+/// next one on its next turn.
+const LISTENS_FOR: Duration = Duration::from_secs(30);
+
+/// How long after a wait that it hung up on an agent still counts as
+/// listening. Its `qreview wait` stopped: only one that the agent starts
+/// again at once is not leaving.
+const HUNG_UP_FOR: Duration = Duration::from_secs(5);
 
 /// How long an ask keeps the agent present while it answers. A long answer
 /// is not leaving.
@@ -154,6 +160,8 @@ impl Drop for PageWaits<'_> {
 struct Listening {
     open: usize,
     ended: Option<std::time::Instant>,
+    /// How long the agent counts as listening after `ended`.
+    grace: Duration,
     /// The agent wrote since its last wait opened.
     wrote: bool,
     /// When the reader asked for a fix that the agent has not finished.
@@ -169,13 +177,39 @@ struct Listening {
 }
 
 /// Held while an agent waits. A guard, because the agent can hang up.
-pub struct AgentWaits<'a>(&'a Events);
+pub struct AgentWaits<'a> {
+    events: &'a Events,
+    answered: bool,
+}
+
+impl AgentWaits<'_> {
+    /// The wait got its answer. A guard dropped before this hung up.
+    pub fn answered(&mut self) {
+        self.answered = true;
+    }
+}
 
 impl Drop for AgentWaits<'_> {
     fn drop(&mut self) {
-        let mut agent = self.0.agent.lock().expect("the agent state is poisoned");
+        let mut agent = self
+            .events
+            .agent
+            .lock()
+            .expect("the agent state is poisoned");
         agent.open = agent.open.saturating_sub(1);
         agent.ended = Some(std::time::Instant::now());
+        agent.grace = if self.answered {
+            LISTENS_FOR
+        } else {
+            HUNG_UP_FOR
+        };
+        let hung_up = !self.answered && agent.open == 0;
+        drop(agent);
+        if hung_up {
+            // The waits of the pages answer when the grace runs out, and
+            // they must learn of it now to count from here.
+            self.events.notify.notify_waiters();
+        }
     }
 }
 
@@ -208,7 +242,10 @@ impl Events {
             // wait would hold the news for up to 30 seconds.
             self.notify.notify_waiters();
         }
-        AgentWaits(self)
+        AgentWaits {
+            events: self,
+            answered: false,
+        }
     }
 
     /// Mark a page as waiting until the guard is dropped.
@@ -238,6 +275,20 @@ impl Events {
     pub fn agent_left(&self) -> bool {
         let agent = self.agent.lock().expect("the agent state is poisoned");
         agent.seen && !listens(&agent)
+    }
+
+    /// How long until an agent with no wait open stops listening, when
+    /// only the grace of its last wait keeps it.
+    fn agent_gone_in(&self) -> Option<Duration> {
+        let agent = self.agent.lock().expect("the agent state is poisoned");
+        if agent.open > 0 || answering(&agent) || working(&agent) {
+            return None;
+        }
+        let ended = agent.ended?;
+        agent
+            .grace
+            .checked_sub(ended.elapsed())
+            .filter(|left| !left.is_zero())
     }
 
     pub fn agent_works(&self) -> bool {
@@ -337,6 +388,9 @@ impl Events {
         if !batch.events.is_empty() || batch.reset || closed {
             return batch;
         }
+        // The page shows the agent as gone once its grace runs out, with no
+        // event to wake it then.
+        let wait = self.agent_gone_in().map_or(wait, |gone| wait.min(gone));
         let _ = tokio::time::timeout(wait, notified).await;
 
         self.since(after)
@@ -389,7 +443,7 @@ impl Events {
 
 fn listens(agent: &Listening) -> bool {
     agent.open > 0
-        || agent.ended.is_some_and(|at| at.elapsed() < LISTENS_FOR)
+        || agent.ended.is_some_and(|at| at.elapsed() < agent.grace)
         || answering(agent)
         || working(agent)
 }
@@ -515,14 +569,61 @@ mod tests {
         let events = Events::default();
         assert!(!events.agent_listens());
 
-        let waiting = events.agent_waits();
+        let mut waiting = events.agent_waits();
         assert!(events.agent_listens());
+        waiting.answered();
         drop(waiting);
         assert!(events.agent_listens(), "it reads before it waits again");
 
         events.agent.lock().unwrap().ended =
             Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
         assert!(!events.agent_listens());
+    }
+
+    #[test]
+    fn an_agent_that_hangs_up_leaves_sooner_than_one_that_was_answered() {
+        let ago = std::time::Instant::now() - HUNG_UP_FOR - Duration::from_millis(1);
+
+        let events = Events::default();
+        drop(events.agent_waits());
+        assert!(events.agent_listens(), "a wait started again at once");
+        events.agent.lock().unwrap().ended = Some(ago);
+        assert!(!events.agent_listens(), "its `qreview wait` stopped");
+
+        let events = Events::default();
+        let mut waiting = events.agent_waits();
+        waiting.answered();
+        drop(waiting);
+        events.agent.lock().unwrap().ended = Some(ago);
+        assert!(events.agent_listens(), "it starts the next wait");
+    }
+
+    #[tokio::test]
+    async fn the_page_hears_that_the_agent_hung_up_once_its_grace_runs_out() {
+        let events = Arc::new(Events::default());
+        let waiting = events.agent_waits();
+        let page = {
+            let events = events.clone();
+            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30)).await })
+        };
+        tokio::time::sleep(SHORT).await;
+
+        drop(waiting);
+        let woken = tokio::time::timeout(Duration::from_secs(1), page)
+            .await
+            .expect("the hang-up wakes the page")
+            .unwrap();
+        assert!(woken.agent, "the grace still runs");
+
+        events.agent.lock().unwrap().ended =
+            Some(std::time::Instant::now() - HUNG_UP_FOR + Duration::from_millis(200));
+        let gone = tokio::time::timeout(
+            Duration::from_secs(1),
+            events.after(Some(0), Duration::from_secs(30)),
+        )
+        .await
+        .expect("the page wait ends with the grace");
+        assert!(gone.left);
     }
 
     #[tokio::test]

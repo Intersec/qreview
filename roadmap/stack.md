@@ -809,3 +809,21 @@ failed as soon as its server stopped.
 
 Rejected: a server that stops when the page closes. The agent can still
 work, and a reload would kill the review.
+
+## 2026-10-22 — An agent that stops its wait is gone in 5 seconds
+
+The page and the terminal said "agent connected" for two minutes after the
+agent stopped its `qreview wait`. The two minutes covered the time
+between two waits, and the server did not tell that time from a stopped
+wait.
+
+**Decision.** The server tells them apart by how the wait ended. A wait
+that answered keeps the agent present for 30 seconds: the agent reads the
+answer and starts the next wait. An `ask` and a fix keep it present longer,
+as before. A wait that the agent hung up on keeps it present for 5 seconds,
+enough for a wait that it starts again at once. The hang-up wakes the
+waits of the pages, and they answer when the 5 seconds run out.
+
+Rejected: a ping from `qreview wait` while it blocks. The server already
+learns of a hang-up at once, because the connection closes. A ping adds
+nothing to that, and the time between two waits stays.

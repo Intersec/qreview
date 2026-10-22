@@ -1025,10 +1025,15 @@ const EVENTS_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 /// The session lock is not held: a wait of 30 seconds must not stop a
 /// refresh.
 async fn events(State(state): State<AppState>, Query(query): Query<EventsQuery>) -> Json<Batch> {
-    let _agent = (query.who.as_deref() == Some("agent")).then(|| state.events.agent_waits());
+    let mut agent = (query.who.as_deref() == Some("agent")).then(|| state.events.agent_waits());
     let _page = (query.who.as_deref() == Some("reader")).then(|| state.events.page_waits());
 
-    Json(state.events.after(query.after, EVENTS_WAIT).await)
+    let batch = state.events.after(query.after, EVENTS_WAIT).await;
+    // Reached only when the agent did not hang up, which drops this future.
+    if let Some(agent) = &mut agent {
+        agent.answered();
+    }
+    Json(batch)
 }
 
 /// Ask the agent to fix the change. See section 5.7.

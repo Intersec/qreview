@@ -805,8 +805,8 @@ id of their thread, which a move does not change, so they need nothing.
 - If a thread of the change waits for the reader, the dialog lists those
   threads instead and sends nothing. `Enter` jumps to the first one.
 - Without an agent, the button is disabled and `a` opens nothing. The server
-  knows an agent listens while a `qreview wait` is open, or ended less than
-  two minutes ago, or while a fix runs, and says so on every answer of
+  knows an agent listens while a `qreview wait` is open, or ended shortly
+  before (section 8.3), or while a fix runs, and says so on every answer of
   `/api/events`.
 - Sending writes a `fix` event, author the reader, naming the change.
   `qreview wait` returns it like any other.
@@ -1095,9 +1095,12 @@ answers with an empty list. Each answer carries the number to ask after
 next, `agent`, true while an agent listens, `working`, true while it
 works on a fix (section 5.7), and `left`, true when an agent listened to
 this server and listens no more. An agent listens while a `qreview wait`
-is open, for two minutes after it ends, during a fix, and for ten minutes
-after an `ask` that it has not answered with a new wait: a long answer is
-not leaving. An agent that arrives wakes the waits of the pages, so the page
+is open, during a fix, and for ten minutes after an `ask` that it has not
+answered with a new wait: a long answer is not leaving. After a wait that
+answered, it listens for 30 seconds more, the time to start the next one.
+After a wait that it hung up on, its `qreview wait` stopped, and it listens
+for 5 seconds more. An agent that arrives or hangs up wakes the waits of
+the pages, and a page wait answers when that grace runs out, so the page
 hears of it at once and not at the end of its wait.
 
 `task` names what the agent does: `{ "kind": "fix", "key" }` during a fix,
