@@ -12,6 +12,42 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.14.0]
+
+### Added
+
+- **Agent status** — the top bar of the page and the terminal of the server
+  say when the agent is connected. When it disconnects, the terminal says
+  so, and the browser sends a notification.
+- **Agent gone in the page** — when the agent stops listening, the page says
+  so, and asks you to have it run `qreview wait` again.
+- **What the agent does** — the top bar names the change that the agent
+  fixes, or the remark that it answers. A click opens it.
+- **The page in the terminal** — the server says when the review page opens
+  and when it closes, with the URL to open it again.
+- **Stopped server in the page** — when the server stops, the page closes its
+  tab, or says that the server stopped where the browser does not let a page
+  close its tab.
+- **State on the tab** — a dot on the icon of the tab says whether the agent
+  listens, works, or left, and whether the server stopped. The title of a
+  tab whose server stopped starts with ⏹.
+- **Status line** — on a terminal, the server keeps one line under its
+  messages that says whether the page is open, and whether the agent is
+  connected, works on a change, or left.
+
+### Changed
+
+- `qreview wait` waits for a server to start, and attaches again when the
+  server restarts, where it used to fail at once.
+
+### Fixed
+
+- The page and the terminal say that the agent disconnected 5 seconds after
+  its `qreview wait` stops, where they used to wait two minutes.
+- Two worktrees of one clone can each run `qreview` at the same time. The
+  second one used to find the server of the first one and stop. The
+  worktrees still share their remarks.
+
 ## [0.13.0]
 
 ### Added
