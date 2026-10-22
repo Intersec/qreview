@@ -2,8 +2,7 @@
   "languages": {
     "blk": "c",
     "pxc": "c",
-    "pyx": "python",
-    "iop": "d"
+    "pyx": "python"
   },
   "gerrit": {
     "enabled": true,
