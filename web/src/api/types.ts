@@ -235,6 +235,16 @@ export interface EventBatch {
   working: boolean;
   /// An agent listened to this server, and listens no more.
   left: boolean;
+  /// What the agent does now.
+  task: AgentTask | null;
+}
+
+/// A piece of work that the reader handed to the agent.
+export interface AgentTask {
+  kind: 'fix' | 'answer';
+  key: string;
+  /// The thread, on an answer.
+  id: string | null;
 }
 
 export interface ChangeFile {

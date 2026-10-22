@@ -17,6 +17,7 @@ import SidePane from './components/SidePane.vue';
 import { useReview } from './stores/review';
 import { THREADS } from './diff/threads';
 import { any as anyDraft } from './diff/drafts';
+import { describe as describeTask } from './activity';
 import type { Comment, Side } from './api/types';
 
 const review = useReview();
@@ -56,6 +57,7 @@ const {
   blockedFiles,
   agent,
   agentLeft,
+  task,
   working,
   stopped,
   asking,
@@ -79,6 +81,31 @@ watch(stopped, (now) => {
     }
   }
 });
+
+/// What the agent does, as the top bar names it.
+const activity = computed(() =>
+  task.value
+    ? describeTask(
+        task.value,
+        (key) => series.value?.changes.find((c) => c.key === key)?.subject,
+        (key, id) => written.value.find((c) => c.key === key)?.comments.find((c) => c.id === id),
+      )
+    : null,
+);
+
+/// Open what the agent works on: the thread it answers, or the change it
+/// fixes.
+async function openTask() {
+  const now = task.value;
+  if (!now) {
+    return;
+  }
+  const remark = now.id
+    ? written.value.find((c) => c.key === now.key)?.comments.find((c) => c.id === now.id)
+    : undefined;
+  const anchor = remark?.anchor;
+  await goToComment(now.key, anchor?.file ?? '', anchor?.side ?? 'new', anchor?.startLine ?? null);
+}
 
 /// The dialog of Fix is open.
 const fixing = ref(false);
@@ -464,7 +491,17 @@ onBeforeUnmount(() => {
       <p v-if="series" class="repo">{{ series.repo.remote ?? series.repo.root }}</p>
 
       <span class="bar-actions">
-        <span v-if="working" class="agent-working" role="status">Agent working…</span>
+        <button
+          v-if="activity"
+          type="button"
+          class="agent-working"
+          role="status"
+          :title="activity.title ? `${activity.title}\n\nOpen it` : 'Open it'"
+          @click="openTask"
+        >
+          {{ activity.text }}
+        </button>
+        <span v-else-if="working" class="agent-working" role="status">Agent working…</span>
         <span
           v-else-if="agent"
           class="agent-on"

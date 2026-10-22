@@ -1395,6 +1395,12 @@ kbd {
 .agent-working,
 .agent-on {
   display: inline-flex;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: inherit;
+  font: inherit;
+  cursor: default;
   align-items: center;
   gap: 6px;
   padding: 2px 10px;
@@ -1403,6 +1409,10 @@ kbd {
   background: var(--agent);
   font-size: 12px;
   white-space: nowrap;
+}
+
+button.agent-working {
+  cursor: pointer;
 }
 
 .agent-working::before {

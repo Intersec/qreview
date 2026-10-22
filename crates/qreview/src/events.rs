@@ -83,6 +83,26 @@ pub struct Batch {
     /// An agent listened to this server, and listens no more. The page asks
     /// the reader to start it again.
     pub left: bool,
+    /// What the agent does now, so the page can name it.
+    pub task: Option<Task>,
+}
+
+/// A piece of work that the reader handed to the agent.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Task {
+    pub kind: TaskKind,
+    /// The change.
+    pub key: String,
+    /// The thread, on an answer.
+    pub id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskKind {
+    Fix,
+    Answer,
 }
 
 /// How long after its last wait an agent still counts as listening. It
@@ -138,8 +158,12 @@ struct Listening {
     wrote: bool,
     /// When the reader asked for a fix that the agent has not finished.
     fixing: Option<std::time::Instant>,
+    /// The change of that fix.
+    fix_of: String,
     /// When the reader asked the agent about a thread, while it listened.
     answering: Option<std::time::Instant>,
+    /// The change and the thread of that question.
+    answer_to: (String, String),
     /// An agent waited once on this server.
     seen: bool,
 }
@@ -168,16 +192,21 @@ impl Events {
     /// A wait that opens after the agent wrote ends its work: the agent goes
     /// back to waiting once it is done, so this says so with no command.
     pub fn agent_waits(&self) -> AgentWaits<'_> {
-        let ended = {
+        let (ended, arrived) = {
             let mut agent = self.agent.lock().expect("the agent state is poisoned");
+            let arrived = !listens(&agent);
             agent.open += 1;
             agent.seen = true;
             agent.fixing = None;
             agent.answering = None;
-            std::mem::take(&mut agent.wrote)
+            (std::mem::take(&mut agent.wrote), arrived)
         };
         if ended {
             self.push(Kind::Idle, Author::Agent, "", None);
+        } else if arrived {
+            // No event, but the page shows whether an agent listens, and its
+            // wait would hold the news for up to 30 seconds.
+            self.notify.notify_waiters();
         }
         AgentWaits(self)
     }
@@ -215,6 +244,24 @@ impl Events {
         working(&self.agent.lock().expect("the agent state is poisoned"))
     }
 
+    /// What the agent does now. A fix holds every thread of the change, so
+    /// it comes before a question asked during it.
+    pub fn agent_task(&self) -> Option<Task> {
+        let agent = self.agent.lock().expect("the agent state is poisoned");
+        if working(&agent) {
+            return Some(Task {
+                kind: TaskKind::Fix,
+                key: agent.fix_of.clone(),
+                id: None,
+            });
+        }
+        answering(&agent).then(|| Task {
+            kind: TaskKind::Answer,
+            key: agent.answer_to.0.clone(),
+            id: Some(agent.answer_to.1.clone()),
+        })
+    }
+
     pub fn push(&self, kind: Kind, author: Author, key: &str, id: Option<&str>) {
         self.push_with(kind, author, key, id, None);
     }
@@ -235,9 +282,11 @@ impl Events {
             let mut agent = self.agent.lock().expect("the agent state is poisoned");
             if kind == Kind::Fix {
                 agent.fixing = Some(std::time::Instant::now());
+                agent.fix_of = key.to_owned();
             }
             if kind == Kind::Ask && listens(&agent) {
                 agent.answering = Some(std::time::Instant::now());
+                agent.answer_to = (key.to_owned(), id.unwrap_or_default().to_owned());
             }
             if author == Author::Agent && kind != Kind::Idle {
                 agent.wrote = true;
@@ -297,6 +346,7 @@ impl Events {
         let working = self.agent_works();
         let agent = self.agent_listens();
         let left = self.agent_left();
+        let task = self.agent_task();
         let log = self.log.lock().expect("the event log is poisoned");
         let next = log.last;
 
@@ -308,6 +358,7 @@ impl Events {
                 agent,
                 working,
                 left,
+                task: task.clone(),
             };
         }
         let first = log.kept.front().map_or(log.last + 1, |e| e.seq);
@@ -321,6 +372,7 @@ impl Events {
                 agent,
                 working,
                 left,
+                task: task.clone(),
             };
         }
         Batch {
@@ -330,6 +382,7 @@ impl Events {
             agent,
             working,
             left,
+            task,
         }
     }
 }
@@ -337,8 +390,12 @@ impl Events {
 fn listens(agent: &Listening) -> bool {
     agent.open > 0
         || agent.ended.is_some_and(|at| at.elapsed() < LISTENS_FOR)
-        || agent.answering.is_some_and(|at| at.elapsed() < ANSWERS_FOR)
+        || answering(agent)
         || working(agent)
+}
+
+fn answering(agent: &Listening) -> bool {
+    agent.answering.is_some_and(|at| at.elapsed() < ANSWERS_FOR)
 }
 
 fn working(agent: &Listening) -> bool {
@@ -498,6 +555,48 @@ mod tests {
         events.agent.lock().unwrap().ended =
             Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
         assert!(!events.agent_listens(), "the wait ended the answer");
+    }
+
+    #[tokio::test]
+    async fn an_agent_that_arrives_wakes_the_page() {
+        let events = Arc::new(Events::default());
+        let page = {
+            let events = events.clone();
+            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30)).await })
+        };
+        tokio::time::sleep(SHORT).await;
+
+        let _waits = events.agent_waits();
+
+        let batch = tokio::time::timeout(Duration::from_secs(1), page)
+            .await
+            .expect("the page heard of the agent at once")
+            .unwrap();
+        assert!(batch.agent);
+    }
+
+    #[tokio::test]
+    async fn the_task_names_the_fix_first_then_the_question() {
+        let events = Events::default();
+        drop(events.agent_waits());
+        assert_eq!(events.agent_task(), None);
+
+        events.push(Kind::Ask, Author::Reader, "I1", Some("c-1"));
+        assert_eq!(
+            events.agent_task(),
+            Some(Task {
+                kind: TaskKind::Answer,
+                key: "I1".to_owned(),
+                id: Some("c-1".to_owned()),
+            })
+        );
+
+        events.push(Kind::Fix, Author::Reader, "I2", None);
+        let task = events.after(None, SHORT).await.task.unwrap();
+        assert_eq!((task.kind, task.key.as_str()), (TaskKind::Fix, "I2"));
+
+        drop(events.agent_waits());
+        assert_eq!(events.agent_task(), None, "a wait ends the work");
     }
 
     #[tokio::test]

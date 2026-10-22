@@ -253,6 +253,24 @@ for (const scheme of ['light', 'dark'] as const) {
   await second.locator('.talk-box:not(.posted-box)').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-posted.png`) });
 
+  // The work of the agent, named in the top bar.
+  const otherSession = (await (
+    await second.request.get(new URL('/api/session', other.url).href)
+  ).json()) as { series: { changes: { key: string; subject: string }[] } };
+  const net = otherSession.series.changes.find((c) => c.subject.startsWith('net:'));
+  await second.route('**/api/events**', async (route) => {
+    const answer = await route.fetch({ timeout: 0 });
+    const task = { kind: 'fix', key: net?.key ?? '', id: null };
+    await route.fulfill({
+      response: answer,
+      json: { ...(await answer.json()), agent: true, working: true, task },
+    });
+  });
+  await second.reload();
+  await second.getByRole('status').filter({ hasText: 'Agent fixing' }).waitFor({ timeout: 40_000 });
+  await second.screenshot({ path: join(OUT, `${scheme}-agent-task.png`) });
+  await second.unrouteAll({ behavior: 'ignoreErrors' });
+
   // The mark of an agent that listens, in the top bar.
   await second.route('**/api/events**', async (route) => {
     const answer = await route.fetch({ timeout: 0 });

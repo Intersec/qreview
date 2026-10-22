@@ -11,6 +11,7 @@ import { awaitsAgent, isBlocked, repliesBy } from '@/diff/threads';
 import { isCurrent, open, rounds } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
+  AgentTask,
   ChangeComments,
   Comment,
   Config,
@@ -633,6 +634,8 @@ export const useReview = defineStore('review', () => {
   const agent = ref(false);
   /// An agent listened, and stopped: the reader starts it again.
   const agentLeft = ref(false);
+  /// What the agent does now.
+  const task = ref<AgentTask | null>(null);
 
   /// The change on the screen, as every count reads it.
   const here = computed(() => written.value.find((change) => change.key === changeKey.value));
@@ -686,6 +689,7 @@ export const useReview = defineStore('review', () => {
         let after = start.next;
         agent.value = start.agent;
         agentLeft.value = start.left;
+        task.value = start.task;
         working.value = start.working;
         const held = new Catchup(
           {
@@ -706,6 +710,7 @@ export const useReview = defineStore('review', () => {
           }
           agent.value = batch.agent;
           agentLeft.value = batch.left;
+          task.value = batch.task;
           working.value = batch.working;
           // An agent that left answers nothing: the hourglass would lie.
           asking.value &&= batch.agent;
@@ -850,6 +855,7 @@ export const useReview = defineStore('review', () => {
     listen,
     agent,
     agentLeft,
+    task,
     working,
     stopped,
     asking,
