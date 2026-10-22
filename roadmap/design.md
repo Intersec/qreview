@@ -1138,7 +1138,14 @@ stops listening. A new server has a new token, so this page never reaches
 it again. The page then closes its tab, unless the browser holds unsaved
 remarks. A browser lets a script close only a tab that a script opened, or
 a tab with one entry in its history. Where the tab stays, a banner says
-that the server stopped, and to close the tab.
+that the server stopped, and to close the tab, and the title of the tab
+starts with `⏹`.
+
+The icon of the tab carries a dot for the state of the review, the most
+urgent first: red when the server stopped, blue while the agent works on a
+task, orange when the agent left, green while it listens. With no agent,
+the icon is the plain logo. A reader sees it from another tab, where the
+top bar is out of sight.
 
 ## 9. Export for a Claude session
 

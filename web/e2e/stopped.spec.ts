@@ -14,6 +14,12 @@ test('a stopped server leaves a banner that says to close the tab', async ({ pag
     // A tab that the test opened with a link has history, so the browser
     // refuses to close it, and the banner stays.
     await expect(page.getByRole('alert')).toContainText('The qreview server stopped');
+    // Seen from another tab: the title and the icon say it too.
+    await expect(page).toHaveTitle(/^⏹ qreview/);
+    await expect(page.locator('link[rel="icon"]')).toHaveAttribute(
+      'href',
+      /^data:image\/svg\+xml,.*%23d93025/,
+    );
   } finally {
     server.stop();
   }

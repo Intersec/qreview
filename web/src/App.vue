@@ -18,6 +18,7 @@ import { useReview } from './stores/review';
 import { THREADS } from './diff/threads';
 import { any as anyDraft } from './diff/drafts';
 import { describe as describeTask } from './activity';
+import { show as showSignal, signalOf } from './favicon';
 import type { Comment, Side } from './api/types';
 
 const review = useReview();
@@ -448,16 +449,32 @@ watch(
     () => blockedThreads.value.length,
     () => turnMark.value,
     () => working.value || asking.value,
+    () => stopped.value,
   ],
-  ([repo, subject, waiting, turn, busy]) => {
+  ([repo, subject, waiting, turn, busy, over]) => {
     questions.value = waiting;
     const name = ['qreview', repo, subject].filter(Boolean).join(' · ');
     // The tab says whose turn it is, seen from among many: the agent's while
     // it works, the reader's once it is done and until they come back.
     // The hourglass first: a question asked on another thread still runs.
-    const head = [busy ? '⏳' : turn, waiting ? `(${waiting})` : ''].filter(Boolean).join(' ');
+    // A stopped server ends every turn.
+    const head = over
+      ? '⏹'
+      : [busy ? '⏳' : turn, waiting ? `(${waiting})` : ''].filter(Boolean).join(' ');
     document.title = head ? `${head} ${name}` : name;
   },
+  { immediate: true },
+);
+
+watch(
+  () =>
+    signalOf({
+      stopped: stopped.value,
+      left: agentLeft.value,
+      working: working.value || task.value !== null,
+      agent: agent.value,
+    }),
+  (signal) => void showSignal(signal),
   { immediate: true },
 );
 
