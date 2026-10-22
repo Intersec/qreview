@@ -250,6 +250,9 @@ Python. Cython is Python with types, so the loss is small: the types read as
 identifiers. A user who wants better drops a `.sublime-syntax` file in the
 configuration directory, and no rebuild is needed.
 
+> **`.iop` superseded on 2026-10-22** by *IOP gets a grammar of its own*,
+> below.
+
 A test holds this. Every language the map names must resolve to a grammar,
 because a map entry that resolves to nothing shows the file as plain text
 while looking configured.
@@ -827,3 +830,31 @@ waits of the pages, and they answer when the 5 seconds run out.
 Rejected: a ping from `qreview wait` while it blocks. The server already
 learns of a hang-up at once, because the connection closes. A ping adds
 nothing to that, and the time between two waits stays.
+
+## 2026-10-22 — IOP gets a grammar of its own
+
+`.iop` mapped to D, the closest grammar of the `two-face` set. On 233 IOP
+files, D marks 3 833 characters of valid code as invalid, which the page
+paints white on red. They sit on `typedef`, `class` and `package` lines, on
+attributes, on the `out` of an RPC, and on the `};` that closes a type.
+
+**Decision.** The binary carries `crates/qreview/grammars/iop.sublime-syntax`.
+IOP was already a built-in language: the map has carried `iop → d` since
+2026-08-20. So this changes how qreview colors IOP, not whether it knows it.
+The language map loses its `iop` entry, because the grammar claims the
+extension. If `.qreview.json` or the user configuration maps `iop` to `d`,
+the file keeps D, because an entry of the user wins. The export takes the
+language of a fence from the map, so a remark on an `.iop` file now gets a
+bare fence, like a remark on a `.c` file.
+
+**Why a set of its own.** If one grammar joins the `two-face` set, all 199
+grammars of that set are linked again. Measured, that costs 750 ms at every
+start in release, and 4.9 s in each debug test that builds a highlighter.
+The `two-face` set alone loads in 3 ms. The IOP grammar alone links in 9 ms,
+on the first file that the `two-face` set does not claim. So the highlighter
+holds two sets and asks `two-face` first. The grammars of the configuration
+directory join the `two-face` set, so a grammar of the user wins over ours.
+
+Rejected: a dump of the joined set, written by the build script. It adds
+`syntect` and `two-face` to the build dependencies, and the build script runs
+again at every commit, because it watches `HEAD`.

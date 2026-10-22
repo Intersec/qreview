@@ -227,7 +227,7 @@ its own file types declares them once, in `.qreview.json` at its top level, so
 every reader of that repository gets the map with no setup:
 
 ```json
-{ "languages": { "blk": "c", "pxc": "c", "pyx": "cython", "iop": "d" } }
+{ "languages": { "blk": "c", "pxc": "c", "pyx": "cython" } }
 ```
 
 A grammar is data too. Drop a `.sublime-syntax` or `.tmLanguage` file in

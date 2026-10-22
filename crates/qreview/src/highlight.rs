@@ -12,9 +12,11 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
-use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SyntaxSetBuilder};
+use syntect::parsing::{
+    ParseState, ScopeStack, SyntaxDefinition, SyntaxReference, SyntaxSet, SyntaxSetBuilder,
+};
 use syntect::util::LinesWithEndings;
 
 use crate::model::Span;
@@ -27,6 +29,20 @@ pub const MAX_BYTES: usize = 512 * 1024;
 
 /// The scopes that say nothing about a token. `source.c` is on every line.
 const GENERIC: [&str; 3] = ["source", "text", "meta"];
+
+/// The grammars of this repository. `two-face` has no IOP grammar.
+///
+/// They stay out of the `two-face` set, because adding one grammar to it
+/// links all 199 again: 750 ms at every start, against 9 ms for this set.
+static OURS: LazyLock<SyntaxSet> = LazyLock::new(|| {
+    let text = include_str!("../grammars/iop.sublime-syntax");
+    // A test loads this set, so a broken grammar fails the gate first.
+    let iop = SyntaxDefinition::load_from_str(text, true, None).expect("the IOP grammar loads");
+
+    let mut builder = SyntaxSetBuilder::new();
+    builder.add(iop);
+    builder.build()
+});
 
 /// One highlighted file: the spans of every line, in order.
 pub type Lines = Arc<Vec<Vec<Span>>>;
@@ -57,6 +73,8 @@ struct Pending {
     stack: ScopeStack,
     /// The byte the next line starts at.
     offset: usize,
+    /// The grammar comes from `OURS`, not from the `two-face` set.
+    ours: bool,
 }
 
 pub struct Highlighter {
@@ -181,11 +199,19 @@ impl Highlighter {
         let mut rest = match std::mem::replace(&mut painted.rest, Rest::Done) {
             Rest::At(rest) => rest,
             Rest::Done => return,
-            Rest::Fresh => Box::new(Pending {
-                state: ParseState::new(self.syntax_of(text, language, path)),
-                stack: ScopeStack::new(),
-                offset: 0,
-            }),
+            Rest::Fresh => {
+                let (ours, syntax) = self.syntax_of(text, language, path);
+                Box::new(Pending {
+                    state: ParseState::new(syntax),
+                    stack: ScopeStack::new(),
+                    offset: 0,
+                    ours,
+                })
+            }
+        };
+        let set = match rest.ours {
+            true => &*OURS,
+            false => &self.syntaxes,
         };
 
         // The blob hash is the hash of the text, so the offset always lands
@@ -199,7 +225,7 @@ impl Highlighter {
                 painted.rest = Rest::At(rest);
                 return;
             }
-            match rest.state.parse_line(line, &self.syntaxes) {
+            match rest.state.parse_line(line, set) {
                 Ok(ops) => painted.lines.push(spans_of(line, &ops, &mut rest.stack)),
                 // A grammar that fails on one line still colors the rest.
                 Err(_) => painted.lines.push(Vec::new()),
@@ -208,20 +234,31 @@ impl Highlighter {
         }
     }
 
+    /// The grammar of a file, and whether it comes from `OURS`.
     fn syntax_of(
         &self,
         text: &str,
         language: Option<&str>,
         path: &str,
-    ) -> &syntect::parsing::SyntaxReference {
+    ) -> (bool, &SyntaxReference) {
         language
-            .and_then(|name| self.syntaxes.find_syntax_by_token(name))
-            .or_else(|| self.syntaxes.find_syntax_by_extension(extension(path)))
+            .and_then(|name| self.find(|set| set.find_syntax_by_token(name)))
+            .or_else(|| self.find(|set| set.find_syntax_by_extension(extension(path))))
             .or_else(|| {
-                self.syntaxes
-                    .find_syntax_by_first_line(text.lines().next()?)
+                let line = text.lines().next()?;
+                self.find(|set| set.find_syntax_by_first_line(line))
             })
-            .unwrap_or_else(|| self.syntaxes.find_syntax_plain_text())
+            .unwrap_or_else(|| (false, self.syntaxes.find_syntax_plain_text()))
+    }
+
+    /// Ask the `two-face` set first, so a grammar of the user wins over ours.
+    fn find<'a>(
+        &'a self,
+        lookup: impl Fn(&'a SyntaxSet) -> Option<&'a SyntaxReference>,
+    ) -> Option<(bool, &'a SyntaxReference)> {
+        lookup(&self.syntaxes)
+            .map(|syntax| (false, syntax))
+            .or_else(|| lookup(&OURS).map(|syntax| (true, syntax)))
     }
 }
 
@@ -379,6 +416,59 @@ mod tests {
                 .any(|c| c.starts_with("tok-storage") || c.starts_with("tok-keyword")),
             "{first:?}"
         );
+    }
+
+    #[test]
+    fn an_iop_file_gets_the_grammar_we_ship() {
+        let h = Highlighter::new();
+        let (ours, syntax) = h.syntax_of("", None, "iface/api.iop");
+
+        assert!(ours, "no grammar of the two-face set claims .iop");
+        assert_eq!(syntax.name, "IOP");
+    }
+
+    /// The parse must run against the set that holds the grammar.
+    #[test]
+    fn an_iop_file_is_painted_with_our_set() {
+        let text = "struct User {\n    1: int id;\n};\n";
+        let out = spans(text, None, "iface/api.iop");
+        let field = classes(&out[1], "    1: int id;");
+
+        for (cls, token) in [
+            ("tok-constant tok-numeric", "1"),
+            ("tok-storage tok-type", "int"),
+            ("tok-variable tok-other", "id"),
+        ] {
+            assert!(
+                field.contains(&(cls.to_owned(), token.to_owned())),
+                "{token} is not {cls}: {field:?}"
+            );
+        }
+    }
+
+    /// A line of a hostile patch set drove one regex of the IOP grammar to
+    /// its backtrack limit: 70 ms a line, minutes for a file of them.
+    #[test]
+    fn a_crafted_iop_line_does_not_backtrack_for_long() {
+        let line = format!("{}{}b\n", "a.".repeat(30), " ".repeat(180));
+        let started = std::time::Instant::now();
+        spans(&line.repeat(20), None, "crafted.iop");
+
+        let took = started.elapsed();
+        assert!(took < std::time::Duration::from_secs(3), "{took:?}");
+    }
+
+    /// Once 100 contexts are open, syntect searches every push regex again
+    /// at each token. `c"` was one, and in the slow engine: a crafted line
+    /// of 16 KiB took 16 s.
+    #[test]
+    fn a_string_at_the_depth_cap_stays_cheap() {
+        let text = format!("@x{}\n{}c\"\n", "(".repeat(120), "a,".repeat(2048));
+        let started = std::time::Instant::now();
+        spans(&text, None, "deep.iop");
+
+        let took = started.elapsed();
+        assert!(took < std::time::Duration::from_secs(3), "{took:?}");
     }
 
     #[test]

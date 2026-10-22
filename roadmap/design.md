@@ -946,7 +946,6 @@ they do not:
 |---|---|
 | `blk`, `blkk`, `pxc` | c |
 | `pyx`, `pxd`, `pxi` | cython, or python when no Cython grammar is bundled |
-| `iop` | d |
 | `tpl` | jinja |
 
 A code base with its own file types adds them in `.qreview.json` at its top
@@ -966,6 +965,12 @@ shows the language of the file and lets the reader change it for the session.
 `$XDG_CONFIG_HOME/qreview/grammars/` is loaded at startup and can be named in
 the language map. A house file format therefore needs no change to this
 repository and no rebuild of the binary.
+
+**The binary carries one grammar of its own, for IOP.** The bundled set has
+none. The grammar lives in `crates/qreview/grammars/`. It sits in a set of its
+own: a grammar added to the bundled set costs 750 ms at every start. The
+grammars of the user join the bundled set, and the lookup asks that set
+first, so a grammar of the user wins.
 
 The highlight of a file is computed once per patch set and cached in memory
 for the life of the process, keyed by the blob hash. Two patch sets that share

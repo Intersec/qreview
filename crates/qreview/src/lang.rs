@@ -19,7 +19,6 @@ const DEFAULTS: &[(&str, &str)] = &[
     ("pyx", "python"),
     ("pxd", "python"),
     ("pxi", "python"),
-    ("iop", "d"),
     ("tpl", "jinja2"),
 ];
 
@@ -76,7 +75,6 @@ mod tests {
         assert_eq!(lang.of("src/net.blk"), Some("c"));
         assert_eq!(lang.of("src/thing.pxc"), Some("c"));
         assert_eq!(lang.of("src/fast.pyx"), Some("python"));
-        assert_eq!(lang.of("iface/api.iop"), Some("d"));
         assert_eq!(lang.of("page.tpl"), Some("jinja2"));
     }
 
@@ -87,6 +85,8 @@ mod tests {
         assert_eq!(lang.of("src/main.rs"), None);
         assert_eq!(lang.of("Makefile"), None);
         assert_eq!(lang.of("src/no.extension/README"), None);
+        // The IOP grammar we ship claims it. A map entry would win over it.
+        assert_eq!(lang.of("iface/api.iop"), None);
     }
 
     #[test]
@@ -128,7 +128,7 @@ mod bundled {
         let set = two_face::syntax::extra_newlines();
         let lang = Languages::new();
 
-        for ext in ["blk", "pxc", "pyx", "iop", "tpl"] {
+        for (ext, _) in DEFAULTS {
             let name = lang.of(&format!("file.{ext}")).unwrap();
             assert!(
                 set.find_syntax_by_token(name).is_some(),

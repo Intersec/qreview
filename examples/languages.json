@@ -6,7 +6,6 @@
     "pyx": "python",
     "pxd": "python",
     "pxi": "python",
-    "iop": "d",
     "tpl": "jinja2"
   }
 }
