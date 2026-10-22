@@ -28,6 +28,7 @@ pub mod repo;
 pub mod report;
 pub mod series;
 pub mod session;
+pub mod status;
 pub mod store;
 pub mod trace;
 pub mod update;

@@ -6,7 +6,6 @@
 mod cli;
 
 use anyhow::{Context, Result};
-use axum::Router;
 use clap::Parser;
 use tokio::net::TcpListener;
 
@@ -113,16 +112,7 @@ async fn main() -> Result<()> {
     // the file list of the others. See `api::read_ahead`.
     api::read_ahead(state.clone());
 
-    let events = state.events.clone();
-    serve(
-        cli.port,
-        api::app(state),
-        events,
-        &token,
-        cli.no_open,
-        &home,
-    )
-    .await
+    serve(cli.port, state, cli.no_open, &home).await
 }
 
 /// Run a command of the agent. None when the command is another one.
@@ -221,14 +211,13 @@ async fn text_report(session: &Session) -> Result<String> {
     Ok(report::render(&session.series, &files))
 }
 
-async fn serve(
-    port: u16,
-    app: Router,
-    events: std::sync::Arc<qreview::events::Events>,
-    token: &str,
-    no_open: bool,
-    home: &agent::Home,
-) -> Result<()> {
+async fn serve(port: u16, state: AppState, no_open: bool, home: &agent::Home) -> Result<()> {
+    let events = state.events.clone();
+    let session = state.session.clone();
+    let token = state.token.clone();
+    let token = token.as_str();
+    let app = api::app(state);
+
     // The loopback address only. Never another interface.
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
@@ -267,7 +256,7 @@ async fn serve(
     if !no_open {
         open_browser(&url);
     }
-    let page_task = tokio::spawn(watch_parties(events.clone(), url.clone()));
+    let page_task = tokio::spawn(watch_parties(events.clone(), session, url.clone()));
 
     // On Ctrl-C the waits on the events answer at once, so the requests in
     // flight end. A request that still hangs gets a few seconds, no more:
@@ -293,6 +282,7 @@ async fn serve(
         agent::address::remove(home, &address);
     }
     page_task.abort();
+    qreview::status::clear();
     if let Some(task) = socket_task {
         task.abort();
     }
@@ -304,8 +294,14 @@ async fn serve(
 
 /// Say in the terminal when the page of the review opens, closes, and
 /// comes back, and when the agent connects and disconnects. The server goes
-/// on without either one.
-async fn watch_parties(events: std::sync::Arc<qreview::events::Events>, url: String) {
+/// on without either one. On a terminal, a status line under the messages
+/// says how things stand now.
+async fn watch_parties(
+    events: std::sync::Arc<qreview::events::Events>,
+    session: std::sync::Arc<tokio::sync::RwLock<qreview::session::Session>>,
+    url: String,
+) {
+    let mut terminal = qreview::status::Terminal::new();
     let mut page = None;
     let mut agent = false;
     let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -314,22 +310,67 @@ async fn watch_parties(events: std::sync::Arc<qreview::events::Events>, url: Str
         let now = events.page_open();
         match (page, now) {
             (Some(true), Some(false)) => {
-                println!("The review page closed. To open it again, go to {url}");
-                println!("Press Ctrl-C to stop.");
+                terminal.say(&format!(
+                    "The review page closed. To open it again, go to {url}"
+                ));
+                terminal.say("Press Ctrl-C to stop.");
             }
-            (None, Some(true)) => println!("The review page is open."),
-            (Some(false), Some(true)) => println!("The review page is open again."),
+            (None, Some(true)) => terminal.say("The review page is open."),
+            (Some(false), Some(true)) => terminal.say("The review page is open again."),
             _ => {}
         }
         page = now;
 
         let listens = events.agent_listens();
         if listens && !agent {
-            println!("The agent is connected.");
+            terminal.say("The agent is connected.");
         } else if agent && !listens {
-            println!("The agent disconnected. To attach it again, ask it to run `qreview wait`.");
+            terminal
+                .say("The agent disconnected. To attach it again, ask it to run `qreview wait`.");
         }
         agent = listens;
+
+        let state = qreview::status::Snapshot {
+            page,
+            agent: agent_state(&events, &session),
+        };
+        terminal.draw(&state);
+    }
+}
+
+/// The agent as the status line names it. A change is named by its
+/// subject; while a refresh holds the session, by its key.
+fn agent_state(
+    events: &qreview::events::Events,
+    session: &tokio::sync::RwLock<qreview::session::Session>,
+) -> qreview::status::Agent {
+    use qreview::events::TaskKind;
+    use qreview::status::Agent;
+
+    if let Some(task) = events.agent_task() {
+        let subject = session
+            .try_read()
+            .ok()
+            .and_then(|session| {
+                session
+                    .series
+                    .changes
+                    .iter()
+                    .find(|change| change.key == task.key)
+                    .map(|change| change.subject.clone())
+            })
+            .unwrap_or(task.key);
+        return match task.kind {
+            TaskKind::Fix => Agent::Fixing(subject),
+            TaskKind::Answer => Agent::Answering(subject),
+        };
+    }
+    if events.agent_listens() {
+        Agent::Connected
+    } else if events.agent_left() {
+        Agent::Left
+    } else {
+        Agent::Absent
     }
 }
 

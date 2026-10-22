@@ -25,6 +25,14 @@ the events (section 8.3) for 3 seconds, so a reload is not a close. The
 server also says when an agent connects, and when it disconnects, by the
 rule of section 8.3 for an agent that listens.
 
+On a terminal, a status line under these messages says how the review
+stands now: the page (not open yet, open, closed) and the agent (absent,
+connected, fixing or answering on a change named by its subject, left).
+The server redraws it every second, in place, and clears it when it stops.
+In a file or a pipe, and under `--trace`, whose lines would break into it,
+there is no status line: the messages are all there is. `NO_COLOR` takes
+the colors away.
+
 The server binds the loopback address only. It generates a random token at
 startup. The first page request carries the token in the query string, and the
 server answers with a session cookie. A request without the cookie or the
