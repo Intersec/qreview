@@ -74,6 +74,15 @@ pub struct Session {
     pub lists: Arc<diff::FileLists>,
 }
 
+/// What asking for the rendered view of a file gives.
+pub enum Rendering {
+    Html(String),
+    /// The version has no such file.
+    Missing,
+    NotMarkdown,
+    TooLarge,
+}
+
 /// What a diff is read against.
 #[derive(Clone, Debug, Default)]
 pub enum Against {
@@ -774,6 +783,9 @@ impl Session {
         if let Some(file) = found.as_mut() {
             let language = self.langs.of(path).map(str::to_owned);
             file.file.language = language.clone().unwrap_or_default();
+            file.markdown = !file.file.binary
+                && file.file.status != crate::model::FileStatus::Deleted
+                && self.highlighter.is_markdown(language.as_deref(), path);
 
             if !file.file.binary && how.syntax {
                 self.paint(file, rev, &base, old.as_deref(), language.as_deref())
@@ -874,6 +886,35 @@ impl Session {
             rows.push(row);
         }
         Ok(rows)
+    }
+
+    /// A Markdown file of a version, rendered. See design section 3.8.
+    pub async fn rendered(&self, rev: &str, path: &str) -> Result<Rendering> {
+        let language = self.langs.of(path).map(str::to_owned);
+        if !self.highlighter.is_markdown(language.as_deref(), path) {
+            return Ok(Rendering::NotMarkdown);
+        }
+        let Some((_, text)) = self.blob_text(rev, path).await else {
+            return Ok(Rendering::Missing);
+        };
+        if text.len() > crate::markdown::MAX_BYTES {
+            return Ok(Rendering::TooLarge);
+        }
+
+        let highlighter = self.highlighter.clone();
+        let langs = self.langs.clone();
+        let html = tokio::task::spawn_blocking(move || {
+            // A fence names a language the way an extension does, so the
+            // map of the repository applies to it too.
+            let paint = |fence: &str, code: &str| {
+                let name = langs.of(&format!("fence.{fence}")).unwrap_or(fence);
+                highlighter.spans(code, name)
+            };
+            crate::markdown::render(&text, &paint)
+        })
+        .await?;
+
+        Ok(Rendering::Html(html))
     }
 
     /// Put the syntax spans on every row.

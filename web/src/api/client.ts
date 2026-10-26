@@ -19,6 +19,7 @@ import type {
   Posted,
   Release,
   Review,
+  Rendered,
   Row,
   Series,
   SessionBody,
@@ -133,6 +134,11 @@ export const api = {
         to: String(to),
         ps: num(ps),
       })}`,
+    ),
+
+  rendered: (key: string, file: string, ps?: number) =>
+    call<Rendered>(
+      `/api/changes/${encodeURIComponent(key)}/rendered${query({ file, ps: num(ps) })}`,
     ),
 
   patchSets: (key: string) => call<PatchSets>(`/api/changes/${encodeURIComponent(key)}/patchsets`),

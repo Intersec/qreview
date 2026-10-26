@@ -119,6 +119,13 @@ export interface FileDiff extends FileEntry {
   hunks: Hunk[];
   /// How many lines the new side has. Absent when the file could not be read.
   lineCount?: number | null;
+  /// The file is Markdown, so it can be read rendered.
+  markdown?: boolean;
+}
+
+/// A Markdown file, as HTML. Each leaf block carries `data-lines`.
+export interface Rendered {
+  html: string;
 }
 
 export interface Ui {

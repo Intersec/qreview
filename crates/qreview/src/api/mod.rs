@@ -22,6 +22,7 @@ use crate::git::merge::Base;
 use crate::model::{ChangeSummary, FileDiff, FileEntry, Series};
 use crate::patchset::PatchSet;
 use crate::session::Against;
+use crate::session::Rendering;
 use crate::session::Session;
 use crate::store::model::{Author, ChangeFile, Comment, Side};
 
@@ -124,6 +125,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/export", get(export))
         .route("/api/config", get(config).put(save_config))
         .route("/api/changes/{key}/lines", get(lines))
+        .route("/api/changes/{key}/rendered", get(rendered))
         .route("/api/changes/{key}/patchsets", get(patchsets))
         .route("/api/changes/{key}/posted", get(posted))
         .route(
@@ -564,6 +566,41 @@ async fn lines(
             .lines(&commit, &query.file, query.from, query.to)
             .await?,
     ))
+}
+
+#[derive(Deserialize)]
+struct RenderedQuery {
+    file: String,
+    ps: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct Rendered {
+    html: String,
+}
+
+/// A Markdown file of the version read, as HTML. See design section 3.8.
+async fn rendered(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Query(query): Query<RenderedQuery>,
+) -> Result<Json<Rendered>, ApiError> {
+    let session = state.session.read().await;
+    let commit = target(&session, &key, query.ps).await?;
+    let file = &query.file;
+
+    match session.rendered(&commit, file).await? {
+        Rendering::Html(html) => Ok(Json(Rendered { html })),
+        Rendering::Missing => Err(ApiError::not_found(format!(
+            "{file} is not in this version"
+        ))),
+        Rendering::NotMarkdown => Err(ApiError::bad_request(format!(
+            "{file} is not a Markdown file"
+        ))),
+        Rendering::TooLarge => Err(ApiError::bad_request(format!(
+            "{file} is larger than 1 MiB, so it has no rendered view"
+        ))),
+    }
 }
 
 #[derive(Serialize)]
@@ -2780,6 +2817,67 @@ mod tests {
             few.iter().any(|row| !row["tokens"].is_null()),
             "a short run is colored the way it always was"
         );
+    }
+
+    #[tokio::test]
+    async fn a_markdown_file_is_rendered_on_request() {
+        let repo = build_repo(&[
+            commit("base").file("src/a.c", "int a;\n"),
+            commit("write the guide")
+                .file("docs/guide.md", "# Guide\n\nRead <this>.\n")
+                .change_id("Idoc"),
+        ])
+        .await;
+        let server = server(&repo).await;
+
+        let (_, diff) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Idoc/diff?file=docs/guide.md", TOKEN),
+        )
+        .await;
+        assert_eq!(diff["markdown"], true, "the page offers the button");
+
+        let (status, body) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Idoc/rendered?file=docs/guide.md", TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["html"],
+            "<h1 data-lines=\"1-1\">Guide</h1><p data-lines=\"3-3\">Read &lt;this&gt;.</p>"
+        );
+
+        let (status, _) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Idoc/rendered?file=src/a.c", TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "C is not rendered");
+
+        let (status, _) = json(
+            server,
+            get_with_cookie("/api/changes/Idoc/rendered?file=gone.md", TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn a_file_that_is_not_markdown_offers_no_rendered_view() {
+        let repo = build_repo(&[
+            commit("base").file("src/a.c", "int a;\n"),
+            commit("touch").file("src/a.c", "int b;\n").change_id("Ic"),
+        ])
+        .await;
+
+        let (_, diff) = json(
+            server(&repo).await,
+            get_with_cookie("/api/changes/Ic/diff?file=src/a.c", TOKEN),
+        )
+        .await;
+
+        assert!(diff["markdown"].is_null(), "the field is left out");
     }
 
     #[tokio::test]
