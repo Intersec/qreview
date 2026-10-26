@@ -573,6 +573,8 @@ async fn lines(
 struct RenderedQuery {
     file: String,
     ps: Option<usize>,
+    base: Option<String>,
+    ws: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -588,9 +590,11 @@ async fn rendered(
 ) -> Result<Json<Rendered>, ApiError> {
     let session = state.session.read().await;
     let commit = target(&session, &key, query.ps).await?;
+    let against = resolve_base(&session, &key, parse_base(query.base.as_deref())?).await?;
+    let how = how(&state, query.ws.as_deref());
     let file = &query.file;
 
-    match session.rendered(&commit, file).await? {
+    match session.rendered(&commit, file, &against, &how).await? {
         Rendering::Html(html) => Ok(Json(Rendered { html })),
         Rendering::Missing => Err(ApiError::not_found(format!(
             "{file} is not in this version"
@@ -2894,7 +2898,8 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             body["html"],
-            "<h1 data-lines=\"1-1\">Guide</h1><p data-lines=\"3-3\">Read &lt;this&gt;.</p>"
+            "<h1 data-lines=\"1-1\" data-change=\"add\">Guide</h1>\
+             <p data-lines=\"3-3\" data-change=\"add\">Read &lt;this&gt;.</p>"
         );
 
         let (status, _) = json(

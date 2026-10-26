@@ -123,7 +123,8 @@ export interface FileDiff extends FileEntry {
   markdown?: boolean;
 }
 
-/// A Markdown file, as HTML. Each leaf block carries `data-lines`.
+/// A Markdown file, as HTML. Each leaf block carries `data-lines`, and the
+/// marks of the diff are `data-change` and `data-old`.
 export interface Rendered {
   html: string;
 }

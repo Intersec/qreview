@@ -356,7 +356,7 @@ export function addGuide(repo: string) {
       '# The guide',
       '',
       'A paragraph with **bold**, `code` and a [link](https://example.com).',
-      'It runs on a second line.',
+      'It runs on a second line, to [the notes](notes.md).',
       '',
       '![The flow](flow.svg)',
       '',
@@ -397,4 +397,17 @@ export function addGuide(repo: string) {
     ),
   );
   commit(repo, 'docs: reword a section', 'Change-Id: Iguiderewordaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+
+  // Changes in several places: a paragraph, an item, a row, a line that
+  // goes away, and a section far below.
+  writeFileSync(
+    guide,
+    readFileSync(guide, 'utf8')
+      .replace('`code` and a [link]', '`code`, and a [link]')
+      .replace('  - a nested item\n', '  - a nested item\n  - a second nested item\n')
+      .replace('| a.c  | 12   |', '| a.c  | 14   |')
+      .replace('Raw <b>HTML</b> stays text.\n\n', '')
+      .replace('The text of section 20.', 'The text of section 20, longer now.'),
+  );
+  commit(repo, 'docs: rework the guide', 'Change-Id: Iguidereworkaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 }

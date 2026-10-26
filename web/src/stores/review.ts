@@ -460,7 +460,7 @@ export const useReview = defineStore('review', () => {
     if (!key || !file) {
       return '';
     }
-    return (await api.rendered(key, file, patchSet.value)).html;
+    return (await api.rendered(key, file, patchSet.value, against.value, ignoreWs.value)).html;
   }
 
   async function loadLines(from: number, to: number) {

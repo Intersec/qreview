@@ -136,9 +136,14 @@ export const api = {
       })}`,
     ),
 
-  rendered: (key: string, file: string, ps?: number) =>
+  rendered: (key: string, file: string, ps?: number, base?: string, ignoreWs = false) =>
     call<Rendered>(
-      `/api/changes/${encodeURIComponent(key)}/rendered${query({ file, ps: num(ps) })}`,
+      `/api/changes/${encodeURIComponent(key)}/rendered${query({
+        file,
+        ps: num(ps),
+        base,
+        ws: ignoreWs ? 'ignore' : undefined,
+      })}`,
     ),
 
   /// Where an image of the tree is read. An address, not a call: the
