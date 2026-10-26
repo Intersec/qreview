@@ -4,7 +4,7 @@
 // a fixed clock, and a temporary directory that goes away with the test run.
 
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -385,4 +385,16 @@ export function addGuide(repo: string) {
     ].join('\n'),
   );
   commit(repo, 'docs: write a guide', 'Change-Id: Iguidedocaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+
+  // One line deep in the file: a diff that fits on the screen and never
+  // scrolls.
+  const guide = join(repo, 'docs', 'guide.md');
+  writeFileSync(
+    guide,
+    readFileSync(guide, 'utf8').replace(
+      'The text of section 30.',
+      'The text of section 30, said again.',
+    ),
+  );
+  commit(repo, 'docs: reword a section', 'Change-Id: Iguiderewordaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 }
