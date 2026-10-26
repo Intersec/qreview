@@ -61,6 +61,17 @@ pub async fn running(home: &Home) -> Option<Client> {
     client.get("/api/events").await.ok().map(|_| client)
 }
 
+/// Fail when this process cannot write the store of the worktree.
+///
+/// A server that cannot write it would lose every comment. A sandbox that
+/// keeps qreview in is the usual cause, so the error says where to start it.
+pub fn writable(home: &Home) -> Result<()> {
+    Store::at(&home.dir).lock().map(drop).context(
+        "start qreview outside the sandbox, if a sandbox runs this command. \
+         qreview cannot write its store, and would lose every comment",
+    )
+}
+
 /// The server of the worktree, or an error that says what to run.
 pub async fn connect(cwd: &Path) -> Result<Client> {
     let home = home(cwd).await?;
@@ -484,6 +495,28 @@ mod tests {
         assert!(
             thread_of(&[&other], "c-gone").is_empty(),
             "a deleted thread"
+        );
+    }
+
+    #[test]
+    fn a_store_that_cannot_be_written_stops_the_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut home = Home {
+            dir: dir.path().join("repos").join("4f59"),
+            repo: "4f59".to_owned(),
+            worktree: "a1b2".to_owned(),
+        };
+        writable(&home).unwrap();
+
+        // A file where a directory must be fails as a read-only file system
+        // does, and holds even for root.
+        std::fs::write(dir.path().join("file"), "").unwrap();
+        home.dir = dir.path().join("file").join("4f59");
+        let error = writable(&home).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("outside the sandbox"),
+            "{error:#}"
         );
     }
 

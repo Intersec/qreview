@@ -22,24 +22,31 @@ Outside a fix: no edit, no `git commit`, no amend, no rebase, no
 
 ## Start
 
-If your commands run in a sandbox, the user starts the server, not you. A
-server started inside the sandbox cannot save comments, and the browser of
-the user cannot reach it. You know you are in one when `qreview` prints
-`Read-only file system` about a `server-<id>.json` file: stop that server,
-and ask the user to run `qreview` in their own terminal. Your commands then
-reach their server through its Unix socket under `/tmp`, with nothing to
-configure.
-
-1. Run `qreview` in the background, from the worktree. It opens the review
-   in the browser of the user and prints its address.
+1. Start the server yourself, as a background task of your session. Do not
+   use `&` or `nohup`: the server must stop when your session ends, and the
+   page of the user then closes with it.
+   - Run `qreview` as the whole command: no `cd`, no redirect, no pipe. A
+     sandbox lets a command out only when its text matches an exception,
+     and any of these three keeps it in. If the worktree is not the
+     current directory, `cd` to it in a command of its own first.
+   - `qreview` opens the review in the browser of the user and prints its
+     address.
    - If a server already runs on this worktree, `qreview` prints its
-     address and stops. That is not an error: use that server. Check first
-     with `qreview wait --timeout 1`: exit code 1 with JSON means a server
-     answers.
+     address and stops. That is not an error: use that server.
    - `qreview <rev>` or `qreview <revA>..<revB>` reviews another range.
      To change the range, the user stops the old server first.
-2. Read the open threads: `qreview export --json`.
-3. Start the loop below.
+2. If `qreview` fails with `start qreview outside the sandbox`, your
+   commands run in a sandbox. A server inside it cannot save comments, and
+   the browser cannot reach it. Tell the user once that there are two ways
+   out:
+   - Let qreview run outside the sandbox. In Claude Code, add `"qreview *"`
+     to `sandbox.excludedCommands` in the settings, then start it again.
+   - Run `qreview` in their own terminal.
+
+   Then go on: your other commands reach a server of the user through its
+   Unix socket under `/tmp`, and `wait` attaches to it once it runs.
+3. Read the open threads: `qreview export --json`.
+4. Start the loop below.
 
 ## The loop
 
