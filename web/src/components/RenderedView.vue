@@ -13,6 +13,8 @@ import type { FileDiff } from '@/api/types';
 const props = defineProps<{
   diff: FileDiff;
   load: () => Promise<string>;
+  /// Where an image of the tree is fetched, by its path.
+  imageUrl: (path: string) => string;
 }>();
 
 const html = ref('');
@@ -38,6 +40,13 @@ async function read() {
     loading.value = false;
   }
   await nextTick();
+  // The server names an image by its path in the tree, and only the page
+  // knows the change and the version it is read from. An image that arrives
+  // moves the blocks under it, so the pane finds its place again.
+  for (const img of host.value?.querySelectorAll<HTMLImageElement>('img[data-path]') ?? []) {
+    img.addEventListener('load', () => follow(line), { once: true });
+    img.src = props.imageUrl(img.dataset.path ?? '');
+  }
   blocks = [];
   for (const el of host.value?.querySelectorAll<HTMLElement>('[data-lines]') ?? []) {
     const lines = linesOf(el.dataset.lines);

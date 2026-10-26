@@ -120,6 +120,12 @@ impl Git {
         String::from_utf8(out.stdout).context("git printed output that is not UTF-8")
     }
 
+    /// Run git and return its standard output as bytes, for a blob that is
+    /// not text, such as an image.
+    pub async fn bytes<S: AsRef<OsStr>>(&self, args: &[S]) -> Result<Vec<u8>> {
+        Ok(run_in(&self.root, args, &[], TIMEOUT).await?.stdout)
+    }
+
     /// Run git and return its output whether it succeeded or not.
     ///
     /// Some commands answer with a non-zero code and a useful stdout.

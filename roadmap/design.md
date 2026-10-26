@@ -492,12 +492,14 @@ tab of its own. Any other link shows its target and opens nothing. The page
 still passes the HTML through `DOMPurify`, as it does for a comment body.
 
 **An image comes from the object database.** The server resolves a relative
-path against the directory of the file. The page then reads the image from
-the tree of the version read, through the blob route of section 8. That
-route answers only for an image type, by extension. It sends an SVG with
-`Content-Security-Policy: sandbox`, so an SVG opened on its own runs nothing.
-An image on another host is not fetched, because opening a review must not
-reach the network. It shows as its alternative text and a link. A relative
+path against the directory of the file, and a leading slash against the top
+of the tree. The page then reads the image from the tree of the version
+read, through the blob route of section 8. That route answers only for an
+image type, by extension, and for an image of 16 MiB or less. It sends every
+image with `Content-Security-Policy: sandbox`, so an SVG opened on its own
+runs nothing. An image on another host, or in a `data:` address, is not
+fetched, because opening a review must not reach the network. It shows as
+its alternative text and a link. A relative
 link to another file shows its path and opens nothing, because that file is
 not always part of the change.
 

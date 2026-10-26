@@ -64,6 +64,18 @@ test('the pane follows the diff as it scrolls', async ({ page }) => {
     .toBeLessThan(40);
 });
 
+test('an image of the tree is read from the version', async ({ page }) => {
+  await openChange(page, /docs: write a guide/);
+  await openFile(page, 'guide.md');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+
+  const image = page.getByRole('img', { name: 'The flow' });
+  await expect(image).toHaveAttribute('src', /\/blob\?path=docs%2Fflow\.svg/);
+  await expect
+    .poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBeGreaterThan(0);
+});
+
 test('the pane is read only', async ({ page }) => {
   await openChange(page, /docs: write a guide/);
   await openFile(page, 'guide.md');

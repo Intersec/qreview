@@ -141,6 +141,11 @@ export const api = {
       `/api/changes/${encodeURIComponent(key)}/rendered${query({ file, ps: num(ps) })}`,
     ),
 
+  /// Where an image of the tree is read. An address, not a call: the
+  /// browser fetches it for an `<img>`, with the cookie of the session.
+  blobUrl: (key: string, path: string, ps?: number) =>
+    `/api/changes/${encodeURIComponent(key)}/blob${query({ path, ps: num(ps) })}`,
+
   patchSets: (key: string) => call<PatchSets>(`/api/changes/${encodeURIComponent(key)}/patchsets`),
 
   fetchPatchSet: (key: string, number: number) =>
