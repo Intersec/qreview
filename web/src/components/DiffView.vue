@@ -43,6 +43,8 @@ const props = defineProps<{
   loadLines: (from: number, to: number) => Promise<Row[]>;
   /// Read the file rendered, when it is Markdown.
   loadRendered: () => Promise<string>;
+  /// Where an image of the version read is fetched.
+  imageUrl: (path: string) => string;
   /// The comments whose line this version does not have any more.
   stranded: Comment[];
   /// The files of the change, so a remark about one it no longer touches
@@ -1943,6 +1945,7 @@ function toggle(row: Row | null, column: Side) {
         ref="renderedView"
         :diff="diff"
         :load="loadRendered"
+        :image-url="imageUrl"
         :style="{ top: `${paneTop}px`, height: `${paneHeight}px` }"
       />
     </div>
