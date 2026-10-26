@@ -48,6 +48,9 @@ async fn main() -> Result<()> {
         );
         return Ok(());
     }
+    if cli.command.is_none() {
+        agent::writable(&home)?;
+    }
     let config = config::load(&root)?;
 
     let mut opts = Options::new();

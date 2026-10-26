@@ -1423,7 +1423,9 @@ repository, with mode `0600`:
 ```
 
 It removes the file, and the socket, when it stops on Ctrl-C, `SIGTERM` or
-`SIGHUP`. The commands above
+`SIGHUP`. A server that cannot write the directory of the repository does
+not start: it would lose every comment. That happens inside a sandbox, and
+the error says to start qreview outside it. The commands above
 read the file of their worktree to find the server, and try the socket
 before the port. None of them starts a server, and each says to run
 `qreview` when no server answers. A file whose server does not answer is a

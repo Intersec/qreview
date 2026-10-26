@@ -185,11 +185,25 @@ until you answer when the agent asked you something.
 work. It lists them and asks first, then waits three seconds with an
 **Undo**.
 
-If Claude Code runs commands in a sandbox, start `qreview` yourself, in
-your own terminal, and let the agent connect to it. A server started from
-inside the sandbox cannot save comments, and your browser cannot reach it.
-The agent commands reach your server through its Unix socket under `/tmp`,
-which the sandbox shares with your machine: nothing to configure.
+The agent starts `qreview` itself, as a background task of its session. The
+server stops when the session ends, and the review page closes with it.
+
+If Claude Code runs commands in a sandbox, a server started inside it
+cannot save comments, and your browser cannot reach it. `qreview` then
+refuses to start. To let the agent start it, take qreview out of the
+sandbox in your Claude Code settings:
+
+```json
+{
+  "sandbox": {
+    "excludedCommands": ["qreview *"]
+  }
+}
+```
+
+If your organisation forbids that setting, start `qreview` in your own
+terminal. The agent commands reach your server through its Unix socket under
+`/tmp`, which the sandbox shares with your machine: nothing to configure.
 
 ## Build from source
 
