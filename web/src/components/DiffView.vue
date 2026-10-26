@@ -1953,8 +1953,9 @@ function toggle(row: Row | null, column: Side) {
         :diff="diff"
         :load="loadRendered"
         :image-url="imageUrl"
-        @ready="follow"
         :style="{ top: `${paneTop}px`, height: `${paneHeight}px` }"
+        @ready="follow"
+        @reveal="(side, line) => revealLines(side, line, line)"
       />
     </div>
 

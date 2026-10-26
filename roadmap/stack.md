@@ -869,7 +869,9 @@ with `marked`, but not a file.
 page in a pane beside the diff, the way Gerrit shows one. The server renders
 the new side with `pulldown-cmark`. Each block carries its lines in the
 source, and the pane follows the diff by them as it scrolls. The pane is
-read only and carries no mark of the diff. See design section 3.8.
+read only. A bar in its margin marks the blocks that the change touches,
+and a tick marks where lines went away, so a long file with several
+changes shows where to look. See design section 3.8.
 
 The reader asks for it. A file always opens on its diff alone, so a review
 that never renders a file costs what it did before.
@@ -880,10 +882,13 @@ does too. The server also holds `syntect` for the code blocks.
 follows the diff by. A `marked` token carries no line number.
 
 **Rejected: the rendered page in place of the diff, with the changed blocks
-marked and remarks written on its blocks.** It was built first. Read in use,
-the reader wants the diff and the page side by side, and does not expect
-the diff inside the page. The diff already says what changed, and it already
-takes remarks.
+painted and remarks written on its blocks.** It was built first. Read in
+use, the reader wants the diff and the page side by side, and does not
+expect the diff inside the page. The diff already says what changed, and it
+already takes remarks. A bar in the margin keeps the page a document.
+
+**Rejected: a pane with no mark at all.** Tried next. On a long file with
+several changes, the reader could not tell where the next one was.
 
 **Rejected: a pane that scrolls on its own.** On a long file the reader then
 looks for the place twice.

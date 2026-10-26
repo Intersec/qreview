@@ -642,11 +642,58 @@ tr.talk td {
   color: var(--action);
   text-decoration: underline;
 }
-.md-doc .md-link,
+/*
+ * The marks of the diff: a bar beside a block that the change touches, and a
+ * tick where lines went away. A bar rather than a background, so the pane
+ * still reads as the document. The diff beside it says what changed. The
+ * marks stand in a gutter, so a nested block is marked in the same column.
+ */
+.md-page {
+  position: relative;
+}
+.md-gutter {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 20px;
+}
+.md-bar {
+  position: absolute;
+  left: 10px;
+  width: 3px;
+  background: var(--add-word);
+}
+.md-bar[data-change='modify'] {
+  background: var(--same-word);
+}
+.md-tick {
+  position: absolute;
+  left: 4px;
+  width: 16px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: var(--waiting-edge);
+  cursor: pointer;
+}
+/* Where lines went away, the page holds an empty place for the tick. */
+.md-doc .md-removed {
+  display: block;
+  height: 0;
+  list-style: none;
+}
+.md-doc tr.md-removed {
+  display: table-row;
+}
+.md-doc tr.md-removed > td {
+  height: 0;
+  padding: 0;
+  border: 0;
+}
 .md-doc img {
   max-width: 100%;
   height: auto;
 }
+.md-doc .md-link,
 .md-doc .md-image {
   border-bottom: 1px dotted var(--ink-faint);
 }

@@ -455,9 +455,32 @@ server for the rendered page, and nothing else asks for it. A reader who
 never presses it pays nothing. The pane stays open from one Markdown file to
 the next, until the reader hides it.
 
-**The pane is for reading.** It shows the document as it is, with no mark of
-the diff: the diff beside it says what changed. No remark is written or
-shown in the pane. A remark is written in the diff, as on any file.
+**The pane is for reading.** It shows the document, not the diff: the diff
+beside it says what changed. No remark is written or shown in the pane. A
+remark is written in the diff, as on any file.
+
+**The margin says where the change is.** A file with several changes is
+long to walk, so the pane marks in its margin the blocks that the diff of
+the version read against the base read touches. The server reads that diff
+with the `ps`, `base` and `ws` of the diff route. Then:
+
+- If all the lines of a block are added, it carries `data-change="add"`, a
+  green bar.
+- If a block has some added lines, it carries `data-change="modify"`, an
+  amber bar.
+- A block owns the removed lines that it took the place of, and the ones
+  that it lost between two of its own lines. It then carries
+  `data-change="modify"` and the old lines, `data-old="40-42"`. A line that
+  git rewrites is removed and then added, so it marks one block and adds
+  no tick.
+- Removed lines that no block owns become a red tick at that place, with
+  the old lines in `data-old`. A click on the tick brings the diff to them.
+  In a list the tick is an item, and in a table a row.
+
+A bar, not a background: the pane must still read as the document. The old
+text is not rendered. The bars and the ticks stand in one column at the
+left of the page. The interface places each one at the height of its block,
+so a nested item is marked in the same column as a paragraph.
 
 **The pane follows the diff.** When the pane opens, and each time the diff
 scrolls, the pane brings to its top the block that holds the first line of
@@ -477,7 +500,8 @@ target commit. The old side is read in the diff.
 GitHub extensions: tables, task lists, strikethrough, footnotes, alerts.
 `syntect` colors a fenced code block in the language that its fence names,
 so the classes are the ones of the diff. The page paints the HTML that comes
-back. Nothing is cached: a Markdown file is small.
+back. Nothing is cached: a Markdown file is small, and the marks depend on
+the base.
 
 **Each block knows its lines.** A leaf block carries `data-lines="12-18"`,
 the lines of the source that it came from. A leaf block is a paragraph, a
@@ -619,7 +643,8 @@ type BlameCommit = {
 };
 
 type Rendered = {
-  html: string;            // leaf blocks carry data-lines. See section 3.8
+  html: string;            // leaf blocks carry data-lines, and data-change
+                           // when the diff touches them. See section 3.8
 };
 ```
 
@@ -1246,7 +1271,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `GET /api/changes/:key/blame?ps=2&base=parent&file=...&part=recent` | Who wrote each line of the left side of the diff. With `part=recent`, only the lines that the series wrote. See section 3.7 |
 | `POST /api/gerrit/commits` | The page on Gerrit of each commit that the server holds. Body: `{ "commits": [sha] }`. Answers `{ "urls": { sha: url } }`. See section 6.5 |
 | `GET /api/changes/:key/lines?file=...&from=1&to=400` | A run of lines the diff left out, so the reader can open the context. A run of more than 2000 lines carries no syntax spans |
-| `GET /api/changes/:key/rendered?ps=2&file=...` | A Markdown file of the version read, as HTML. See section 3.8 |
+| `GET /api/changes/:key/rendered?ps=2&base=parent&file=...` | A Markdown file of the version read, as HTML, with the marks of its diff against the base. See section 3.8 |
 | `GET /api/changes/:key/blob?ps=2&path=...` | An image in the tree of the version read, for a rendered file. Raw bytes, not JSON. See section 3.8 |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
 | `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column |

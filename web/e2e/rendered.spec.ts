@@ -76,6 +76,34 @@ test('the pane opens on the part of the file the diff shows', async ({ page }) =
   await expect(pane.locator('h1')).not.toBeInViewport();
 });
 
+test('the blocks the change touches are marked in the margin', async ({ page }) => {
+  await openChange(page, /docs: rework the guide/);
+  await openFile(page, 'guide.md');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+  const pane = page.getByRole('complementary', { name: 'The file, rendered' });
+
+  const doc = pane.locator('.md-doc');
+  await expect(doc.locator('p[data-change="modify"]').first()).toContainText('A paragraph with');
+  await expect(doc.locator('[data-change="add"]')).toHaveText('a second nested item');
+  await expect(doc.locator('tr[data-change="modify"]')).toContainText('14');
+  await expect(pane.locator('h1')).not.toHaveAttribute('data-change');
+  // The bars stand in one column at the left of the page, however deep the
+  // block sits: the nested item and the table row line up with the paragraph.
+  const bars = pane.locator('.md-bar');
+  await expect(bars).toHaveCount(await doc.locator('[data-change]').count());
+  const lefts = new Set<number>();
+  for (const bar of await bars.all()) {
+    lefts.add(Math.round((await bar.boundingBox())?.x ?? -1));
+  }
+  expect(lefts.size).toBe(1);
+
+  // The line that went away is a tick, and the tick brings the diff to it.
+  const tick = pane.locator('.md-tick');
+  await expect(tick).toHaveAttribute('title', '2 lines removed');
+  await tick.click();
+  await expect(page.locator('.row-cursor')).toContainText('Raw <b>HTML</b> stays text.');
+});
+
 test('an image of the tree is read from the version', async ({ page }) => {
   await openChange(page, /docs: write a guide/);
   await openFile(page, 'guide.md');

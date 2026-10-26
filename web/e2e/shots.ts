@@ -94,8 +94,9 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.screenshot({ path: join(OUT, `${scheme}-leftside.png`) });
   await page.getByRole('button', { name: 'Cancel' }).click();
 
-  // A Markdown file, with its rendered page beside the diff.
-  await openChange(page, /docs: write a guide/);
+  // A Markdown file, with its rendered page beside the diff and the blocks
+  // the change touches marked in the margin.
+  await openChange(page, /docs: rework the guide/);
   await openFile(page, 'guide.md');
   await page.getByRole('button', { name: 'Show rendered' }).click();
   await page.locator('.md-doc [data-lines]').first().waitFor();
