@@ -459,9 +459,11 @@ the next, until the reader hides it.
 the diff: the diff beside it says what changed. No remark is written or
 shown in the pane. A remark is written in the diff, as on any file.
 
-**The pane follows the diff.** When the diff scrolls, the pane brings to its
-top the block that holds the first line of the new side that the diff
-shows. A blank line between two blocks counts for the next block.
+**The pane follows the diff.** When the pane opens, and each time the diff
+scrolls, the pane brings to its top the block that holds the first line of
+the new side that the diff shows. A blank line between two blocks counts for
+the next block. A diff that fits on the screen never scrolls, so the opening
+is what puts the pane on its hunk.
 
 **Which files.** The language of the file decides, not its extension, so the
 map of section 7 can make a house extension Markdown. A deleted file has no
