@@ -22,8 +22,8 @@ use crate::git::merge::Base;
 use crate::model::{ChangeSummary, FileDiff, FileEntry, Series};
 use crate::patchset::PatchSet;
 use crate::session::Against;
-use crate::session::Rendering;
 use crate::session::Session;
+use crate::session::{Image, Rendering};
 use crate::store::model::{Author, ChangeFile, Comment, Side};
 
 #[derive(Clone)]
@@ -126,6 +126,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/config", get(config).put(save_config))
         .route("/api/changes/{key}/lines", get(lines))
         .route("/api/changes/{key}/rendered", get(rendered))
+        .route("/api/changes/{key}/blob", get(blob))
         .route("/api/changes/{key}/patchsets", get(patchsets))
         .route("/api/changes/{key}/posted", get(posted))
         .route(
@@ -599,6 +600,54 @@ async fn rendered(
         ))),
         Rendering::TooLarge => Err(ApiError::bad_request(format!(
             "{file} is larger than 1 MiB, so it has no rendered view"
+        ))),
+    }
+}
+
+#[derive(Deserialize)]
+struct BlobQuery {
+    path: String,
+    ps: Option<usize>,
+}
+
+/// An image of the tree of the version read, for a rendered Markdown file.
+/// Raw bytes, not JSON. See design section 3.8.
+async fn blob(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Query(query): Query<BlobQuery>,
+) -> Result<Response, ApiError> {
+    let session = state.session.read().await;
+    let commit = target(&session, &key, query.ps).await?;
+    let path = &query.path;
+
+    match session.image(&commit, path).await? {
+        Image::Found { bytes, mime } => Ok((
+            StatusCode::OK,
+            [
+                (axum::http::header::CONTENT_TYPE, mime),
+                (
+                    axum::http::header::X_CONTENT_TYPE_OPTIONS,
+                    "nosniff".to_owned(),
+                ),
+                // An SVG opened on its own is a page, and a page of the
+                // repository must run nothing on this origin.
+                (
+                    axum::http::header::CONTENT_SECURITY_POLICY,
+                    "sandbox".to_owned(),
+                ),
+            ],
+            bytes,
+        )
+            .into_response()),
+        Image::Missing => Err(ApiError::not_found(format!(
+            "{path} is not in this version"
+        ))),
+        Image::NotImage => Err(ApiError::bad_request(format!(
+            "{path} is not an image of the tree"
+        ))),
+        Image::TooLarge => Err(ApiError::bad_request(format!(
+            "{path} is larger than 16 MiB, so it is not served"
         ))),
     }
 }
@@ -2861,6 +2910,69 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn an_image_of_the_tree_is_served_from_the_object_database() {
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>";
+        let repo = build_repo(&[
+            commit("base").file("src/a.c", "int a;\n"),
+            commit("draw the flow")
+                .file("docs/flow.svg", svg)
+                .file("docs/guide.md", "![The flow](flow.svg)\n")
+                .change_id("Iimg"),
+        ])
+        .await;
+        let server = server(&repo).await;
+
+        let (_, page) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Iimg/rendered?file=docs/guide.md", TOKEN),
+        )
+        .await;
+        assert!(
+            page["html"]
+                .as_str()
+                .unwrap()
+                .contains("data-path=\"docs/flow.svg\""),
+            "the page names the image by its path in the tree"
+        );
+
+        let response = server
+            .clone()
+            .oneshot(get_with_cookie(
+                "/api/changes/Iimg/blob?path=docs/flow.svg",
+                TOKEN,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let headers = response.headers();
+        assert_eq!(headers[header::CONTENT_TYPE], "image/svg+xml");
+        assert_eq!(headers[header::CONTENT_SECURITY_POLICY], "sandbox");
+        assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        assert_eq!(&bytes[..], svg.as_bytes());
+
+        for (uri, status) in [
+            (
+                "/api/changes/Iimg/blob?path=src/a.c",
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "/api/changes/Iimg/blob?path=../a.png",
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "/api/changes/Iimg/blob?path=docs/gone.png",
+                StatusCode::NOT_FOUND,
+            ),
+        ] {
+            let (got, _) = json(server.clone(), get_with_cookie(uri, TOKEN)).await;
+            assert_eq!(got, status, "{uri}");
+        }
     }
 
     #[tokio::test]

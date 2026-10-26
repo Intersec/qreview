@@ -20,9 +20,10 @@ pub const MAX_BYTES: usize = 1024 * 1024;
 
 /// Render a Markdown text.
 ///
-/// `paint` colors a fenced block: it takes the language of the fence and
-/// the code, and answers the spans of each line, in bytes.
-pub fn render(text: &str, paint: &dyn Fn(&str, &str) -> Vec<Vec<Span>>) -> String {
+/// `dir` is the directory of the file in the tree, which a relative image
+/// is read from. `paint` colors a fenced block: it takes the language of the
+/// fence and the code, and answers the spans of each line, in bytes.
+pub fn render(text: &str, dir: &str, paint: &dyn Fn(&str, &str) -> Vec<Vec<Span>>) -> String {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_FOOTNOTES
         | Options::ENABLE_STRIKETHROUGH
@@ -38,6 +39,8 @@ pub fn render(text: &str, paint: &dyn Fn(&str, &str) -> Vec<Vec<Span>>) -> Strin
         cell: 0,
         head: false,
         code: None,
+        image: None,
+        dir,
         paint,
     };
 
@@ -68,6 +71,10 @@ struct Writer<'p> {
     /// A fenced or indented block being read: its language, its code, and
     /// its lines.
     code: Option<(String, String, String)>,
+    /// An image of the tree being read: its path, its alternative text and
+    /// its title. The text arrives as events, and an `alt` needs all of it.
+    image: Option<(String, String, String)>,
+    dir: &'p str,
     paint: &'p dyn Fn(&str, &str) -> Vec<Vec<Span>>,
 }
 
@@ -77,6 +84,14 @@ impl Writer<'_> {
             match event {
                 Event::Text(text) => code.push_str(&text),
                 Event::End(TagEnd::CodeBlock) => self.code_block(),
+                _ => {}
+            }
+            return;
+        }
+        if let Some((_, alt, _)) = self.image.as_mut() {
+            match event {
+                Event::Text(text) | Event::Code(text) => alt.push_str(&text),
+                Event::End(TagEnd::Image) => self.close_image(&range),
                 _ => {}
             }
             return;
@@ -199,10 +214,26 @@ impl Writer<'_> {
                     false => format!("<span class=\"md-link\" title=\"{}\">", escape(&dest_url)),
                 }
             }
-            // The alternative text, until an image can be read from the
-            // object database.
-            Tag::Image { dest_url, .. } => {
-                format!("<span class=\"md-image\" title=\"{}\">", escape(&dest_url))
+            // An image of the tree is read from the object database. One on
+            // another host is a link: opening a review reaches no network.
+            Tag::Image {
+                dest_url, title, ..
+            } => {
+                if let Some(path) = resolve(self.dir, &dest_url) {
+                    self.image = Some((path, String::new(), title.to_string()));
+                    return;
+                }
+                let open = opens(&dest_url);
+                self.links.push(open);
+                match open {
+                    true => format!(
+                        "<a class=\"md-image\" href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">",
+                        escape(&dest_url)
+                    ),
+                    false => {
+                        format!("<span class=\"md-image\" title=\"{}\">", escape(&dest_url))
+                    }
+                }
             }
             Tag::MetadataBlock(_) => String::new(),
         };
@@ -258,11 +289,10 @@ impl Writer<'_> {
             TagEnd::Strikethrough => "</del>",
             TagEnd::Superscript => "</sup>",
             TagEnd::Subscript => "</sub>",
-            TagEnd::Link => match self.links.pop() {
+            TagEnd::Link | TagEnd::Image => match self.links.pop() {
                 Some(true) => "</a>",
                 _ => "</span>",
             },
-            TagEnd::Image => "</span>",
             TagEnd::MetadataBlock(_) => "",
         };
         self.push(html.to_owned());
@@ -293,6 +323,24 @@ impl Writer<'_> {
             self.out[piece] = format!("<div class=\"md-line\" {}>", self.lines(&covered));
             self.push("</div>".to_owned());
         }
+    }
+
+    fn close_image(&mut self, range: &Range<usize>) {
+        let Some((path, alt, title)) = self.image.take() else {
+            return;
+        };
+        // The page turns the path into an address of the blob route: only
+        // it knows the change and the version being read.
+        let mut html = format!(
+            "<img class=\"md-img\" data-path=\"{}\" alt=\"{}\" loading=\"lazy\"",
+            escape(&path),
+            escape(&alt)
+        );
+        if !title.is_empty() {
+            html.push_str(&format!(" title=\"{}\"", escape(&title)));
+        }
+        html.push('>');
+        self.inline(range, html);
     }
 
     fn code_block(&mut self) {
@@ -360,6 +408,62 @@ fn painted(line: &str, spans: &[Span]) -> String {
     html
 }
 
+/// The path in the tree of an image that a file in `dir` names, or `None`
+/// when the image is not in the tree: on another host, in a `data:` address,
+/// or above the top of the tree.
+fn resolve(dir: &str, dest: &str) -> Option<String> {
+    let dest = dest.split(['#', '?']).next()?;
+    // A scheme is a word and a colon before any slash: `https:`, `data:`.
+    let scheme = dest
+        .find(':')
+        .is_some_and(|colon| !dest[..colon].contains('/'));
+    if dest.is_empty() || scheme || dest.starts_with("//") {
+        return None;
+    }
+    let dest = unescape(dest);
+    // A leading slash names the top of the tree, the way a forge reads it.
+    let (base, rest) = match dest.strip_prefix('/') {
+        Some(rest) => ("", rest),
+        None => (dir, dest.as_str()),
+    };
+
+    let mut parts: Vec<&str> = base.split('/').filter(|part| !part.is_empty()).collect();
+    for part in rest.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            name => parts.push(name),
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+/// Undo the percent escapes of an address: `my%20figure.png`.
+fn unescape(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let hex = bytes
+            .get(at + 1..at + 3)
+            .and_then(|pair| std::str::from_utf8(pair).ok())
+            .and_then(|pair| u8::from_str_radix(pair, 16).ok());
+        match (bytes[at], hex) {
+            (b'%', Some(byte)) => {
+                out.push(byte);
+                at += 3;
+            }
+            (byte, _) => {
+                out.push(byte);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Only a link that leaves the page for another host opens.
 fn opens(url: &str) -> bool {
     let lower = url.trim_start().to_ascii_lowercase();
@@ -409,7 +513,7 @@ mod tests {
     use super::*;
 
     fn plain(text: &str) -> String {
-        render(text, &|_, _| Vec::new())
+        render(text, "docs", &|_, _| Vec::new())
     }
 
     #[test]
@@ -482,13 +586,56 @@ mod tests {
     }
 
     #[test]
-    fn an_image_shows_its_alternative_text() {
-        let html = plain("![a diagram](docs/a.png)\n");
+    fn an_image_of_the_tree_names_its_path() {
+        let html = plain("![a `big` diagram](img/a.png \"The flow\")\n");
 
         assert_eq!(
             html,
-            "<p data-lines=\"1-1\"><span class=\"md-image\" title=\"docs/a.png\">a diagram</span></p>"
+            "<p data-lines=\"1-1\"><img class=\"md-img\" data-path=\"docs/img/a.png\" \
+             alt=\"a big diagram\" loading=\"lazy\" title=\"The flow\"></p>"
         );
+    }
+
+    #[test]
+    fn an_image_on_another_host_is_a_link_and_is_never_fetched() {
+        let html = plain("![logo](https://example.com/logo.png) ![x](data:image/png;base64,AA)\n");
+
+        assert!(!html.contains("<img"), "{html}");
+        assert!(html.contains(
+            "<a class=\"md-image\" href=\"https://example.com/logo.png\" target=\"_blank\" \
+             rel=\"noopener noreferrer\">logo</a>"
+        ));
+        assert!(
+            html.contains("<span class=\"md-image\" title=\"data:image/png;base64,AA\">x</span>")
+        );
+    }
+
+    #[test]
+    fn a_path_is_resolved_against_the_directory_of_the_file() {
+        assert_eq!(resolve("docs", "a.png").as_deref(), Some("docs/a.png"));
+        assert_eq!(
+            resolve("docs/guide", "../img/a.png").as_deref(),
+            Some("docs/img/a.png")
+        );
+        assert_eq!(
+            resolve("docs", "./a.png#top").as_deref(),
+            Some("docs/a.png")
+        );
+        assert_eq!(resolve("docs", "/img/a.png").as_deref(), Some("img/a.png"));
+        assert_eq!(
+            resolve("docs", "my%20figure.png").as_deref(),
+            Some("docs/my figure.png")
+        );
+        assert_eq!(resolve("", "a.png").as_deref(), Some("a.png"));
+    }
+
+    #[test]
+    fn a_path_outside_the_tree_is_not_an_image_of_it() {
+        assert_eq!(resolve("docs", "../../a.png"), None);
+        assert_eq!(resolve("docs", "https://example.com/a.png"), None);
+        assert_eq!(resolve("docs", "//example.com/a.png"), None);
+        assert_eq!(resolve("docs", "data:image/png;base64,AA"), None);
+        assert_eq!(resolve("docs", ""), None);
     }
 
     #[test]
@@ -505,7 +652,7 @@ mod tests {
                 Vec::new(),
             ]
         };
-        let html = render("Text.\n\n```c\nint a;\nint <b>;\n```\n", &paint);
+        let html = render("Text.\n\n```c\nint a;\nint <b>;\n```\n", "", &paint);
 
         assert!(html.ends_with(
             "<pre class=\"md-code\" data-lines=\"3-6\"><code>\

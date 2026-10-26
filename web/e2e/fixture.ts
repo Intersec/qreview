@@ -343,12 +343,22 @@ export function rebaseNewest(fixture: Fixture): string {
 export function addGuide(repo: string) {
   write(
     repo,
+    'docs/flow.svg',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="60">' +
+      '<rect x="2" y="2" width="236" height="56" rx="8" fill="#e8f0fe" stroke="#1a73e8"/>' +
+      '<text x="120" y="36" text-anchor="middle" font-family="sans-serif">read → review</text>' +
+      '</svg>\n',
+  );
+  write(
+    repo,
     'docs/guide.md',
     [
       '# The guide',
       '',
       'A paragraph with **bold**, `code` and a [link](https://example.com).',
       'It runs on a second line.',
+      '',
+      '![The flow](flow.svg)',
       '',
       '- one item',
       '  - a nested item',

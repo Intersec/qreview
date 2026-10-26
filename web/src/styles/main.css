@@ -643,6 +643,10 @@ tr.talk td {
   text-decoration: underline;
 }
 .md-doc .md-link,
+.md-doc img {
+  max-width: 100%;
+  height: auto;
+}
 .md-doc .md-image {
   border-bottom: 1px dotted var(--ink-faint);
 }
