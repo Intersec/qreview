@@ -85,6 +85,7 @@ pub fn diff(old: &str, new: &str, context: usize) -> FileDiff {
         file: entry(old, new),
         hunks,
         line_count: Some(new.lines().count()),
+        markdown: false,
     }
 }
 

@@ -14,3 +14,9 @@ export function render(body: string): string {
 
   return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
 }
+
+/// A file the server rendered. The server wrote every tag itself, and this
+/// is the second lock: a link that leaves opens in a tab of its own.
+export function clean(html: string): string {
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, ADD_ATTR: ['target'] });
+}

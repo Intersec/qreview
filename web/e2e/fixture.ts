@@ -337,3 +337,42 @@ export function rebaseNewest(fixture: Fixture): string {
 
   return first;
 }
+
+/// A Markdown file with one block of each kind, committed on top of the
+/// series, so its rendered view has something to show.
+export function addGuide(repo: string) {
+  write(
+    repo,
+    'docs/guide.md',
+    [
+      '# The guide',
+      '',
+      'A paragraph with **bold**, `code` and a [link](https://example.com).',
+      'It runs on a second line.',
+      '',
+      '- one item',
+      '  - a nested item',
+      '- another item',
+      '',
+      '| Name | Size |',
+      '|:-----|-----:|',
+      '| a.c  | 12   |',
+      '',
+      '```c',
+      'int main(void) { return 0; }',
+      '```',
+      '',
+      '> [!WARNING]',
+      '> Read this first.',
+      '',
+      'Raw <b>HTML</b> stays text.',
+      '',
+      // Longer than a screen, so the pane has to follow the diff.
+      ...Array.from(
+        { length: 40 },
+        (_, i) => `## Section ${i + 1}\n\nThe text of section ${i + 1}.\n`,
+      ),
+    ].join('\n'),
+  );
+  commit(repo, 'docs: write a guide', 'Change-Id: Iguidedocaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+}
