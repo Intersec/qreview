@@ -1422,7 +1422,8 @@ repository, with mode `0600`:
 { "pid": 41207, "port": 38412, "token": "...", "socket": "/tmp/qreview-1000/4f5959a8bfd8b629-c710c85489f3b4c3.sock" }
 ```
 
-It removes the file, and the socket, when it stops. The commands above
+It removes the file, and the socket, when it stops on Ctrl-C, `SIGTERM` or
+`SIGHUP`. The commands above
 read the file of their worktree to find the server, and try the socket
 before the port. None of them starts a server, and each says to run
 `qreview` when no server answers. A file whose server does not answer is a

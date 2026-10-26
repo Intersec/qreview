@@ -262,8 +262,9 @@ async fn serve(port: u16, state: AppState, no_open: bool, home: &agent::Home) ->
     // flight end. A request that still hangs gets a few seconds, no more:
     // the reader asked to stop.
     let (stopping, mut stopped) = tokio::sync::watch::channel(false);
+    let stop = stop_signal()?;
     let signal = async move {
-        let _ = tokio::signal::ctrl_c().await;
+        stop.await;
         events.close();
         let _ = stopping.send(true);
     };
@@ -290,6 +291,23 @@ async fn serve(port: u16, state: AppState, no_open: bool, home: &agent::Home) ->
         agent::socket::clear(&path);
     }
     served
+}
+
+/// Ctrl-C, `SIGTERM` or `SIGHUP`. An agent stops the background task of the
+/// server with `SIGTERM`, and a terminal that closes sends `SIGHUP`. Each
+/// must remove the address and the socket, as Ctrl-C does.
+fn stop_signal() -> Result<impl std::future::Future<Output = ()>> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut term = signal(SignalKind::terminate()).context("cannot listen for SIGTERM")?;
+    let mut hangup = signal(SignalKind::hangup()).context("cannot listen for SIGHUP")?;
+    Ok(async move {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+            _ = hangup.recv() => {}
+        }
+    })
 }
 
 /// Say in the terminal when the page of the review opens, closes, and
