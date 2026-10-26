@@ -258,7 +258,17 @@ function topLine(): number | null {
 
 let following = false;
 
-/// Keep the rendered pane on the part of the file the diff shows.
+/// Bring the rendered pane to the part of the file the diff shows.
+///
+/// On a scroll, and when a page arrives: a diff that fits on the screen
+/// never scrolls, and the pane must still open on its hunk.
+function follow() {
+  const line = topLine();
+  if (line !== null) {
+    renderedView.value?.follow(line);
+  }
+}
+
 function onScroll() {
   if (!beside.value || following) {
     return;
@@ -266,10 +276,7 @@ function onScroll() {
   following = true;
   requestAnimationFrame(() => {
     following = false;
-    const line = topLine();
-    if (line !== null) {
-      renderedView.value?.follow(line);
-    }
+    follow();
   });
 }
 
@@ -1946,6 +1953,7 @@ function toggle(row: Row | null, column: Side) {
         :diff="diff"
         :load="loadRendered"
         :image-url="imageUrl"
+        @ready="follow"
         :style="{ top: `${paneTop}px`, height: `${paneHeight}px` }"
       />
     </div>

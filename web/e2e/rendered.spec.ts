@@ -64,6 +64,18 @@ test('the pane follows the diff as it scrolls', async ({ page }) => {
     .toBeLessThan(40);
 });
 
+test('the pane opens on the part of the file the diff shows', async ({ page }) => {
+  await openChange(page, /docs: reword a section/);
+  await openFile(page, 'guide.md');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+
+  // The diff does not scroll: it is one hunk, far down the file.
+  const pane = page.getByRole('complementary', { name: 'The file, rendered' });
+  const changed = pane.getByText('The text of section 30, said again.');
+  await expect(changed).toBeInViewport();
+  await expect(pane.locator('h1')).not.toBeInViewport();
+});
+
 test('an image of the tree is read from the version', async ({ page }) => {
   await openChange(page, /docs: write a guide/);
   await openFile(page, 'guide.md');

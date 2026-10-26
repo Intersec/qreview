@@ -16,6 +16,8 @@ const props = defineProps<{
   /// Where an image of the tree is fetched, by its path.
   imageUrl: (path: string) => string;
 }>();
+/// The page is on the screen: the diff can say where to stand.
+const emit = defineEmits<{ ready: [] }>();
 
 const html = ref('');
 const failed = ref<string | null>(null);
@@ -55,6 +57,7 @@ async function read() {
     }
   }
   follow(line);
+  emit('ready');
 }
 
 onMounted(read);
