@@ -775,6 +775,7 @@ onBeforeUnmount(() => {
             :blame="blameLines"
             :blame-busy="blameBusy"
             :blame-target="review.blameTarget"
+            :load-rendered="review.loadRendered"
             @update:split="review.setSplit"
             @update:blame="review.toggleBlame"
             @open-blame="goToBlame"

@@ -172,6 +172,23 @@ impl Highlighter {
         lines
     }
 
+    /// The spans of a text that is not a blob, such as a fenced block of a
+    /// Markdown file.
+    ///
+    /// Not cached: the text has no hash to key it by, and the file around
+    /// it is rendered once per request anyway.
+    pub fn spans(&self, text: &str, language: &str) -> Vec<Vec<Span>> {
+        let mut painted = Painted::default();
+        self.paint(&mut painted, text, Some(language), "", usize::MAX);
+        painted.lines
+    }
+
+    /// Whether the grammar of a file is Markdown. The grammar decides, so a
+    /// house extension mapped to Markdown counts.
+    pub fn is_markdown(&self, language: Option<&str>, path: &str) -> bool {
+        self.syntax_of("", language, path).1.name == "Markdown"
+    }
+
     /// The entry of a blob, made empty on the first ask.
     fn entry(&self, blob: &str) -> Arc<Mutex<Painted>> {
         self.cache
@@ -349,6 +366,26 @@ mod tests {
         line.iter()
             .map(|s| (s.cls.clone(), text[s.start..s.end].to_owned()))
             .collect()
+    }
+
+    #[test]
+    fn the_grammar_says_which_file_is_markdown() {
+        let h = Highlighter::new();
+
+        assert!(h.is_markdown(None, "README.md"));
+        assert!(h.is_markdown(None, "docs/guide.markdown"));
+        assert!(h.is_markdown(Some("markdown"), "notes.txt"), "the map wins");
+        assert!(!h.is_markdown(None, "src/main.rs"));
+        assert!(!h.is_markdown(None, "Makefile"));
+    }
+
+    #[test]
+    fn a_fence_is_painted_without_a_blob() {
+        let h = Highlighter::new();
+        let lines = h.spans("int a;\n", "c");
+
+        assert_eq!(lines.len(), 1);
+        assert!(!lines[0].is_empty(), "a C fence is colored");
     }
 
     #[test]

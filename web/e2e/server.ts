@@ -3,7 +3,7 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { build, type Fixture } from './fixture.ts';
+import { addGuide, build, type Fixture } from './fixture.ts';
 
 export interface Running {
   url: string;
@@ -26,6 +26,8 @@ export async function start(
     prev?: boolean;
     gerrit?: boolean;
     dirty?: boolean;
+    /// One more change on top, which adds a Markdown file.
+    markdown?: boolean;
     config?: object;
     /// Start on a repository a previous run left behind, comments and all.
     on?: Fixture;
@@ -37,6 +39,9 @@ export async function start(
   // it puts one more change at the top of the series.
   if (options.dirty) {
     dirty(fixture.repo);
+  }
+  if (options.markdown) {
+    addGuide(fixture.repo);
   }
 
   // No test talks to a server. qreview asks its home whether a newer
