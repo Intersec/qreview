@@ -6,63 +6,175 @@
 //!
 //! Each leaf block carries `data-lines="12-18"`, the lines of the source it
 //! came from. That is what lets the rendered pane follow the diff.
+//!
+//! The diff marks the blocks it touches. A block with added lines carries
+//! `data-change`, and lines removed between two blocks become a marker that
+//! carries `data-old`. The old text is never rendered.
 
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::ops::Range;
 
 use pulldown_cmark::{
     Alignment, BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
 };
 
-use crate::model::Span;
+use crate::model::{Hunk, RowKind, Span};
 
 /// Above this size, a file has no rendered view.
 pub const MAX_BYTES: usize = 1024 * 1024;
 
-/// Render a Markdown text.
+/// What the diff did to the new side of a file.
+#[derive(Clone, Debug, Default)]
+pub struct Changes {
+    /// The lines of the new side that the diff adds.
+    added: BTreeSet<usize>,
+    removed: Vec<Removed>,
+}
+
+/// A run of lines that the diff removes.
+#[derive(Clone, Debug)]
+struct Removed {
+    /// The line of the new side that the run follows. 0 is the top.
+    after: usize,
+    /// The first and the last line of the run, on the old side.
+    old: (usize, usize),
+}
+
+impl Changes {
+    pub fn of(hunks: &[Hunk]) -> Self {
+        let mut changes = Self::default();
+
+        for hunk in hunks {
+            let mut last_new = hunk.new_start.saturating_sub(1);
+            let mut run: Option<Removed> = None;
+
+            for row in &hunk.rows {
+                match (row.kind, row.old_line) {
+                    (RowKind::Remove, Some(old)) => match run.as_mut() {
+                        Some(open) => open.old.1 = old,
+                        None => {
+                            run = Some(Removed {
+                                after: last_new,
+                                old: (old, old),
+                            })
+                        }
+                    },
+                    _ => {
+                        changes.removed.extend(run.take());
+                        if let Some(new) = row.new_line {
+                            if row.kind == RowKind::Add {
+                                changes.added.insert(new);
+                            }
+                            last_new = new;
+                        }
+                    }
+                }
+            }
+            changes.removed.extend(run);
+        }
+        changes
+    }
+
+    /// Whether a block owns a run: the block took the place of the run, or
+    /// the run sat between two lines of the block.
+    fn owns(&self, (first, last): (usize, usize), run: &Removed) -> bool {
+        let next = run.after + 1;
+        let replaced = first <= next && next <= last && self.added.contains(&next);
+        let inside = first <= run.after && next <= last;
+        replaced || inside
+    }
+}
+
+/// What the diff did to one block: `add` or `modify`, and the old lines it
+/// owns.
+type Mark = (&'static str, Option<(usize, usize)>);
+
+/// What the second pass writes on each block, from the blocks that the
+/// first pass found.
+#[derive(Default)]
+struct Plan {
+    /// By the lines of a block.
+    marks: HashMap<(usize, usize), Mark>,
+    /// The runs that no block owns, in the order of the file.
+    loose: Vec<Removed>,
+}
+
+impl Plan {
+    fn new(changes: &Changes, leaves: &[(usize, usize)]) -> Self {
+        let mut plan = Self::default();
+
+        for run in &changes.removed {
+            if !leaves.iter().any(|leaf| changes.owns(*leaf, run)) {
+                plan.loose.push(run.clone());
+            }
+        }
+        for &(first, last) in leaves {
+            let owned: Vec<&Removed> = changes
+                .removed
+                .iter()
+                .filter(|run| changes.owns((first, last), run))
+                .collect();
+            let added = changes.added.range(first..=last).count();
+            let kind = match (added, owned.is_empty()) {
+                (0, true) => continue,
+                (n, true) if n == last - first + 1 => "add",
+                _ => "modify",
+            };
+            let old = owned
+                .iter()
+                .map(|run| run.old)
+                .reduce(|a, b| (a.0.min(b.0), a.1.max(b.1)));
+            plan.marks.insert((first, last), (kind, old));
+        }
+        plan
+    }
+}
+
+/// Render a Markdown text, with the marks of what the diff changed.
 ///
 /// `dir` is the directory of the file in the tree, which a relative image
 /// is read from. `paint` colors a fenced block: it takes the language of the
 /// fence and the code, and answers the spans of each line, in bytes.
-pub fn render(text: &str, dir: &str, paint: &dyn Fn(&str, &str) -> Vec<Vec<Span>>) -> String {
-    let options = Options::ENABLE_TABLES
-        | Options::ENABLE_FOOTNOTES
-        | Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_TASKLISTS
-        | Options::ENABLE_GFM;
-    let mut writer = Writer {
-        out: Vec::new(),
-        starts: line_starts(text),
-        run: None,
-        blocks: Vec::new(),
-        links: Vec::new(),
-        aligns: Vec::new(),
-        cell: 0,
-        head: false,
-        code: None,
-        image: None,
-        dir,
-        paint,
-    };
+pub fn render(
+    text: &str,
+    dir: &str,
+    changes: &Changes,
+    paint: &dyn Fn(&str, &str) -> Vec<Vec<Span>>,
+) -> String {
+    // Whether a run is a marker depends on blocks that come after it, so a
+    // first pass finds the blocks. It colors nothing.
+    let leaves = Writer::run(text, dir, &Plan::default(), &|_, _| Vec::new()).leaves;
+    let plan = Plan::new(changes, &leaves);
 
-    for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
-        writer.event(event, range);
-    }
-    writer.close_run();
-    writer.out.concat()
+    Writer::run(text, dir, &plan, paint).out.concat()
+}
+
+/// What kind of block is open, which says what a marker may be written as.
+#[derive(Clone, Copy, PartialEq)]
+enum Open {
+    /// An item of a tight list, or a definition: text may sit in it with
+    /// no paragraph.
+    Bare,
+    List,
+    Table,
+    Other,
 }
 
 struct Writer<'p> {
     /// Pieces rather than one string, so the opening tag of a run can be
     /// written once its last line is known.
     out: Vec<String>,
+    plan: &'p Plan,
+    /// The runs of `plan.loose` not written yet.
+    loose: VecDeque<Removed>,
+    /// The lines of every leaf block, in order.
+    leaves: Vec<(usize, usize)>,
     /// The byte where each line starts.
     starts: Vec<usize>,
     /// Text directly in a list item, which has no paragraph of its own: the
     /// piece that holds its opening tag, and the bytes it covers so far.
     run: Option<(usize, Range<usize>)>,
-    /// For each open block, whether text may sit in it with no paragraph:
-    /// an item of a tight list, or a definition.
-    blocks: Vec<bool>,
+    blocks: Vec<Open>,
     /// For each open link, whether it was written as an `<a>`.
     links: Vec<bool>,
     aligns: Vec<Alignment>,
@@ -78,7 +190,44 @@ struct Writer<'p> {
     paint: &'p dyn Fn(&str, &str) -> Vec<Vec<Span>>,
 }
 
-impl Writer<'_> {
+impl<'p> Writer<'p> {
+    fn run(
+        text: &str,
+        dir: &'p str,
+        plan: &'p Plan,
+        paint: &'p dyn Fn(&str, &str) -> Vec<Vec<Span>>,
+    ) -> Self {
+        let options = Options::ENABLE_TABLES
+            | Options::ENABLE_FOOTNOTES
+            | Options::ENABLE_STRIKETHROUGH
+            | Options::ENABLE_TASKLISTS
+            | Options::ENABLE_GFM;
+        let mut writer = Writer {
+            out: Vec::new(),
+            plan,
+            loose: plan.loose.iter().cloned().collect(),
+            leaves: Vec::new(),
+            starts: line_starts(text),
+            run: None,
+            blocks: Vec::new(),
+            links: Vec::new(),
+            aligns: Vec::new(),
+            cell: 0,
+            head: false,
+            code: None,
+            image: None,
+            dir,
+            paint,
+        };
+
+        for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
+            writer.event(event, range);
+        }
+        writer.close_run();
+        writer.markers(usize::MAX);
+        writer
+    }
+
     fn event(&mut self, event: Event, range: Range<usize>) {
         if let Some((_, code, _)) = self.code.as_mut() {
             match event {
@@ -117,6 +266,7 @@ impl Writer<'_> {
             }
             Event::Rule => {
                 self.close_run();
+                self.markers(self.line_of(range.start));
                 let lines = self.lines(&range);
                 self.push(format!("<hr {lines}>"));
             }
@@ -138,16 +288,22 @@ impl Writer<'_> {
         );
         if !inline {
             self.close_run();
+            self.markers(self.line_of(range.start));
+            let open = match tag {
+                Tag::Item | Tag::DefinitionListDefinition => Open::Bare,
+                Tag::List(_) => Open::List,
+                Tag::Table(_) => Open::Table,
+                _ => Open::Other,
+            };
             if !matches!(tag, Tag::CodeBlock(_)) {
-                self.blocks
-                    .push(matches!(tag, Tag::Item | Tag::DefinitionListDefinition));
+                self.blocks.push(open);
             }
         }
-        let lines = self.lines(&range);
-
+        // Only a leaf block carries lines: a list or a table holds none of
+        // its own, and counting one would make it own what its rows own.
         let html = match tag {
-            Tag::Paragraph => format!("<p {lines}>"),
-            Tag::Heading { level, .. } => format!("<{} {lines}>", heading(level)),
+            Tag::Paragraph => format!("<p {}>", self.lines(&range)),
+            Tag::Heading { level, .. } => format!("<{} {}>", heading(level), self.lines(&range)),
             Tag::BlockQuote(kind) => match kind.map(alert) {
                 Some(name) => format!("<blockquote class=\"md-alert md-alert-{name}\">"),
                 None => "<blockquote>".to_owned(),
@@ -159,10 +315,11 @@ impl Writer<'_> {
                     }
                     CodeBlockKind::Indented => String::new(),
                 };
+                let lines = self.lines(&range);
                 self.code = Some((language, String::new(), lines));
                 return;
             }
-            Tag::HtmlBlock => format!("<pre class=\"md-html\" {lines}>"),
+            Tag::HtmlBlock => format!("<pre class=\"md-html\" {}>", self.lines(&range)),
             Tag::List(Some(first)) => format!("<ol start=\"{first}\">"),
             Tag::List(None) => "<ul>".to_owned(),
             Tag::Item => "<li>".to_owned(),
@@ -170,8 +327,8 @@ impl Writer<'_> {
                 format!("<div class=\"md-footnote\"><sup>[{}]</sup>", escape(&label))
             }
             Tag::DefinitionList => "<dl>".to_owned(),
-            Tag::DefinitionListTitle => format!("<dt {lines}>"),
-            Tag::DefinitionListDefinition => format!("<dd {lines}>"),
+            Tag::DefinitionListTitle => format!("<dt {}>", self.lines(&range)),
+            Tag::DefinitionListDefinition => "<dd>".to_owned(),
             Tag::Table(aligns) => {
                 self.aligns = aligns;
                 "<table>".to_owned()
@@ -179,11 +336,11 @@ impl Writer<'_> {
             Tag::TableHead => {
                 self.head = true;
                 self.cell = 0;
-                format!("<thead><tr {lines}>")
+                format!("<thead><tr {}>", self.lines(&range))
             }
             Tag::TableRow => {
                 self.cell = 0;
-                format!("<tr {lines}>")
+                format!("<tr {}>", self.lines(&range))
             }
             Tag::TableCell => {
                 let name = if self.head { "th" } else { "td" };
@@ -305,6 +462,7 @@ impl Writer<'_> {
             match self.run.as_mut() {
                 Some((_, covered)) => covered.end = covered.end.max(range.end),
                 None => {
+                    self.markers(self.line_of(range.start));
                     self.out.push(String::new());
                     self.run = Some((self.out.len() - 1, range.clone()));
                 }
@@ -315,12 +473,44 @@ impl Writer<'_> {
 
     /// The last open block is an item or a definition, with no paragraph.
     fn in_bare_item(&self) -> bool {
-        self.blocks.last().copied().unwrap_or(false)
+        self.blocks.last() == Some(&Open::Bare)
+    }
+
+    /// Write a marker for each loose run that sits before line `line`.
+    ///
+    /// A marker stands where a block could: an item in a list, a row in a
+    /// table, and a division anywhere else.
+    fn markers(&mut self, line: usize) {
+        while self.loose.front().is_some_and(|run| run.after < line) {
+            let Some(run) = self.loose.pop_front() else {
+                break;
+            };
+            let (first, last) = run.old;
+            let count = last - first + 1;
+            let words = match count {
+                1 => "1 line removed".to_owned(),
+                n => format!("{n} lines removed"),
+            };
+            // An empty mark in the margin: the pane is a document to read,
+            // and the diff beside it holds the lines.
+            let attrs =
+                format!("class=\"md-removed\" data-old=\"{first}-{last}\" title=\"{words}\"");
+            let html = match self.blocks.last() {
+                Some(Open::List) => format!("<li {attrs}></li>"),
+                Some(Open::Table) => format!(
+                    "<tr {attrs}><td colspan=\"{}\"></td></tr>",
+                    self.aligns.len().max(1)
+                ),
+                _ => format!("<div {attrs}></div>"),
+            };
+            self.push(html);
+        }
     }
 
     fn close_run(&mut self) {
         if let Some((piece, covered)) = self.run.take() {
-            self.out[piece] = format!("<div class=\"md-line\" {}>", self.lines(&covered));
+            let lines = self.lines(&covered);
+            self.out[piece] = format!("<div class=\"md-line\" {lines}>");
             self.push("</div>".to_owned());
         }
     }
@@ -367,11 +557,21 @@ impl Writer<'_> {
         self.out.push(html);
     }
 
-    /// The `data-lines` attribute of a range of bytes. Lines count from 1.
-    fn lines(&self, range: &Range<usize>) -> String {
+    /// The attributes of a leaf block over a range of bytes: its lines,
+    /// which count from 1, and what the diff did to it.
+    fn lines(&mut self, range: &Range<usize>) -> String {
         let first = self.line_of(range.start);
         let last = self.line_of(range.end.saturating_sub(1).max(range.start));
-        format!("data-lines=\"{first}-{last}\"")
+        self.leaves.push((first, last));
+
+        let mut attrs = format!("data-lines=\"{first}-{last}\"");
+        if let Some((kind, old)) = self.plan.marks.get(&(first, last)) {
+            attrs.push_str(&format!(" data-change=\"{kind}\""));
+            if let Some((from, to)) = old {
+                attrs.push_str(&format!(" data-old=\"{from}-{to}\""));
+            }
+        }
+        attrs
     }
 
     fn line_of(&self, byte: usize) -> usize {
@@ -513,7 +713,7 @@ mod tests {
     use super::*;
 
     fn plain(text: &str) -> String {
-        render(text, "docs", &|_, _| Vec::new())
+        render(text, "docs", &Changes::default(), &|_, _| Vec::new())
     }
 
     #[test]
@@ -652,7 +852,12 @@ mod tests {
                 Vec::new(),
             ]
         };
-        let html = render("Text.\n\n```c\nint a;\nint <b>;\n```\n", "", &paint);
+        let html = render(
+            "Text.\n\n```c\nint a;\nint <b>;\n```\n",
+            "",
+            &Changes::default(),
+            &paint,
+        );
 
         assert!(html.ends_with(
             "<pre class=\"md-code\" data-lines=\"3-6\"><code>\
@@ -674,5 +879,139 @@ mod tests {
             ),
             "{html}"
         );
+    }
+
+    fn changes(added: &[usize], removed: &[(usize, usize, usize)]) -> Changes {
+        Changes {
+            added: added.iter().copied().collect(),
+            removed: removed
+                .iter()
+                .map(|&(after, from, to)| Removed {
+                    after,
+                    old: (from, to),
+                })
+                .collect(),
+        }
+    }
+
+    fn marked(text: &str, changes: &Changes) -> String {
+        render(text, "", changes, &|_, _| Vec::new())
+    }
+
+    #[test]
+    fn a_block_of_added_lines_is_added_and_one_with_some_is_modified() {
+        let html = marked("# Title\n\nOne,\ntwo.\n", &changes(&[1, 4], &[]));
+
+        assert_eq!(
+            html,
+            "<h1 data-lines=\"1-1\" data-change=\"add\">Title</h1>\
+             <p data-lines=\"3-4\" data-change=\"modify\">One,\ntwo.</p>"
+        );
+    }
+
+    #[test]
+    fn a_block_that_replaces_lines_owns_them_and_no_marker_shows() {
+        // Line 3 was rewritten: git removes the old one, then adds the new.
+        let html = marked("# Title\n\nOne,\ntwo.\n", &changes(&[3], &[(2, 3, 3)]));
+
+        assert_eq!(
+            html,
+            "<h1 data-lines=\"1-1\">Title</h1>\
+             <p data-lines=\"3-4\" data-change=\"modify\" data-old=\"3-3\">One,\ntwo.</p>"
+        );
+    }
+
+    #[test]
+    fn lines_lost_inside_a_block_modify_it() {
+        let html = marked("One,\ntwo.\n", &changes(&[], &[(1, 2, 3)]));
+
+        assert_eq!(
+            html,
+            "<p data-lines=\"1-2\" data-change=\"modify\" data-old=\"2-3\">One,\ntwo.</p>"
+        );
+    }
+
+    #[test]
+    fn lines_removed_between_two_blocks_leave_a_marker() {
+        let html = marked("One.\n\nTwo.\n", &changes(&[], &[(2, 3, 5)]));
+
+        assert_eq!(
+            html,
+            "<p data-lines=\"1-1\">One.</p>\
+             <div class=\"md-removed\" data-old=\"3-5\" title=\"3 lines removed\"></div>\
+             <p data-lines=\"3-3\">Two.</p>"
+        );
+    }
+
+    #[test]
+    fn a_marker_is_an_item_in_a_list_and_a_row_in_a_table() {
+        let list = marked("- one\n- two\n", &changes(&[], &[(1, 2, 2)]));
+        assert_eq!(
+            list,
+            "<ul><li><div class=\"md-line\" data-lines=\"1-1\">one</div></li>\
+             <li class=\"md-removed\" data-old=\"2-2\" title=\"1 line removed\"></li>\
+             <li><div class=\"md-line\" data-lines=\"2-2\">two</div></li></ul>"
+        );
+
+        let table = marked(
+            "| a | b |\n|---|---|\n| 1 | 2 |\n",
+            &changes(&[], &[(2, 3, 3)]),
+        );
+        assert!(
+            table.contains(
+                "<tbody><tr class=\"md-removed\" data-old=\"3-3\" title=\"1 line removed\">\
+                 <td colspan=\"2\"></td></tr><tr data-lines=\"3-3\">"
+            ),
+            "{table}"
+        );
+    }
+
+    #[test]
+    fn lines_removed_at_the_end_leave_a_marker_at_the_end() {
+        let html = marked("One.\n", &changes(&[], &[(1, 2, 2)]));
+
+        assert!(
+            html.ends_with(
+                "<div class=\"md-removed\" data-old=\"2-2\" title=\"1 line removed\"></div>"
+            ),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn the_changes_are_read_from_the_hunks() {
+        use crate::model::Row;
+
+        let row = |kind, old_line, new_line| Row {
+            kind,
+            old_line,
+            new_line,
+            text: String::new(),
+            no_newline: false,
+            tokens: Vec::new(),
+            words: Vec::new(),
+            rebase: false,
+        };
+        let hunk = Hunk {
+            old_start: 1,
+            old_lines: 4,
+            new_start: 1,
+            new_lines: 3,
+            header: String::new(),
+            rows: vec![
+                row(RowKind::Context, Some(1), Some(1)),
+                row(RowKind::Remove, Some(2), None),
+                row(RowKind::Remove, Some(3), None),
+                row(RowKind::Add, None, Some(2)),
+                row(RowKind::Context, Some(4), Some(3)),
+            ],
+        };
+
+        let read = Changes::of(&[hunk]);
+
+        assert_eq!(read.added.iter().copied().collect::<Vec<_>>(), [2]);
+        assert_eq!(read.removed.len(), 1);
+        assert_eq!(read.removed[0].after, 1);
+        assert_eq!(read.removed[0].old, (2, 3));
     }
 }

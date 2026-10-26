@@ -906,8 +906,15 @@ impl Session {
         Ok(rows)
     }
 
-    /// A Markdown file of a version, rendered. See design section 3.8.
-    pub async fn rendered(&self, rev: &str, path: &str) -> Result<Rendering> {
+    /// A Markdown file of a version, rendered, with the marks of its diff
+    /// against `against`. See design section 3.8.
+    pub async fn rendered(
+        &self,
+        rev: &str,
+        path: &str,
+        against: &Against,
+        how: &diff::How,
+    ) -> Result<Rendering> {
         let language = self.langs.of(path).map(str::to_owned);
         if !self.highlighter.is_markdown(language.as_deref(), path) {
             return Ok(Rendering::NotMarkdown);
@@ -918,6 +925,16 @@ impl Session {
         if text.len() > crate::markdown::MAX_BYTES {
             return Ok(Rendering::TooLarge);
         }
+        // Only where the lines changed matters, so the diff is not colored.
+        let plain = diff::How {
+            syntax: false,
+            ..*how
+        };
+        let changes = self
+            .diff(rev, path, against, &plain)
+            .await?
+            .map(|file| crate::markdown::Changes::of(&file.hunks))
+            .unwrap_or_default();
 
         let highlighter = self.highlighter.clone();
         let langs = self.langs.clone();
@@ -929,7 +946,7 @@ impl Session {
                 let name = langs.of(&format!("fence.{fence}")).unwrap_or(fence);
                 highlighter.spans(code, name)
             };
-            crate::markdown::render(&text, &dir, &paint)
+            crate::markdown::render(&text, &dir, &changes, &paint)
         })
         .await?;
 
