@@ -447,6 +447,60 @@ A line that opens something is a link, so the menu of the browser opens it
 in a new tab. A change of the series has the address of section 8.2, which
 names no line, so its new tab lands on the file.
 
+### 3.8 A Markdown file, rendered
+
+A Markdown file can be read rendered, in a pane beside its diff. A file
+always opens on its diff alone. A Show rendered button on the file asks the
+server for the rendered page, and nothing else asks for it. A reader who
+never presses it pays nothing. The pane stays open from one Markdown file to
+the next, until the reader hides it.
+
+**The pane is for reading.** It shows the document as it is, with no mark of
+the diff: the diff beside it says what changed. No remark is written or
+shown in the pane. A remark is written in the diff, as on any file.
+
+**The pane follows the diff.** When the diff scrolls, the pane brings to its
+top the block that holds the first line of the new side that the diff
+shows. A blank line between two blocks counts for the next block.
+
+**Which files.** The language of the file decides, not its extension, so the
+map of section 7 can make a house extension Markdown. A deleted file has no
+new side, so it has no rendered page. A file of more than 1 MiB has none
+either. The route then answers an error, and the pane says why.
+
+**What is rendered.** The new side of the version read: the blob in the
+target commit. The old side is read in the diff.
+
+**The server renders.** It parses the blob with `pulldown-cmark` and the
+GitHub extensions: tables, task lists, strikethrough, footnotes, alerts.
+`syntect` colors a fenced code block in the language that its fence names,
+so the classes are the ones of the diff. The page paints the HTML that comes
+back. Nothing is cached: a Markdown file is small.
+
+**Each block knows its lines.** A leaf block carries `data-lines="12-18"`,
+the lines of the source that it came from. A leaf block is a paragraph, a
+heading, a code block, a table row, a thematic break, or the text of an item
+in a tight list. A list, a quote and a table hold no lines of their own:
+their children carry them. `pulldown-cmark` gives the byte range of each
+block, and the server turns it into lines. This is what the pane follows the
+diff by.
+
+**Raw HTML is shown as text.** The server writes every tag of the page
+itself. HTML in the source comes out escaped, so a `<details>` shows as the
+text `<details>`. A link to an `http`, `https` or `mailto` target opens in a
+tab of its own. Any other link shows its target and opens nothing. The page
+still passes the HTML through `DOMPurify`, as it does for a comment body.
+
+**An image comes from the object database.** The server resolves a relative
+path against the directory of the file. The page then reads the image from
+the tree of the version read, through the blob route of section 8. That
+route answers only for an image type, by extension. It sends an SVG with
+`Content-Security-Policy: sandbox`, so an SVG opened on its own runs nothing.
+An image on another host is not fetched, because opening a review must not
+reach the network. It shows as its alternative text and a link. A relative
+link to another file shows its path and opens nothing, because that file is
+not always part of the change.
+
 ## 4. Data model
 
 The types below are the contract between the two sides. The Rust structs in
@@ -513,6 +567,7 @@ type FileDiff = {
   added: number;
   removed: number;
   hunks: Hunk[];
+  markdown?: true;         // the file can be read rendered. See section 3.8
 };
 
 type Hunk = {
@@ -557,6 +612,10 @@ type BlameCommit = {
     end: number;           // the last line, included
     origin: number;        // the line of start in that commit
   }[];
+};
+
+type Rendered = {
+  html: string;            // leaf blocks carry data-lines. See section 3.8
 };
 ```
 
@@ -1167,7 +1226,7 @@ left the browser.
 
 ## 8. HTTP API
 
-All routes are under `/api`, all answers are JSON, all errors carry
+All routes are under `/api`, all answers but a blob are JSON, all errors carry
 `{ "error": { "code": "...", "message": "..." } }`.
 
 | Method and route | What it does |
@@ -1183,6 +1242,8 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/changes/:key/blame?ps=2&base=parent&file=...&part=recent` | Who wrote each line of the left side of the diff. With `part=recent`, only the lines that the series wrote. See section 3.7 |
 | `POST /api/gerrit/commits` | The page on Gerrit of each commit that the server holds. Body: `{ "commits": [sha] }`. Answers `{ "urls": { sha: url } }`. See section 6.5 |
 | `GET /api/changes/:key/lines?file=...&from=1&to=400` | A run of lines the diff left out, so the reader can open the context. A run of more than 2000 lines carries no syntax spans |
+| `GET /api/changes/:key/rendered?ps=2&file=...` | A Markdown file of the version read, as HTML. See section 3.8 |
+| `GET /api/changes/:key/blob?ps=2&path=...` | An image in the tree of the version read, for a rendered file. Raw bytes, not JSON. See section 3.8 |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
 | `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
