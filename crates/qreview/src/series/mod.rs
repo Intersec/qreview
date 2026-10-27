@@ -452,6 +452,7 @@ pub(crate) fn summary(info: CommitInfo) -> ChangeSummary {
         reviewed: false,
         is_merge: info.is_merge(),
         worktree: false,
+        lines: None,
     }
 }
 

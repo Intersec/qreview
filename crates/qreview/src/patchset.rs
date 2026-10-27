@@ -202,6 +202,7 @@ mod tests {
             reviewed: false,
             is_merge: false,
             worktree: false,
+            lines: None,
         }
     }
 

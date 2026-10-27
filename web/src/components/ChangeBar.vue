@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { COMMIT_MSG } from '@/diff/paths';
 import type { ChangeSummary, FileEntry, GerritChange } from '@/api/types';
 
 const props = defineProps<{
@@ -13,11 +14,22 @@ const emit = defineEmits<{ step: [by: number] }>();
 
 const readable = computed(() => props.files.filter((f) => !f.binary));
 const at = computed(() => readable.value.findIndex((f) => f.path === props.filePath));
+
+// The diff on the screen, so the counts follow the base and the whitespace
+// option. The message is not part of the work.
+const lines = computed(() => {
+  const work = readable.value.filter((f) => f.path !== COMMIT_MSG);
+  return {
+    added: work.reduce((sum, f) => sum + f.added, 0),
+    removed: work.reduce((sum, f) => sum + f.removed, 0),
+  };
+});
 </script>
 
 <template>
   <div v-if="change" class="change-bar">
     <span class="subject">{{ change.subject }}</span>
+    <span class="author">{{ change.author }}</span>
     <!-- The work that is not committed has a synthetic sha and no
        Change-Id. Printing either would invite a look-up that fails. -->
     <span v-if="change.worktree" class="tag tag-worktree">not committed</span>
@@ -33,6 +45,10 @@ const at = computed(() => readable.value.findIndex((f) => f.path === props.fileP
     >
     <code v-else-if="change.changeId" class="quiet change-id">{{ change.changeId }}</code>
     <span v-else-if="!change.worktree" class="tag">no Change-Id</span>
+    <span v-if="files.length > 0" class="stat">
+      <span class="added">+{{ lines.added }}</span
+      ><span class="removed">−{{ lines.removed }}</span>
+    </span>
 
     <span class="bar-actions">
       <span v-if="at >= 0" class="quiet">File {{ at + 1 }} of {{ readable.length }}</span>

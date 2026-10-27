@@ -49,6 +49,14 @@ export interface ChangeSummary {
   isMerge: boolean;
   /// The work that is not committed yet, not a commit of the history.
   worktree: boolean;
+  /// The lines the commit adds and removes against its first parent.
+  /// Absent on a merge, and when git could not count them.
+  lines?: LineCount | null;
+}
+
+export interface LineCount {
+  added: number;
+  removed: number;
 }
 
 export interface Series {

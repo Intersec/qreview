@@ -53,6 +53,16 @@ pub struct ChangeSummary {
     /// The work that is not committed yet, not a commit of the history.
     #[serde(default)]
     pub worktree: bool,
+    /// The lines the commit adds and removes against its first parent.
+    /// Absent on a merge, and when git could not count them.
+    #[serde(default)]
+    pub lines: Option<LineCount>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LineCount {
+    pub added: usize,
+    pub removed: usize,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]

@@ -92,6 +92,11 @@ defineExpose({ focusFilter: () => inChange.value[0]?.focusFilter() });
                    every keystroke and names nothing a reader can look up. -->
                 <span v-if="change.worktree" class="tag tag-worktree">not committed</span>
                 <code v-else>{{ short(change) }}</code>
+                <span class="change-author"> · {{ change.author }}</span>
+                <span v-if="change.lines">
+                  · <span class="added">+{{ change.lines.added }}</span
+                  ><span class="removed">−{{ change.lines.removed }}</span>
+                </span>
                 <span v-if="change.isMerge" class="tag">merge</span>
                 <span v-if="!change.changeId && !change.worktree" class="tag">no Change-Id</span>
                 <span

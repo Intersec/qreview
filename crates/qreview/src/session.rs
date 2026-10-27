@@ -153,6 +153,7 @@ impl Session {
         session.link_versions().await;
         session.count_comments();
         session.count_patch_sets().await;
+        session.count_lines().await;
         session.refresh_worktree().await;
         session.report_lost_prevs().await;
 
@@ -227,6 +228,7 @@ impl Session {
         self.link_versions().await;
         self.count_comments();
         self.count_patch_sets().await;
+        self.count_lines().await;
 
         Ok(added)
     }
@@ -291,6 +293,7 @@ impl Session {
         self.link_versions().await;
         self.count_comments();
         self.count_patch_sets().await;
+        self.count_lines().await;
         self.refresh_worktree().await;
 
         Ok(())
@@ -318,6 +321,7 @@ impl Session {
             (false, None) => return,
         }
         self.count_comments();
+        self.count_lines().await;
     }
 
     /// The change the working tree stands for, when it stands for one.
@@ -901,6 +905,33 @@ impl Session {
         }
     }
 
+    /// Put the line counts on the changes that have none yet.
+    ///
+    /// A failure leaves them absent. The series must still load, and the
+    /// pane shows no count rather than a wrong one.
+    async fn count_lines(&mut self) {
+        let wanted: Vec<&str> = self
+            .series
+            .changes
+            .iter()
+            .filter(|c| c.lines.is_none() && !c.is_merge)
+            .map(|c| c.commit.as_str())
+            .collect();
+
+        let counts = match diff::line_counts(&self.git, &wanted).await {
+            Ok(counts) => counts,
+            Err(error) => {
+                crate::trace::note(|| format!("the lines of the series were not counted: {error}"));
+                return;
+            }
+        };
+        for change in &mut self.series.changes {
+            if let Some(count) = counts.get(&change.commit) {
+                change.lines.get_or_insert(*count);
+            }
+        }
+    }
+
     /// The patch sets of a change, oldest first.
     ///
     /// Gerrit is asked once per change and the answer is kept. A failure
@@ -1294,6 +1325,7 @@ async fn coords_of(git: &Git, rev: &str, branch: Option<&str>) -> Option<Coordin
 mod tests {
     use super::*;
     use crate::lang::Languages;
+    use crate::model::LineCount;
     use crate::series::Options;
     use crate::testutil::{build_repo, commit};
 
@@ -1340,6 +1372,25 @@ mod tests {
             kept.iter().all(|entry| entry.language.is_empty()),
             "the kept list must carry nothing a reader added: {kept:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn every_change_of_the_series_carries_its_line_counts() {
+        let repo = build_repo(&[
+            commit("one").file("a.txt", "1\n"),
+            commit("two").file("a.txt", "2\n3\n"),
+        ])
+        .await;
+        std::fs::write(repo.path().join("a.txt"), "2\n3\n4\n").unwrap();
+
+        let session = Session::open(repo.path(), &Options::new(), Languages::new())
+            .await
+            .unwrap();
+
+        let lines: Vec<_> = session.series.changes.iter().map(|c| c.lines).collect();
+        let count = |added, removed| Some(LineCount { added, removed });
+        // The work that is not committed first, then the commits.
+        assert_eq!(lines, vec![count(1, 0), count(2, 1), count(1, 0)]);
     }
 
     /// A diff paints the file only as far as its hunks reach. The lines the

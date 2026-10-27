@@ -858,3 +858,21 @@ directory join the `two-face` set, so a grammar of the user wins over ours.
 Rejected: a dump of the joined set, written by the build script. It adds
 `syntect` and `two-face` to the build dependencies, and the build script runs
 again at every commit, because it watches `HEAD`.
+
+## 2026-10-27 — Each change carries its line counts
+
+The reader wants the author and the lines added and removed of each change,
+in the series pane and in the change bar. The author was already on
+`ChangeSummary`. The line counts were not, and the series pane holds no file
+list for a change that is not open.
+
+**Decision.** `ChangeSummary` gets `lines`, the lines that the commit adds
+and removes against its first parent. One `git log --numstat -M` call counts
+a whole batch. The call finds renames and does not look for copies, because
+the copy search reads the whole tree and this call runs at every load. So a
+copied file counts as an added file in the series pane. A merge gets `null`,
+because its diff depends on the base that the reader picks.
+
+The change bar does not read `lines`. It adds up the file list on the
+screen, so its counts follow the base and the whitespace option. The commit
+message is not counted in either pane.

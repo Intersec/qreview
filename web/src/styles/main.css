@@ -967,6 +967,19 @@ tr.talk td {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.change-bar .author {
+  flex: 0 1 auto;
+  min-width: 3rem;
+  color: var(--ink-quiet);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.change-bar .stat {
+  flex: none;
+  font-family: var(--code-font);
+  font-size: 11px;
+}
 .change-bar code {
   font-family: var(--code-font);
   font-size: 11px;

@@ -3,10 +3,12 @@
 pub mod parse;
 pub mod words;
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 
 use crate::git::exec::Git;
-use crate::model::{FileDiff, FileEntry, FileStatus};
+use crate::model::{FileDiff, FileEntry, FileStatus, LineCount};
 
 pub use parse::parse;
 
@@ -100,6 +102,51 @@ pub async fn files(git: &Git, base: &str, target: &str, how: &How) -> Result<Vec
     call.extend_from_slice(&["--raw", "--numstat", "-z", base, target]);
 
     Ok(parse_files(&git.text(&call).await?))
+}
+
+/// The lines each commit adds and removes against its first parent.
+///
+/// One `git log` for the whole batch, because the series pane shows a count
+/// on every change. Renames are found and copies are not: the copy search
+/// reads the whole tree, and this runs at every load. A merge prints no
+/// diff, so the caller leaves it out.
+pub async fn line_counts(git: &Git, commits: &[&str]) -> Result<HashMap<String, LineCount>> {
+    if commits.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut call = vec![
+        "log",
+        "--no-walk=unsorted",
+        "--root",
+        "-M",
+        "--numstat",
+        "--format=%x1e%H",
+    ];
+    call.extend_from_slice(commits);
+    call.push("--");
+
+    Ok(parse_line_counts(&git.text_of_object(&call).await?))
+}
+
+/// `\x1e<hash>`, then one numstat line per file.
+fn parse_line_counts(out: &str) -> HashMap<String, LineCount> {
+    let mut counts = HashMap::new();
+
+    for record in out.split('\x1e') {
+        let mut lines = record.lines();
+        let Some(hash) = lines.next().map(str::trim).filter(|h| !h.is_empty()) else {
+            continue;
+        };
+        let mut count = LineCount::default();
+        for line in lines {
+            let mut parts = line.split('\t');
+            // A binary file prints a dash, and has no lines to count.
+            count.added += parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            count.removed += parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+        }
+        counts.insert(hash.to_owned(), count);
+    }
+    counts
 }
 
 /// The diff of one file. `None` when the change does not touch it.
@@ -265,6 +312,36 @@ mod tests {
             .await
             .unwrap()
             .expect("the change must touch the file")
+    }
+
+    #[tokio::test]
+    async fn each_commit_counts_its_own_lines_against_its_parent() {
+        let repo = build_repo(&[
+            commit("root").file("a.txt", "1\n2\n3\n"),
+            commit("edit").file("a.txt", "1\nTWO\n3\n4\n"),
+            commit("rename")
+                .file("b.txt", "1\nTWO\n3\n4\n")
+                .delete("a.txt"),
+        ])
+        .await;
+        let git = Git::discover(repo.path()).await.unwrap();
+        let (root, edit, rename) = (
+            repo.sha("HEAD~2").await,
+            repo.sha("HEAD~1").await,
+            repo.sha("HEAD").await,
+        );
+
+        let counts = line_counts(&git, &[&rename, &edit, &root]).await.unwrap();
+
+        let count = |added, removed| LineCount { added, removed };
+        assert_eq!(
+            counts[&root],
+            count(3, 0),
+            "a root commit counts every line"
+        );
+        assert_eq!(counts[&edit], count(2, 1));
+        // A rename alone moves no line.
+        assert_eq!(counts[&rename], count(0, 0));
     }
 
     #[tokio::test]

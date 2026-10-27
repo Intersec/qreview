@@ -88,6 +88,7 @@ pub fn summary(hash: &str, author: &str, parents: &[String]) -> ChangeSummary {
         reviewed: false,
         is_merge: false,
         worktree: true,
+        lines: None,
     }
 }
 

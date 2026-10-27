@@ -397,6 +397,7 @@ type ChangeSummary = {
   commentCount: number;
   unresolvedCount: number;
   isMerge: boolean;
+  lines: { added: number; removed: number } | null; // against the first parent, null on a merge
 };
 
 type PatchSet = {
