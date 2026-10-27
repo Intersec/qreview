@@ -12,6 +12,16 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.15.0]
+
+### Added
+
+- **Author and line counts of a change** — the series pane and the change
+  bar show the author of each change and the lines that it adds and removes.
+- **IOP grammar** — `.iop` files get their colors from an IOP grammar, not
+  from the D grammar. If `.qreview.json` or `~/.config/qreview/config.json`
+  maps `iop` to `d`, the file keeps D: remove that entry.
+
 ## [0.14.0]
 
 ### Added
