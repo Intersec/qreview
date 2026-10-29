@@ -3,10 +3,11 @@
 // A thread on its card: the replies under the remark, the Done box that
 // folds it, and the mark of a thread that waits for the reader.
 
-import { mount } from '@vue/test-utils';
+import { mount, type DOMWrapper } from '@vue/test-utils';
 import { computed, nextTick } from 'vue';
 import { describe, expect, it, vi } from 'vitest';
 import CommentCard from './CommentCard.vue';
+import { threadSlot, write } from '@/diff/drafts';
 import { THREADS, type Threads } from '@/diff/threads';
 import type { Comment } from '@/api/types';
 
@@ -230,6 +231,32 @@ describe('a thread', () => {
       ?.trigger('click');
 
     expect(wrapper.emitted('remove')).toEqual([['c']]);
+  });
+
+  it('freezes the words the agent answered, and keeps the thread deletable', () => {
+    localStorage.clear();
+    const { wrapper } = card(comment('a'), [
+      comment('bb', { parent: 'a', body: 'Asked.' }),
+      comment('ccc', { parent: 'a', author: 'agent', body: 'An answer.' }),
+      comment('dddd', { parent: 'a', body: 'Not answered yet.' }),
+    ]);
+    const buttons = (el: Pick<DOMWrapper<Element>, 'findAll'>) =>
+      el.findAll('button').map((b) => b.text());
+    const [asked, , open] = wrapper.findAll('.talk-reply');
+
+    expect(buttons(asked!)).toEqual([]);
+    expect(buttons(open!)).toEqual(['Edit', 'Delete']);
+    expect(buttons(wrapper.get('.talk-foot'))).not.toContain('Edit');
+    expect(buttons(wrapper.get('.talk-foot'))).toContain('Delete');
+  });
+
+  it('opens no box on a word the agent answered since its edit was typed', () => {
+    localStorage.clear();
+    write(threadSlot('a', 'edit'), 'Body of a, better');
+
+    const { wrapper } = card(comment('a'), [comment('bb', { parent: 'a', author: 'agent' })]);
+    expect(wrapper.find('textarea').exists()).toBe(false);
+    localStorage.clear();
   });
 
   it('says where a moved thread went, and leads there', async () => {

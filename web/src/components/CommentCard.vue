@@ -120,19 +120,28 @@ const patchSet = computed(
 /// written.
 const frozen = computed(() => props.readOnly || version.value !== '');
 
+/// The words above the last answer of the agent. That answer speaks of them
+/// as they stood, so they must not change under it.
+const answered = computed(() => {
+  const thread = [props.comment, ...replies.value];
+  const last = thread.map((c) => c.author).lastIndexOf('agent');
+  return new Set(thread.slice(0, Math.max(last, 0)).map((c) => c.id));
+});
+
 // A box left with unsaved text opens again when the card comes back, so a
 // reload under the reader's hands costs nothing.
 if (!frozen.value) {
   editingId.value =
-    [props.comment, ...replies.value].find((c) => read(threadSlot(c.id, 'edit')) !== '')?.id ??
-    null;
+    [props.comment, ...replies.value].find(
+      (c) => !answered.value.has(c.id) && read(threadSlot(c.id, 'edit')) !== '',
+    )?.id ?? null;
   replying.value = read(threadSlot(props.comment.id, 'reply')) !== '';
 }
 
-/// A reply the reader wrote, on a thread still open to writing. The agent's
-/// words are its own.
+/// A reply the reader wrote, on a thread still open to writing, that the
+/// agent has not answered. The agent's words are its own.
 function mine(answer: Comment): boolean {
-  return !frozen.value && answer.author === 'reader';
+  return !frozen.value && answer.author === 'reader' && !answered.value.has(answer.id);
 }
 
 function saveEdit(id: string, body: string) {
@@ -267,7 +276,15 @@ function saveEdit(id: string, body: string) {
           Ask agent
         </button>
         <button v-if="threads" type="button" class="action" @click="replying = true">Reply</button>
-        <button type="button" class="action" @click="editingId = comment.id">Edit</button>
+        <button
+          v-if="!answered.has(comment.id)"
+          type="button"
+          class="action"
+          @click="editingId = comment.id"
+        >
+          Edit
+        </button>
+        <!-- Deleting the remark deletes the whole thread, so no answer outlives its question. -->
         <button type="button" class="action" @click="emit('remove', comment.id)">Delete</button>
       </div>
     </template>

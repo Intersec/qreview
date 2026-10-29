@@ -876,3 +876,17 @@ because its diff depends on the base that the reader picks.
 The change bar does not read `lines`. It adds up the file list on the
 screen, so its counts follow the base and the whitespace option. The commit
 message is not counted in either pane.
+
+## 2026-10-29 — A word that the agent answered stays as it was
+
+The reader could edit a remark after the agent had answered it. The edit
+rewrites the question under its answer, and the thread no longer reads the
+way it happened.
+
+**Decision.** The interface drops Edit on each remark and reply of the
+reader above the last answer of the agent, and Delete on each such reply.
+The Delete of the remark stays, because it deletes the whole thread with
+its answers. A reader who wants to say more writes a reply.
+
+The server still accepts such an edit. `author` is a label and not a
+permission, so a refusal there would stop nobody.

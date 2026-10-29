@@ -714,8 +714,15 @@ until it is asked about.
 **A previous thread is read, and never written on**, the rule of section
 5.4. It takes no reply and no change of `done`.
 
+**A word that the agent answered is read, and never rewritten.** A remark
+or a reply of the reader has no Edit once an answer of the agent stands
+under it. The answer speaks of the words as they stood. Such a reply has no
+Delete either, or its answer would speak of nothing. The interface holds
+this rule, and the server does not: `author` is a label.
+
 **Deleting a remark deletes its thread.** A reply deleted alone leaves the
-thread as it was.
+thread as it was. The remark keeps its Delete after an answer, because the
+answers go with it.
 
 ### 5.6 New versions, declared
 
