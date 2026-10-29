@@ -23,7 +23,7 @@
     "demo": "node --experimental-strip-types e2e/demo.ts"
   },
   "dependencies": {
-    "dompurify": "^3.4.14",
+    "dompurify": "^3.4.17",
     "marked": "^18.0.10",
     "pinia": "^4.0.2",
     "vue": "^3.5.40"
