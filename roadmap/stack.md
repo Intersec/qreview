@@ -890,3 +890,17 @@ its answers. A reader who wants to say more writes a reply.
 
 The server still accepts such an edit. `author` is a label and not a
 permission, so a refusal there would stop nobody.
+
+## 2026-10-29 — A Gerrit remark on the message keeps its line
+
+A remark posted on Gerrit on a line of `/COMMIT_MSG` stood at the top of the
+message. Gerrit counts its header in the line number. qreview drops that
+header since the entry of 2026-08-22. So section 6.3 of the design read every
+such remark as a remark about the whole message.
+
+**Decision.** The header has a length that the commit gives: one line per
+parent, then `Author`, `AuthorDate`, `Commit`, `CommitDate` and a blank line.
+qreview reads the parents of the patch set and subtracts that length. A
+remark on the header stays a remark about the whole message. So does a remark
+on a version that is not in the clone, because its parents cannot be read.
+Nothing in the storage format or the export moves.

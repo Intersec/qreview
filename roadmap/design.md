@@ -279,8 +279,8 @@ the path `/COMMIT_MSG`. A path of a git tree never opens with a slash, so
 this one collides with nothing. Gerrit uses the same name.
 
 The text is the message of the commit and nothing else, from the subject to
-the last trailer. Gerrit puts a header of five lines above it, with the
-parent, the author and the two dates. This tool leaves it out. A local
+the last trailer. Gerrit puts a header above it, with the parents, the
+author, the committer and their two dates. This tool leaves it out. A local
 review of your own series already shows the author and the commit in the
 change bar, and the committer date changes at every amend, which would put a
 false change in the message at every patch set.
@@ -928,10 +928,12 @@ rule of section 5.4. It is anchored on its own version by the rules of
 section 5.3. A version that was never fetched holds no line to hash, so its
 remarks are unplaced, and they stand at the top of their file.
 
-Gerrit shows the commit message as `/COMMIT_MSG` with a header of its own.
-qreview drops that header, so the two do not count lines the same way. A
-remark on the message is read as a remark about the message, not about a line
-of it.
+Gerrit shows the commit message as `/COMMIT_MSG` under a header that qreview
+drops. The header has one line per parent, four lines for the author, the
+committer and their dates, and a blank line. So a remark on the message moves
+up by that many lines. A remark on the header itself is about the whole
+message. So is a remark on a version that is not in the clone, because its
+parents cannot be counted.
 
 ### 6.4 Failure
 
