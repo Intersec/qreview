@@ -11,6 +11,7 @@
 use crate::anchor::{self, Placed};
 use crate::comments::{self, NewComment};
 use crate::commitmsg;
+use crate::git::commit;
 use crate::git::exec::Git;
 use crate::model::PostedComment;
 use crate::store::model::{Author, Comment, Scope, Side};
@@ -88,7 +89,7 @@ async fn one(
     posted: &super::InlineComment,
     revision: &str,
 ) -> Posted {
-    let line = line_of(posted);
+    let line = line_of(git, posted, revision).await;
     let wire = PostedComment {
         // The ssh answer carries no id. This one is made from the place, and
         // it is the same on every query as long as the server says the same.
@@ -146,15 +147,21 @@ async fn one(
 
 /// The line the remark sits on, if it sits on one.
 ///
-/// Gerrit writes line 0 for a remark about the whole file. And the message it
-/// shows as `/COMMIT_MSG` carries a header of its own that qreview drops, so
-/// the numbers of the two do not match: such a remark is read as a remark
-/// about the message, not about a line of it.
-fn line_of(posted: &super::InlineComment) -> Option<usize> {
-    if commitmsg::is(&posted.file) {
-        return None;
+/// Gerrit writes line 0 for a remark about the whole file. And it shows the
+/// message as `/COMMIT_MSG` under a header that qreview drops, so a line of
+/// the message is shifted by the length of that header.
+async fn line_of(git: &Git, posted: &super::InlineComment, revision: &str) -> Option<usize> {
+    let line = posted.line.filter(|line| *line > 0)?;
+    if !commitmsg::is(&posted.file) {
+        return Some(line);
     }
-    posted.line.filter(|line| *line > 0)
+
+    // A version that is not in this clone has no parents to count.
+    let parents = commit::info(git, revision).await.ok()?.parents.len();
+    // One line per parent, then the author and its date, the committer and
+    // its date, and a blank line. A remark on the header is about the whole
+    // message.
+    line.checked_sub(parents + 5).filter(|line| *line > 0)
 }
 
 #[cfg(test)]
@@ -314,7 +321,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn line_zero_and_the_commit_message_are_read_as_the_whole_file() {
+    async fn line_zero_is_read_as_the_whole_file() {
         let repo =
             crate::testutil::build_repo(&[crate::testutil::commit("work").file("a.txt", "1\n")])
                 .await;
@@ -323,21 +330,121 @@ mod tests {
 
         let found = of_change(
             &git,
+            &change(&head, vec![posted("a.txt", Some(0), "bot", "no test")]),
+        )
+        .await;
+
+        assert_eq!(found[0].wire.line, None);
+        assert_eq!(found[0].placeable.scope, Scope::File);
+    }
+
+    /// A commit whose message reads `subject`, blank, `why one`, `why two`.
+    async fn one_message() -> (crate::testutil::Repo, Git, String) {
+        let repo = crate::testutil::build_repo(&[
+            crate::testutil::commit("base").file("a.txt", "0\n"),
+            crate::testutil::commit("subject")
+                .body("why one\nwhy two")
+                .file("a.txt", "1\n"),
+        ])
+        .await;
+        let git = Git::discover(repo.path()).await.unwrap();
+        let head = repo.sha("HEAD").await;
+        (repo, git, head)
+    }
+
+    #[tokio::test]
+    async fn a_remark_on_the_message_drops_the_gerrit_header() {
+        let (_repo, git, head) = one_message().await;
+
+        // One parent: a header of six lines, so line 9 is line 3.
+        let found = of_change(
+            &git,
             &change(
                 &head,
-                vec![
-                    posted("a.txt", Some(0), "bot", "no test"),
-                    // Gerrit puts a header of five lines above the message.
-                    // qreview does not, so the numbers cannot be trusted.
-                    posted("/COMMIT_MSG", Some(9), "Jane", "say why"),
-                ],
+                vec![posted("/COMMIT_MSG", Some(9), "Jane", "say why")],
+            ),
+        )
+        .await;
+
+        assert_eq!(found[0].wire.line, Some(3));
+        assert_eq!(found[0].placeable.scope, Scope::Line);
+        let anchor = found[0].placeable.anchor.as_ref().expect("it is readable");
+        assert_eq!(anchor.line_hash, Some(comments::hash_line("why one")));
+    }
+
+    #[tokio::test]
+    async fn a_remark_on_the_gerrit_header_is_about_the_whole_message() {
+        let (_repo, git, head) = one_message().await;
+
+        let found = of_change(
+            &git,
+            &change(&head, vec![posted("/COMMIT_MSG", Some(2), "Jane", "who?")]),
+        )
+        .await;
+
+        assert_eq!(found[0].wire.line, None);
+        assert_eq!(found[0].placeable.scope, Scope::File);
+    }
+
+    #[tokio::test]
+    async fn the_blank_line_under_the_header_is_about_the_whole_message() {
+        let (_repo, git, head) = one_message().await;
+
+        // One parent: line 6 is the blank line that closes the header.
+        let found = of_change(
+            &git,
+            &change(&head, vec![posted("/COMMIT_MSG", Some(6), "Jane", "hm")]),
+        )
+        .await;
+
+        assert_eq!(found[0].wire.line, None);
+        assert_eq!(found[0].placeable.scope, Scope::File);
+    }
+
+    #[tokio::test]
+    async fn a_remark_on_the_message_of_a_version_not_here_has_no_line() {
+        let repo =
+            crate::testutil::build_repo(&[crate::testutil::commit("work").file("a.txt", "1\n")])
+                .await;
+        let git = Git::discover(repo.path()).await.unwrap();
+
+        // Without the commit, the length of the header is unknown.
+        let found = of_change(
+            &git,
+            &change(
+                "deadbeef",
+                vec![posted("/COMMIT_MSG", Some(9), "Jane", "say why")],
             ),
         )
         .await;
 
         assert_eq!(found[0].wire.line, None);
         assert_eq!(found[0].placeable.scope, Scope::File);
-        assert_eq!(found[1].wire.line, None);
-        assert_eq!(found[1].placeable.scope, Scope::File);
+    }
+
+    #[tokio::test]
+    async fn the_header_of_a_merge_has_a_line_per_parent() {
+        let repo = crate::testutil::build_repo(&[
+            crate::testutil::commit("base").file("a.txt", "0\n"),
+            crate::testutil::commit("side")
+                .on_branch("side")
+                .file("b.txt", "b\n"),
+            crate::testutil::merge("merge")
+                .on_branch("main")
+                .from("side")
+                .body("why"),
+        ])
+        .await;
+        let git = Git::discover(repo.path()).await.unwrap();
+        let merge = repo.sha("HEAD").await;
+
+        // Two parents: a header of seven lines, so line 10 is line 3.
+        let found = of_change(
+            &git,
+            &change(&merge, vec![posted("/COMMIT_MSG", Some(10), "Jane", "hm")]),
+        )
+        .await;
+
+        assert_eq!(found[0].wire.line, Some(3));
     }
 }
