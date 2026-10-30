@@ -18,6 +18,12 @@ group('describe', () => {
     expect(shown.text).toBe('Agent fixing “net: retry the read”…');
   });
 
+  it('names a fix of the series, which names no change', () => {
+    const shown = describe({ kind: 'fix', key: '', id: null }, subjectOf, commentOf);
+
+    expect(shown.text).toBe('Agent fixing the series…');
+  });
+
   it('names a question by the first line of its remark, cut to fit', () => {
     const shown = describe({ kind: 'answer', key: 'I1', id: 'c-1' }, subjectOf, commentOf);
 

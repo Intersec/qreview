@@ -1,20 +1,28 @@
 <script setup lang="ts">
-// Ask the agent to fix the change on the screen.
+// Ask the agent to fix the change on the screen, or the whole series.
 //
 // A dialog rather than a key that sends at once: a key typed into a box that
 // has not taken the focus yet would otherwise start the work. Here it only
 // opens this, and nothing leaves without Enter.
 
-import { onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 import type { Comment } from '@/api/types';
 
+type Thread = { key: string; comment: Comment };
+
 const props = defineProps<{
+  /// The whole series, rather than the change on the screen.
+  series: boolean;
   /// The open threads the agent will deal with.
-  open: Comment[];
+  open: Thread[];
   /// The threads that wait for the reader. Any of them stops the request.
-  waiting: Comment[];
+  waiting: Thread[];
+  /// The subject of a change, which heads its threads in the series.
+  subjectOf: (key: string) => string | undefined;
 }>();
-const emit = defineEmits<{ send: []; jump: [comment: Comment]; close: [] }>();
+const emit = defineEmits<{ send: []; jump: [thread: Thread]; close: [] }>();
+
+const what = computed(() => (props.series ? 'the series' : 'this change'));
 
 function place(comment: Comment): string {
   const anchor = comment.anchor;
@@ -27,6 +35,27 @@ function place(comment: Comment): string {
 function firstLine(comment: Comment): string {
   return comment.body.split('\n', 1)[0] ?? '';
 }
+
+/// The threads change by change, in the order of the series. The list
+/// comes in that order, so a change is one run of it.
+function grouped(threads: Thread[]): { key: string; subject: string; threads: Thread[] }[] {
+  const out: { key: string; subject: string; threads: Thread[] }[] = [];
+  for (const thread of threads) {
+    const last = out[out.length - 1];
+    if (last?.key === thread.key) {
+      last.threads.push(thread);
+    } else {
+      out.push({
+        key: thread.key,
+        subject: props.subjectOf(thread.key) ?? thread.key,
+        threads: [thread],
+      });
+    }
+  }
+  return out;
+}
+
+const changes = computed(() => new Set(props.open.map((t) => t.key)).size);
 
 function confirm() {
   const first = props.waiting[0];
@@ -55,7 +84,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true));
 
 <template>
   <div class="veil" @click.self="emit('close')">
-    <div class="panel fix-panel" role="dialog" aria-modal="true" aria-label="Fix this change">
+    <div class="panel fix-panel" role="dialog" aria-modal="true" :aria-label="`Fix ${what}`">
       <template v-if="waiting.length > 0">
         <h2 class="panel-title">The agent waits for you</h2>
         <p class="fix-note">
@@ -63,28 +92,36 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true));
           sent.
         </p>
         <ul class="fix-list">
-          <li v-for="comment in waiting" :key="comment.id">
-            <code>{{ place(comment) }}</code> {{ firstLine(comment) }}
-          </li>
+          <template v-for="group in grouped(waiting)" :key="group.key">
+            <li v-if="series" class="fix-change">{{ group.subject }}</li>
+            <li v-for="thread in group.threads" :key="thread.comment.id">
+              <code>{{ place(thread.comment) }}</code> {{ firstLine(thread.comment) }}
+            </li>
+          </template>
         </ul>
         <p class="fix-keys"><kbd>Enter</kbd> goes to the first one · <kbd>Esc</kbd> closes</p>
       </template>
       <template v-else-if="open.length > 0">
-        <h2 class="panel-title">Fix this change</h2>
+        <h2 class="panel-title">Fix {{ what }}</h2>
         <p class="fix-note">
-          The agent deals with {{ open.length }} open
-          {{ open.length === 1 ? 'thread' : 'threads' }}:
+          The agent deals with {{ open.length }} open {{ open.length === 1 ? 'thread' : 'threads'
+          }}<template v-if="series">
+            in {{ changes }} {{ changes === 1 ? 'change' : 'changes' }}</template
+          >:
         </p>
         <ul class="fix-list">
-          <li v-for="comment in open" :key="comment.id">
-            <code>{{ place(comment) }}</code> {{ firstLine(comment) }}
-          </li>
+          <template v-for="group in grouped(open)" :key="group.key">
+            <li v-if="series" class="fix-change">{{ group.subject }}</li>
+            <li v-for="thread in group.threads" :key="thread.comment.id">
+              <code>{{ place(thread.comment) }}</code> {{ firstLine(thread.comment) }}
+            </li>
+          </template>
         </ul>
         <p class="fix-keys"><kbd>Enter</kbd> sends · <kbd>Esc</kbd> closes</p>
       </template>
       <template v-else>
         <h2 class="panel-title">Nothing to fix</h2>
-        <p class="fix-note">This change has no open thread.</p>
+        <p class="fix-note">{{ series ? 'The series has' : 'This change has' }} no open thread.</p>
         <p class="fix-keys"><kbd>Esc</kbd> closes</p>
       </template>
     </div>

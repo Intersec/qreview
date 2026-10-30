@@ -804,19 +804,23 @@ id of their thread, which a move does not change, so they need nothing.
 
 ### 5.7 Fix and Clean
 
-**Fix** asks the agent to correct the change on the screen. A button, and
-`a` outside a text field, the key that opens the reply dialog in Gerrit.
+**Fix this change** asks the agent to correct the change on the screen. A
+button, and `a` outside a text field, the key that opens the reply dialog
+in Gerrit. **Fix the series** asks the same for every change of the series,
+with `A`.
 
 - It opens a dialog that lists the open threads the agent will deal with:
-  the place and the first line of each. `Enter` sends, `Escape` closes, and
-  no other key does anything. A key typed by mistake opens the dialog and
-  sends nothing.
-- If a thread of the change waits for the reader, the dialog lists those
-  threads instead and sends nothing. `Enter` jumps to the first one.
-- Without an agent, the button is disabled and `a` opens nothing. The server
-  knows an agent listens while a `qreview wait` is open, or ended shortly
-  before (section 8.3), or while a fix runs, and says so on every answer of
-  `/api/events`.
+  the place and the first line of each. On the series, the subject of each
+  change heads its threads. `Enter` sends, `Escape` closes, and no other
+  key does anything. A key typed by mistake opens the dialog and sends
+  nothing.
+- If a thread of the change, or of the series, waits for the reader, the
+  dialog lists those threads instead and sends nothing. `Enter` jumps to
+  the first one.
+- Without an agent, the buttons are disabled, and `a` and `A` open
+  nothing. The server knows an agent listens while a `qreview wait` is
+  open, or ended shortly before (section 8.3), or while a fix runs, and
+  says so on every answer of `/api/events`.
 - Sending writes a `fix` event, author the reader, naming the change.
   `POST /api/series/fix` writes one with an empty key, for every change of
   the series. `qreview wait` returns it like any other.
@@ -830,11 +834,12 @@ that, it is taken for gone.
 
 While the agent works, the page holds what the agent writes: it notes which
 change to read again, and whether a migrate asks for the whole series, and
-reads nothing. It says **Agent working…** beside a disabled Fix. When the
-work ends, it moves the drafts (section 5.6) and reads once. A fix longer
-than ten minutes is shown once every ten minutes, and held again, so a long
-fix shows where it stands without a reload at each step. A page opened
-during a fix learns of it from the first answer of `/api/events`.
+reads nothing. It says **Agent working…** beside the disabled Fix
+buttons. When the work ends, it moves the drafts (section 5.6) and reads
+once. A fix longer than ten minutes is shown once every ten minutes, and
+held again, so a long fix shows where it stands without a reload at each
+step. A page opened during a fix learns of it from the first answer of
+`/api/events`.
 
 **A reader who looks elsewhere is told.** When a fix ends, or the agent
 answers outside one, and the page does not have the focus, the page shows
@@ -1132,7 +1137,8 @@ with an empty key on a fix of the series,
 agent, and `null` otherwise. A fix comes first: a question asked during a
 fix does not hide it. A new wait of the agent ends the task. The top bar of
 the page names the task, with the subject of the change or the start of
-the remark, and a click on it opens the change or the thread.
+the remark, and a click on it opens the change or the thread. A fix of the
+series names the series, and opens nothing.
 
 While `agent` is true and no task runs, the top bar of the page says that
 the agent is connected. When `agent` turns false, the page sends a browser

@@ -196,9 +196,9 @@ export const api = {
       }
     }),
 
-  /// Ask the agent to fix the change.
-  fix: (key: string) =>
-    fetch(`/api/changes/${encodeURIComponent(key)}/fix`, {
+  /// Ask the agent to fix the change, or the whole series with no key.
+  fix: (key?: string) =>
+    fetch(key ? `/api/changes/${encodeURIComponent(key)}/fix` : '/api/series/fix', {
       method: 'POST',
       credentials: 'same-origin',
     }).then(async (response) => {

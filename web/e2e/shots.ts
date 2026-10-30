@@ -222,6 +222,16 @@ for (const scheme of ['light', 'dark'] as const) {
     } else {
       complaints.push('the dialog of Fix did not open');
     }
+
+    // The same dialog on the series, which heads each change with its subject.
+    await page.keyboard.press('A');
+    const series = page.getByRole('dialog', { name: 'Fix the series' });
+    if (await series.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await page.screenshot({ path: join(OUT, `${scheme}-fix-series.png`) });
+      await page.keyboard.press('Escape');
+    } else {
+      complaints.push('the dialog of Fix the series did not open');
+    }
   } else {
     complaints.push('no remark to start a conversation on');
   }

@@ -1330,6 +1330,15 @@ a.change-id:hover {
   font-family: var(--code-font);
   font-size: 11px;
 }
+/* A change of the series, above its threads. */
+.fix-list .fix-change {
+  margin: 6px 0 2px -18px;
+  list-style: none;
+  font-weight: 600;
+}
+.fix-list .fix-change:first-child {
+  margin-top: 0;
+}
 .fix-keys {
   font-size: 11px;
   color: var(--ink-faint);

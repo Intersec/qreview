@@ -66,6 +66,7 @@ const {
   openHere,
   doneHere,
   waitingHere,
+  openSeries,
 } = storeToRefs(review);
 
 /// The server stopped, and the reader still holds unsaved remarks. The tab
@@ -83,22 +84,24 @@ watch(stopped, (now) => {
   }
 });
 
+function subjectOf(key: string): string | undefined {
+  return series.value?.changes.find((c) => c.key === key)?.subject;
+}
+
 /// What the agent does, as the top bar names it.
 const activity = computed(() =>
   task.value
-    ? describeTask(
-        task.value,
-        (key) => series.value?.changes.find((c) => c.key === key)?.subject,
-        (key, id) => written.value.find((c) => c.key === key)?.comments.find((c) => c.id === id),
+    ? describeTask(task.value, subjectOf, (key, id) =>
+        written.value.find((c) => c.key === key)?.comments.find((c) => c.id === id),
       )
     : null,
 );
 
 /// Open what the agent works on: the thread it answers, or the change it
-/// fixes.
+/// fixes. A fix of the series names no change, and opens nothing.
 async function openTask() {
   const now = task.value;
-  if (!now) {
+  if (!now?.key) {
     return;
   }
   const remark = now.id
@@ -108,31 +111,43 @@ async function openTask() {
   await goToComment(now.key, anchor?.file ?? '', anchor?.side ?? 'new', anchor?.startLine ?? null);
 }
 
-/// The dialog of Fix is open.
-const fixing = ref(false);
+/// Why the agent takes no fix now, as both Fix buttons say it.
+const noFix = computed(() =>
+  working.value
+    ? 'The agent is fixing. The page catches up when it is done'
+    : agent.value
+      ? null
+      : agentLeft.value
+        ? 'The agent left: ask it to run qreview wait again'
+        : 'No agent listens: run qreview wait',
+);
 
-function openFix() {
-  if (agent.value && !working.value && changeKey.value) {
-    fixing.value = true;
+/// The dialog of Fix is open, on the change or on the series.
+const fixing = ref<'change' | 'series' | null>(null);
+
+function openFix(scope: 'change' | 'series') {
+  if (agent.value && !working.value && (scope === 'series' || changeKey.value)) {
+    fixing.value = scope;
   }
 }
 
 async function sendFix() {
-  fixing.value = false;
-  await review.askFix();
+  const scope = fixing.value;
+  fixing.value = null;
+  if (scope) {
+    await review.askFix(scope);
+  }
 }
 
-async function jumpTo(comment: Comment) {
-  fixing.value = false;
-  const anchor = comment.anchor;
-  if (changeKey.value) {
-    await goToComment(
-      changeKey.value,
-      anchor?.file ?? '',
-      anchor?.side ?? 'new',
-      anchor?.startLine ?? null,
-    );
-  }
+async function jumpTo(thread: { key: string; comment: Comment }) {
+  fixing.value = null;
+  const anchor = thread.comment.anchor;
+  await goToComment(
+    thread.key,
+    anchor?.file ?? '',
+    anchor?.side ?? 'new',
+    anchor?.startLine ?? null,
+  );
 }
 
 /// Clean waits a moment before it deletes, because nothing brings a
@@ -383,7 +398,10 @@ function onKey(event: KeyboardEvent) {
       diffView.value?.commentHere();
       break;
     case 'a':
-      openFix();
+      openFix('change');
+      break;
+    case 'A':
+      openFix('series');
       break;
     case 'v':
       diffView.value?.startRange();
@@ -509,7 +527,7 @@ onBeforeUnmount(() => {
 
       <span class="bar-actions">
         <button
-          v-if="activity"
+          v-if="activity && task?.key"
           type="button"
           class="agent-working"
           role="status"
@@ -518,6 +536,7 @@ onBeforeUnmount(() => {
         >
           {{ activity.text }}
         </button>
+        <span v-else-if="activity" class="agent-working" role="status">{{ activity.text }}</span>
         <span v-else-if="working" class="agent-working" role="status">Agent working…</span>
         <span
           v-else-if="agent"
@@ -529,19 +548,22 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="chip chip-fix"
-          :title="
-            working
-              ? 'The agent is fixing. The page catches up when it is done'
-              : agent
-                ? 'Ask the agent to fix this change (a)'
-                : agentLeft
-                  ? 'The agent left: ask it to run qreview wait again'
-                  : 'No agent listens: run qreview wait'
-          "
+          :title="noFix ?? 'Ask the agent to fix this change (a)'"
           :disabled="!agent || working || !changeKey"
-          @click="openFix"
+          @click="openFix('change')"
         >
-          Fix<span v-if="openHere.length" class="count"> · {{ openHere.length }}</span>
+          Fix this change<span v-if="openHere.length" class="count"> · {{ openHere.length }}</span>
+        </button>
+        <button
+          type="button"
+          class="chip chip-fix"
+          :title="noFix ?? 'Ask the agent to fix every change of the series (A)'"
+          :disabled="!agent || working"
+          @click="openFix('series')"
+        >
+          Fix the series<span v-if="openSeries.length" class="count">
+            · {{ openSeries.length }}</span
+          >
         </button>
         <button
           type="button"
@@ -725,11 +747,13 @@ onBeforeUnmount(() => {
 
     <FixDialog
       v-if="fixing"
-      :open="openHere"
-      :waiting="waitingHere"
+      :series="fixing === 'series'"
+      :open="fixing === 'series' ? openSeries : openHere"
+      :waiting="fixing === 'series' ? blockedThreads : waitingHere"
+      :subject-of="subjectOf"
       @send="sendFix"
       @jump="jumpTo"
-      @close="fixing = false"
+      @close="fixing = null"
     />
 
     <CleanDialog

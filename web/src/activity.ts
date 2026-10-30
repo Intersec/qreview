@@ -23,6 +23,10 @@ export function describe(
   commentOf: (key: string, id: string) => Comment | undefined,
 ): Activity {
   if (task.kind === 'fix') {
+    // A fix of the series names no change.
+    if (task.key === '') {
+      return { text: 'Agent fixing the series…', title: '' };
+    }
     const subject = subjectOf(task.key);
     return subject
       ? { text: `Agent fixing “${clip(subject)}”…`, title: subject }

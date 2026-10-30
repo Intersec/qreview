@@ -639,20 +639,27 @@ export const useReview = defineStore('review', () => {
 
   /// The change on the screen, as every count reads it.
   const here = computed(() => written.value.find((change) => change.key === changeKey.value));
-  /// The open threads of the change on the screen: what Fix hands over.
-  const openHere = computed(() => (here.value ? open(here.value) : []));
+  /// The open threads of every change: what Fix the series hands over.
+  const openSeries = computed(() =>
+    written.value.flatMap((change) =>
+      open(change).map((comment) => ({ key: change.key, comment })),
+    ),
+  );
+  /// The open threads of the change on the screen: what Fix this change
+  /// hands over.
+  const openHere = computed(() => openSeries.value.filter((t) => t.key === changeKey.value));
   /// Its done threads: what Clean deletes.
   const doneHere = computed(() =>
     here.value ? rounds(here.value).current.filter((comment) => comment.done) : [],
   );
-  const waitingHere = computed(() =>
-    blockedThreads.value.filter((t) => t.key === changeKey.value).map((t) => t.comment),
-  );
+  const waitingHere = computed(() => blockedThreads.value.filter((t) => t.key === changeKey.value));
 
-  async function askFix() {
+  async function askFix(scope: 'change' | 'series') {
     askLeave();
     const key = changeKey.value;
-    if (key) {
+    if (scope === 'series') {
+      await guard(() => api.fix());
+    } else if (key) {
       await guard(() => api.fix(key));
     }
   }
@@ -863,6 +870,7 @@ export const useReview = defineStore('review', () => {
     openHere,
     doneHere,
     waitingHere,
+    openSeries,
     askFix,
     clean,
     config,
