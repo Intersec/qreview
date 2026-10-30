@@ -12,6 +12,19 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.15.1]
+
+### Changed
+
+- A remark or a reply that the agent answered has no Edit button any more,
+  and such a reply has no Delete button. Write a reply to say more. Delete on
+  the remark still deletes the whole thread.
+
+### Fixed
+
+- A Gerrit remark on a line of the commit message now shows on that line,
+  not at the top of the message.
+
 ## [0.15.0]
 
 ### Added
