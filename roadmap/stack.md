@@ -904,3 +904,26 @@ qreview reads the parents of the patch set and subtracts that length. A
 remark on the header stays a remark about the whole message. So does a remark
 on a version that is not in the clone, because its parents cannot be read.
 Nothing in the storage format or the export moves.
+
+## 2026-10-30 — Fix the whole series
+
+Fix asked the agent to correct the change on the screen, and nothing more.
+A reader who reviewed a series pressed Fix once per change and waited for
+each fix to end. Copy already worked on the change or on the series.
+
+**Decision.** Fix comes in the same pair as Copy: **Fix this change** and
+**Fix the series**, on `a` and `A`. `POST /api/series/fix` writes a `fix`
+event with an empty key. An empty key already names the whole series on a
+`refresh` and an `idle`. The task of the agent carries the same empty key,
+and the page and the terminal say that the agent fixes the series.
+
+The dialog of the series lists the open threads of every change, under the
+subject of each change. A thread anywhere in the series that waits for the
+reader stops the request, because the agent leaves such a thread alone.
+
+The agent makes one fixup commit per commit that it corrects, then runs one
+rebase. One rebase rewrites the series once, and the reader sees one new
+version of each commit.
+
+Nothing in the storage format or the export moves.
+`POST /api/changes/:key/fix` keeps its meaning.

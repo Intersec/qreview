@@ -30,7 +30,8 @@ pub enum Kind {
     Ask,
     /// A new version was declared and the threads moved onto it.
     Migrated,
-    /// The reader asks the agent to fix the change.
+    /// The reader asks the agent to fix the change, or the whole series
+    /// when the key is empty.
     Fix,
     /// The reader deleted the done threads of the change.
     Clean,
@@ -45,7 +46,8 @@ pub struct Event {
     pub seq: u64,
     pub kind: Kind,
     pub author: Author,
-    /// The change. Empty on a refresh, which is about the whole series.
+    /// The change. Empty on a refresh and on a fix of the series, which are
+    /// about the whole series.
     pub key: String,
     pub id: Option<String>,
     /// On a `migrated` event: the old version, the new one, and the change
@@ -92,7 +94,7 @@ pub struct Batch {
 #[serde(rename_all = "camelCase")]
 pub struct Task {
     pub kind: TaskKind,
-    /// The change.
+    /// The change. Empty on a fix of the series.
     pub key: String,
     /// The thread, on an answer.
     pub id: Option<String>,

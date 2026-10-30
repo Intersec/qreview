@@ -107,6 +107,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/session", get(session))
         .route("/api/session/refresh", post(refresh))
         .route("/api/series/extend", post(extend))
+        .route("/api/series/fix", post(fix_series))
         .route("/api/changes/{key}", get(change).patch(mark_change))
         .route("/api/changes/{key}/files", get(files))
         .route("/api/changes/{key}/diff", get(diff))
@@ -1046,6 +1047,16 @@ async fn fix(
             "no change {key} in the series"
         )));
     }
+    hand_fix(&state, &key)
+}
+
+/// Ask the agent to fix every change of the series. See section 5.7.
+async fn fix_series(State(state): State<AppState>) -> Result<StatusCode, ApiError> {
+    // An empty key names the whole series, as on a refresh.
+    hand_fix(&state, "")
+}
+
+fn hand_fix(state: &AppState, key: &str) -> Result<StatusCode, ApiError> {
     if !state.events.agent_listens() {
         return Err(ApiError {
             status: StatusCode::CONFLICT,
@@ -1053,7 +1064,7 @@ async fn fix(
             message: "no agent listens. Start one with `qreview wait`".to_owned(),
         });
     }
-    state.events.push(Kind::Fix, Author::Reader, &key, None);
+    state.events.push(Kind::Fix, Author::Reader, key, None);
 
     Ok(StatusCode::ACCEPTED)
 }
@@ -3285,5 +3296,26 @@ mod tests {
             batch["working"], true,
             "the agent works until it waits again"
         );
+    }
+
+    #[tokio::test]
+    async fn a_fix_of_the_series_names_no_change() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        let server = app(state.clone());
+
+        let (status, body) = json(server.clone(), post("/api/series/fix", "")).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["error"]["code"], "noAgent");
+
+        drop(state.events.agent_waits());
+        let (status, _) = json(server.clone(), post("/api/series/fix", "")).await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+
+        let (_, batch) = json(server, get_with_cookie("/api/events?after=0", TOKEN)).await;
+        assert_eq!(batch["events"][0]["kind"], "fix");
+        assert_eq!(batch["events"][0]["key"], "");
+        assert_eq!(batch["task"]["kind"], "fix");
+        assert_eq!(batch["task"]["key"], "");
     }
 }

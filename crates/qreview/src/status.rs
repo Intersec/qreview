@@ -29,6 +29,7 @@ pub enum Agent {
     Left,
     /// The subject of the change.
     Fixing(String),
+    FixingSeries,
     /// The subject of the change that holds the thread.
     Answering(String),
 }
@@ -48,6 +49,7 @@ pub fn line(state: &Snapshot, color: bool) -> String {
             "agent left: ask it to run `qreview wait`".to_owned(),
         ),
         Agent::Fixing(subject) => (Blue, format!("agent fixing “{}”", clip(subject))),
+        Agent::FixingSeries => (Blue, "agent fixing the series".to_owned()),
         Agent::Answering(subject) => (Blue, format!("agent answering on “{}”", clip(subject))),
     };
 
@@ -177,6 +179,19 @@ mod tests {
         assert_eq!(
             line(&state, false),
             "● page open   ● agent fixing “net: retry the read”"
+        );
+    }
+
+    #[test]
+    fn a_fix_of_the_series_names_no_change() {
+        let state = Snapshot {
+            page: Some(true),
+            agent: Agent::FixingSeries,
+        };
+
+        assert_eq!(
+            line(&state, false),
+            "● page open   ● agent fixing the series"
         );
     }
 

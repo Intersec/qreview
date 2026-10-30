@@ -348,6 +348,9 @@ fn agent_state(
     use qreview::status::Agent;
 
     if let Some(task) = events.agent_task() {
+        if task.kind == TaskKind::Fix && task.key.is_empty() {
+            return Agent::FixingSeries;
+        }
         let subject = session
             .try_read()
             .ok()

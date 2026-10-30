@@ -27,7 +27,8 @@ rule of section 8.3 for an agent that listens.
 
 On a terminal, a status line under these messages says how the review
 stands now: the page (not open yet, open, closed) and the agent (absent,
-connected, fixing or answering on a change named by its subject, left).
+connected, fixing the series, fixing or answering on a change named by
+its subject, left).
 The server redraws it every second, in place, and clears it when it stops.
 In a file or a pipe, and under `--trace`, whose lines would break into it,
 there is no status line: the messages are all there is. `NO_COLOR` takes
@@ -817,7 +818,8 @@ id of their thread, which a move does not change, so they need nothing.
   before (section 8.3), or while a fix runs, and says so on every answer of
   `/api/events`.
 - Sending writes a `fix` event, author the reader, naming the change.
-  `qreview wait` returns it like any other.
+  `POST /api/series/fix` writes one with an empty key, for every change of
+  the series. `qreview wait` returns it like any other.
 
 **A fix runs until the agent waits again.** The agent works with no wait
 open, for minutes, so the end of its work is the next wait it opens. The
@@ -1017,6 +1019,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/session` | The repository, the first batch of the series, the tool version and the commit it was built from |
 | `POST /api/session/refresh` | Resolve the series again, and answer with what git holds now |
 | `POST /api/series/extend` | Load the next batch. Body: `{ "count": 5, "parent": 1 }` |
+| `POST /api/series/fix` | Ask the agent to fix every change of the series. See section 5.7 |
 | `GET /api/changes/:key` | The change, its patch sets, its comment count |
 | `PATCH /api/changes/:key` | Mark the change read, or unread |
 | `GET /api/changes/:key/files?ps=2&base=parent` | The file list with the statistics, the commit message first |
@@ -1124,6 +1127,7 @@ the pages, and a page wait answers when that grace runs out, so the page
 hears of it at once and not at the end of its wait.
 
 `task` names what the agent does: `{ "kind": "fix", "key" }` during a fix,
+with an empty key on a fix of the series,
 `{ "kind": "answer", "key", "id" }` after an `ask` that reached a listening
 agent, and `null` otherwise. A fix comes first: a question asked during a
 fix does not hide it. A new wait of the agent ends the task. The top bar of
@@ -1146,7 +1150,8 @@ type Event = {
   kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh' | 'ask'
       | 'migrated' | 'fix' | 'clean' | 'idle';
   author: 'reader' | 'agent';
-  key: string;             // the change, empty on a refresh and an idle
+  key: string;             // the change, empty on a refresh, an idle,
+                           //   and a fix of the series
   id: string | null;       // the comment, absent on a refresh
   from?: string;           // on a migrated: the old version,
   to?: string;             //   the new one,

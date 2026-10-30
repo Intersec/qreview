@@ -14,7 +14,8 @@ new version of a commit is a new patch set that the user did not ask for.
 
 The user asks for a fix in one of two ways:
 
-- **Fix** in the browser: an event of kind `fix` for one change.
+- **Fix this change** or **Fix the series** in the browser: an event of
+  kind `fix`.
 - An explicit request to you, in the terminal: "fix this change".
 
 Outside a fix: no edit, no `git commit`, no amend, no rebase, no
@@ -61,8 +62,9 @@ Repeat until the user says the review is over:
      once, then wait again. A `wait` attaches to the server as soon as the
      user starts one. If the server stops during a `wait`, the `wait`
      looks for it again, and a new server answers `"reset": true`.
-   - An event of kind `fix`: the user pressed **Fix** on the change `key`.
-     See "Fix a change".
+   - An event of kind `fix`: the user pressed **Fix this change** on the
+     change `key`. See "Fix a change". If `key` is empty, the user pressed
+     **Fix the series**. See "Fix the series".
 3. Answer the thread. See "Answer a remark". Change nothing. If `thread` is empty, or a
    reply fails with `no comment`, the user deleted the thread: skip it, and
    do not look into why.
@@ -151,6 +153,24 @@ The user asked for a fix of a change: deal with every open thread of it.
    every migrate and every reply. Your next `qreview wait` tells the page
    that the fix is done, and the page then shows it all at once. Do not
    start the wait early, in the background, while you still work.
+
+## Fix the series
+
+The user asked for a fix of every change of the series: deal with every
+open thread of the series.
+
+1. `qreview export --json` lists the open threads of each change.
+2. Sort them as in "Fix a change".
+3. For each commit that has a thread to fix, note its sha, make its fixes,
+   and stage only those edits. Then run `git commit --fixup=<sha>`. The top
+   commit gets a fixup too.
+4. Run one `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.
+   `<base>` is the parent of the lowest commit that you fixed. If the
+   rebase stops on a conflict, resolve it and run `git rebase --continue`.
+5. Pair the old and the new commits as in step 4 of "Change the code". Run
+   one `qreview migrate` for each pair that changed, with the `--done` ids
+   and the `--blocked` questions of that commit only.
+6. Wait again, **only once the whole fix is over**, as in "Fix a change".
 
 ## Review on your own
 
