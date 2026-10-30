@@ -130,6 +130,13 @@ function fakeGerrit(base: string, repo: string): { bin: string; served: string }
             reviewer: { username: 'buildbot' },
             message: 'This file has no test.',
           },
+          // What the Reply box of Gerrit 3 writes: no file of the change, no
+          // line.
+          {
+            file: '/PATCHSET_LEVEL',
+            reviewer: { name: 'Jane Reviewer', email: 'jane@example.com' },
+            message: 'Split the cap into a change of its own.',
+          },
         ],
       },
     ],

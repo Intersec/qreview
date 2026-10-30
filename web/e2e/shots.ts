@@ -253,6 +253,11 @@ for (const scheme of ['light', 'dark'] as const) {
   await second.locator('.talk-box:not(.posted-box)').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-posted.png`) });
 
+  // A remark Gerrit holds about the whole change, above the message.
+  await openFile(second, 'Commit message');
+  await second.locator('.posted-box').first().waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-posted-change.png`) });
+
   // The work of the agent, named in the top bar.
   const otherSession = (await (
     await second.request.get(new URL('/api/session', other.url).href)

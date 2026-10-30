@@ -61,8 +61,8 @@ test('a message that did not change between two versions is still readable', asy
 });
 
 test('a remark about the change goes on the commit message', async ({ page }) => {
-  // Gerrit has no useful place for a remark about the whole change, so the
-  // convention is to write it on the message. The button says so there.
+  // The convention is to write a remark about the whole change on the
+  // message. The button says so there.
   await openChange(page, /net: retry the read/);
   await openFile(page, 'Commit message');
   await page.getByRole('button', { name: 'Comment on the change' }).click();

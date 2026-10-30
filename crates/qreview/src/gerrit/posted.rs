@@ -16,6 +16,10 @@ use crate::git::exec::Git;
 use crate::model::PostedComment;
 use crate::store::model::{Author, Comment, Scope, Side};
 
+/// The file name Gerrit 3 gives to a remark written in the Reply box of a
+/// change. Such a remark has no line.
+const PATCHSET_LEVEL: &str = "/PATCHSET_LEVEL";
+
 /// One posted remark, ready for the interface and for the anchoring.
 pub struct Posted {
     /// What the interface reads.
@@ -89,7 +93,12 @@ async fn one(
     posted: &super::InlineComment,
     revision: &str,
 ) -> Posted {
-    let line = line_of(git, posted, revision).await;
+    // No change holds a file of that name, so a remark left there would show
+    // nowhere. The message is where qreview puts a remark on the change.
+    let (file, line) = match posted.file.as_str() {
+        PATCHSET_LEVEL => (commitmsg::PATH.to_owned(), None),
+        file => (file.to_owned(), line_of(git, posted, revision).await),
+    };
     let wire = PostedComment {
         // The ssh answer carries no id. This one is made from the place, and
         // it is the same on every query as long as the server says the same.
@@ -97,7 +106,7 @@ async fn one(
         patch_set,
         author: posted.reviewer.label(),
         body: posted.message.clone(),
-        file: posted.file.clone(),
+        file: file.clone(),
         line,
     };
 
@@ -107,7 +116,7 @@ async fn one(
     };
     let new = NewComment {
         scope,
-        file: Some(posted.file.clone()),
+        file: Some(file),
         side: Some(Side::New),
         start_line: line,
         end_line: line,
@@ -399,6 +408,33 @@ mod tests {
 
         assert_eq!(found[0].wire.line, None);
         assert_eq!(found[0].placeable.scope, Scope::File);
+    }
+
+    #[tokio::test]
+    async fn a_remark_on_the_whole_change_stands_on_the_message() {
+        let (_repo, git, head) = one_message().await;
+
+        // Gerrit 3 files the Reply box under a path no change holds.
+        let path = format!(
+            "{}/tests/data/gerrit/patchset-level.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let recorded = crate::gerrit::answer::parse(&std::fs::read_to_string(path).unwrap());
+        let comments = recorded[0].patch_sets[0].comments.clone();
+        assert_eq!(comments[0].file, "/PATCHSET_LEVEL");
+
+        let found = of_change(&git, &change(&head, comments)).await;
+
+        assert_eq!(found[0].wire.file, commitmsg::PATH);
+        assert_eq!(found[0].wire.line, None);
+        assert_eq!(found[0].wire.body, "Split this in two changes.");
+        assert_eq!(found[0].placeable.scope, Scope::File);
+        let anchor = found[0].placeable.anchor.as_ref().expect("it is readable");
+        assert_eq!(anchor.file, commitmsg::PATH);
+
+        // The line remark beside it is left where it was.
+        assert_eq!(found[1].wire.file, "src/log.c");
+        assert_eq!(found[1].wire.line, Some(2));
     }
 
     #[tokio::test]
