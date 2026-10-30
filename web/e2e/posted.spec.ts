@@ -44,6 +44,17 @@ test('a remark about the whole file stands above the diff', async ({ page }) => 
   await expect(band).not.toHaveClass(/talk-stranded/);
 });
 
+test('a remark about the whole change stands above the message', async ({ page }) => {
+  const remark = page.locator('.posted-box', { hasText: 'Split the cap' });
+  await expect(page.locator('tr.talk .posted-box').first()).toBeVisible();
+  await expect(remark).toHaveCount(0);
+
+  await openFile(page, 'Commit message');
+  await expect(remark).toHaveCount(1);
+  await expect(remark).toContainText('Jane Reviewer');
+  await expect(remark).not.toHaveClass(/talk-stranded/);
+});
+
 test('a remark of a version off the screen is not shown', async ({ page }) => {
   // Posted on patch set 1, and patch set 2 is read against its parent. The
   // remark speaks of code that is not on the screen, so Gerrit hides it here

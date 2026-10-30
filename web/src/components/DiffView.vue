@@ -151,9 +151,9 @@ const aboutFile = ref(false);
 
 /// The file that carries what belongs to no file of the change.
 ///
-/// Gerrit has no useful place for a remark about the whole change, so the
-/// convention is to write it on the commit message, which is a file like any
-/// other. A change with no message to review falls back to its first file.
+/// The convention is to write a remark about the whole change on the commit
+/// message, which is a file like any other. A change with no message to review
+/// falls back to its first file.
 const homeFile = computed(() =>
   props.paths.includes(COMMIT_MSG) ? COMMIT_MSG : (props.paths[0] ?? ''),
 );

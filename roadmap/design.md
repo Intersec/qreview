@@ -530,12 +530,12 @@ section 5.4.
 `scope` is `line`, `range`, `file`, or `change`. A `file` comment has an anchor
 with no line. A `change` comment has no anchor.
 
-Nothing writes a `change` comment any more. Gerrit has no useful place for a
-remark about the whole change — you cannot reply to one — so the convention is
-to write it on the commit message, which is a file like any other. That is
-what a session already reads, and what the export already lists first. The
-ones a `change` scope left behind are still read, and shown on the commit
-message with the rest.
+Nothing writes a `change` comment any more. The convention is to write a
+remark about the whole change on the commit message, which is a file like any
+other. That is what a session already reads, and what the export already
+lists first. The ones a `change` scope left behind are still read, and shown
+on the commit message with the rest. So are the remarks Gerrit holds about
+the whole change, section 6.3.
 
 A `range` covers `startLine` to `endLine`. It can also open and close inside a
 line: `startChar` and `endChar` then hold the first character on the first
@@ -934,6 +934,11 @@ committer and their dates, and a blank line. So a remark on the message moves
 up by that many lines. A remark on the header itself is about the whole
 message. So is a remark on a version that is not in the clone, because its
 parents cannot be counted.
+
+Gerrit 3 files a remark about the whole change, the one its Reply box writes,
+under the path `/PATCHSET_LEVEL`, with no line. No change holds that path, so
+qreview shows the remark on the commit message, above its first line, where
+a remark of its own about the change stands.
 
 ### 6.4 Failure
 
