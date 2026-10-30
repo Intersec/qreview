@@ -55,23 +55,23 @@ e2e: build
 shots: build
 	cd web && $(NPM) run shots
 
-## The recording the README shows. `make demo REPO=~/dev/myproject`.
+## The recording the README shows.
 ##
-## It drives a tour of a real repository and writes docs/demo.gif. Add
-## arguments for qreview with DEMO_ARGS, for example DEMO_ARGS=--base=HEAD~5.
+## It builds a small repository, drives a tour of it with an agent that the
+## script plays, and writes docs/demo.webp. The video before the page is
+## ready is cut, at the time the script writes in web/e2e/.demo/start.
 ##
 ## It needs two things the gate does not: `npx playwright install ffmpeg`,
 ## once, for the browser to write a video, and an ffmpeg on the PATH that can
 ## write WebP.
 demo: build
-	@test -n "$(REPO)" || { echo "usage: make demo REPO=<a repository>"; exit 1; }
 	@ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libwebp_anim || { \
 		echo "ffmpeg with the libwebp encoder is missing. It writes docs/demo.webp."; \
 		exit 1; \
 	}
-	cd web && $(NPM) run demo -- $(REPO) $(DEMO_ARGS)
+	cd web && $(NPM) run demo
 	@mkdir -p docs
-	@ffmpeg -v error -y -i web/e2e/.demo/demo.webm \
+	@ffmpeg -v error -y -ss $$(cat web/e2e/.demo/start) -i web/e2e/.demo/demo.webm \
 		-vf "fps=$(DEMO_FPS),scale=$(DEMO_WIDTH):-1:flags=lanczos" \
 		-c:v libwebp_anim -lossless 0 -q:v $(DEMO_QUALITY) -compression_level 6 \
 		-loop 0 -an docs/demo.webp

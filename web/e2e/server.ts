@@ -15,7 +15,7 @@ export interface Running {
   kill(): void;
 }
 
-const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qreview');
+export const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qreview');
 
 /// Start qreview on a fresh fixture and wait for the address it prints.
 ///

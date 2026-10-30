@@ -5,7 +5,7 @@ one change at a time, with patch sets.
 
 One binary, no runtime to install, nothing leaves your machine.
 
-![A review of five commits: the diff of a file, a remark written on a line, and the review copied for an agent](docs/demo.webp)
+![A review of four commits: the agent answers a question on a line, fixes the whole series, and asks back about one remark](docs/demo.webp)
 
 ## Install
 

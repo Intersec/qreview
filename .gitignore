@@ -10,7 +10,7 @@
 # Browser tests
 /web/e2e/.results/
 /web/e2e/.shots/
-# The recording of `make demo`. Only the GIF it makes is committed.
+# The recording of `make demo`. Only the WebP it makes is committed.
 /web/e2e/.demo/
 
 # Editors
