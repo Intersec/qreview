@@ -851,6 +851,12 @@ tr.talk td {
   display: flex;
   gap: 6px;
   margin-left: auto;
+  min-width: 0;
+}
+/* A narrow window cuts the chip of the agent, never a label in two. */
+.bar-actions .chip {
+  flex: none;
+  white-space: nowrap;
 }
 /* ----------------------------------------------------------- the shell */
 
@@ -1417,9 +1423,9 @@ kbd {
 .agent-working,
 .agent-on {
   display: inline-flex;
+  min-width: 0;
   max-width: 420px;
   overflow: hidden;
-  text-overflow: ellipsis;
   color: inherit;
   font: inherit;
   cursor: default;
@@ -1435,6 +1441,12 @@ kbd {
 
 button.agent-working {
   cursor: pointer;
+}
+
+/* The text is a flex item of its own, so it is the one that ellipsis cuts. */
+.agent-working > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .agent-working::before {

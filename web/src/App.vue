@@ -534,10 +534,14 @@ onBeforeUnmount(() => {
           :title="activity.title ? `${activity.title}\n\nOpen it` : 'Open it'"
           @click="openTask"
         >
-          {{ activity.text }}
+          <span>{{ activity.text }}</span>
         </button>
-        <span v-else-if="activity" class="agent-working" role="status">{{ activity.text }}</span>
-        <span v-else-if="working" class="agent-working" role="status">Agent working…</span>
+        <span v-else-if="activity" class="agent-working" role="status"
+          ><span>{{ activity.text }}</span></span
+        >
+        <span v-else-if="working" class="agent-working" role="status"
+          ><span>Agent working…</span></span
+        >
         <span
           v-else-if="agent"
           class="agent-on"
