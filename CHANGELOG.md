@@ -12,6 +12,20 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.16.0]
+
+### Added
+
+- **Fix the series** — a second Fix button, and the `A` key, ask the agent
+  to deal with the open threads of every change of the series at once.
+
+### Fixed
+
+- Remarks written in the Reply box of a Gerrit 3 change now show at the top
+  of the commit message. They were not shown at all.
+- **The top bar stays on one line** in a narrow window. The chip that says
+  what the agent does is cut short, and no button breaks its label in two.
+
 ## [0.15.1]
 
 ### Changed
