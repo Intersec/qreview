@@ -5,7 +5,7 @@ import BoundaryCard from './BoundaryCard.vue';
 import CommentList from './CommentList.vue';
 import FileList from './FileList.vue';
 import PaneSplit from './PaneSplit.vue';
-import type { ChangeComments, ChangeSummary, FileEntry, Series, Side } from '@/api/types';
+import type { Anchor, ChangeComments, ChangeSummary, FileEntry, Series } from '@/api/types';
 
 defineProps<{
   series: Series;
@@ -29,7 +29,7 @@ const threads = inject(THREADS, null);
 const emit = defineEmits<{
   openChange: [key: string];
   openFile: [path: string];
-  go: [key: string, file: string, side: Side, line: number | null];
+  go: [key: string, anchor: Anchor | null];
   mark: [key: string, reviewed: boolean];
   more: [count?: number];
 }>();
@@ -153,7 +153,7 @@ defineExpose({ focusFilter: () => inChange.value[0]?.focusFilter() });
       :height="listHeight"
       :written="written"
       :open-key="selected"
-      @go="(key, file, side, line) => emit('go', key, file, side, line)"
+      @go="(key, anchor) => emit('go', key, anchor)"
     />
   </nav>
 </template>

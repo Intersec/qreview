@@ -133,3 +133,35 @@ for (const view of ['unified', 'side by side'] as const) {
     await expect(page.locator('tr.row-cursor')).toContainText('line 20');
   });
 }
+
+for (const view of ['unified', 'side by side'] as const) {
+  test(`a row of the list opens the folded lines of its thread, ${view}`, async ({ page }) => {
+    const body = await remarkOnLong(page, 20, 22);
+    await openChange(page, /long: touch two places/);
+    await openFile(page, 'long.c');
+    await (view === 'unified' ? useUnified(page) : useSplit(page));
+    await expect(page.getByRole('button', { name: '+26 common lines' })).toBeVisible();
+
+    await page.locator('.comment-list .list-row', { hasText: body }).click();
+
+    await expect(card(page, body)).toBeVisible();
+    await expect(page.locator('tr.row-cursor')).toHaveCount(1);
+    await expect(page.locator('tr.row-cursor')).toContainText('line 20');
+    // From the hunk above, which is nearer, through three lines past the
+    // thread. The rest of the gap stays folded.
+    await expect(page.getByRole('button', { name: '+14 common lines' })).toBeVisible();
+  });
+}
+
+test('a thread near the hunk below opens from that hunk', async ({ page }) => {
+  const body = await remarkOnLong(page, 36, 37);
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+
+  await page.locator('.comment-list .list-row', { hasText: body }).click();
+
+  await expect(card(page, body)).toBeVisible();
+  await expect(page.locator('tr.row-cursor')).toContainText('line 36');
+  // Three lines above the thread, then down to the hunk.
+  await expect(page.getByRole('button', { name: '+19 common lines' })).toBeVisible();
+});

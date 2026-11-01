@@ -19,7 +19,7 @@ import { THREADS } from './diff/threads';
 import { any as anyDraft } from './diff/drafts';
 import { describe as describeTask } from './activity';
 import { show as showSignal, signalOf } from './favicon';
-import type { Comment, Side } from './api/types';
+import type { Anchor, Comment } from './api/types';
 
 const review = useReview();
 const {
@@ -107,8 +107,7 @@ async function openTask() {
   const remark = now.id
     ? written.value.find((c) => c.key === now.key)?.comments.find((c) => c.id === now.id)
     : undefined;
-  const anchor = remark?.anchor;
-  await goToComment(now.key, anchor?.file ?? '', anchor?.side ?? 'new', anchor?.startLine ?? null);
+  await goToComment(now.key, remark?.anchor);
 }
 
 /// Why the agent takes no fix now, as both Fix buttons say it.
@@ -141,13 +140,7 @@ async function sendFix() {
 
 async function jumpTo(thread: { key: string; comment: Comment }) {
   fixing.value = null;
-  const anchor = thread.comment.anchor;
-  await goToComment(
-    thread.key,
-    anchor?.file ?? '',
-    anchor?.side ?? 'new',
-    anchor?.startLine ?? null,
-  );
+  await goToComment(thread.key, thread.comment.anchor);
 }
 
 /// Clean waits a moment before it deletes, because nothing brings a
@@ -261,8 +254,9 @@ function goToVersion(ps: number | undefined, base: string | undefined) {
 }
 
 /// Open the place a comment speaks of: the change, then the file, then the
-/// line the keyboard lands on.
-async function goToComment(key: string, file: string, side: Side, line: number | null) {
+/// lines it covers.
+async function goToComment(key: string, anchor: Anchor | null | undefined) {
+  const file = anchor?.file ?? '';
   const move = async () => {
     if (key !== changeKey.value) {
       await review.openChange(key);
@@ -273,9 +267,10 @@ async function goToComment(key: string, file: string, side: Side, line: number |
   };
   await goTo({ change: key, file: file === '' ? undefined : file }, move());
 
-  if (line !== null) {
+  const start = anchor?.startLine ?? null;
+  if (anchor && start !== null) {
     await nextTick();
-    diffView.value?.revealLine(side, line);
+    await diffView.value?.revealLines(anchor.side, start, anchor.endLine ?? start);
   }
 }
 
@@ -285,9 +280,8 @@ async function followThread(id: string) {
   const last = patchSets.value[patchSets.value.length - 1]?.number;
   await goToVersion(last, undefined);
   const thread = review.review?.comments.find((c) => c.id === id);
-  const anchor = thread?.anchor;
-  if (changeKey.value && anchor) {
-    await goToComment(changeKey.value, anchor.file, anchor.side, anchor.startLine);
+  if (changeKey.value && thread?.anchor) {
+    await goToComment(changeKey.value, thread.anchor);
   }
 }
 

@@ -8,7 +8,7 @@
 import { computed, ref } from 'vue';
 import { label } from '@/diff/paths';
 import { open, previousGroups, rounds } from '@/diff/versions';
-import type { ChangeComments, Comment, Side } from '@/api/types';
+import type { Anchor, ChangeComments, Comment } from '@/api/types';
 
 const props = defineProps<{
   written: ChangeComments[];
@@ -17,7 +17,7 @@ const props = defineProps<{
   height: number;
 }>();
 const emit = defineEmits<{
-  go: [key: string, file: string, side: Side, line: number | null];
+  go: [key: string, anchor: Anchor | null];
 }>();
 
 const folded = ref(false);
@@ -68,8 +68,7 @@ function gist(comment: Comment): string {
 }
 
 function go(change: ChangeComments, comment: Comment) {
-  const anchor = comment.anchor;
-  emit('go', change.key, anchor?.file ?? '', anchor?.side ?? 'new', anchor?.startLine ?? null);
+  emit('go', change.key, comment.anchor);
 }
 </script>
 

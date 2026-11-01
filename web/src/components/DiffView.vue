@@ -665,13 +665,44 @@ function writeOnPicked() {
   window.getSelection()?.removeAllRanges();
 }
 
-/// Put the keyboard on one line and bring it into view. This is how the
-/// list of comments arrives at the place a remark speaks of.
-function revealLine(side: Side, line: number) {
-  const row = walkable.value.find((r) => lineIn(r, side) === line);
+/// Show the lines a remark covers, and put the keyboard on the first one.
+/// This is how the list of comments arrives at the place a remark speaks of.
+async function revealLines(side: Side, start: number, end: number) {
+  await unfold(side, start, end);
+  const row = walkable.value.find((r) => lineIn(r, side) === start);
   if (row) {
     clearPicked();
     place(row);
+  }
+}
+
+/// How many lines past a remark a fold opens, as many as `git diff` shows
+/// around a change.
+const AROUND = 3;
+
+/// Open what the gaps still hide of a range, down to its last line, because
+/// the card stands under that line.
+///
+/// A gap keeps one closed run, so the run opens from its nearer end.
+async function unfold(side: Side, start: number, end: number) {
+  for (const block of blocks.value) {
+    if (block.kind !== 'gap' || isOpen(block.gap)) {
+      continue;
+    }
+    // A gap counts its lines on the new side.
+    const shift = side === 'old' ? block.gap.offset : 0;
+    const closed = rest(block.gap);
+    const from = Math.max(start - shift, closed.from);
+    const to = Math.min(end - shift, closed.to);
+    if (from > to) {
+      continue;
+    }
+
+    if (from - closed.from <= closed.to - to) {
+      await open(block.gap, closed.from, Math.min(to + AROUND, closed.to));
+    } else {
+      await open(block.gap, Math.max(from - AROUND, closed.from), closed.to);
+    }
   }
 }
 
@@ -682,7 +713,7 @@ defineExpose({
   threadHere,
   startRange,
   clearPicked,
-  revealLine,
+  revealLines,
 });
 
 /// True while the reader holds a selection that starts in the code.
