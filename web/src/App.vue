@@ -284,7 +284,7 @@ async function goToComment(
 /// added it, so the line stands on the new side of its diff.
 function goToBlame(at: BlameLine) {
   const target = review.blameTarget(at.commit.commit);
-  if (target) {
+  if (target && 'key' in target) {
     const line = { file: at.commit.path, side: 'new' as const, startLine: at.origin };
     void goToComment(target.key, { ...line, endLine: at.origin });
   }
@@ -737,6 +737,7 @@ onBeforeUnmount(() => {
             @update:split="review.setSplit"
             @update:blame="review.toggleBlame"
             @open-blame="goToBlame"
+            @blame-shown="review.findOnGerrit"
             @add="review.addComment"
             @edit="(id, body) => review.editComment(id, { body })"
             @remove="review.deleteComment"

@@ -963,3 +963,29 @@ design holds the rules.
   new tab.
 
 Nothing in the storage format or the export moves.
+
+## 2026-11-01 — A line of the blame opens its change on Gerrit
+
+Most lines of a blame come from commits older than the series, and those
+commits went through Gerrit. Their review holds the reason for the code,
+and a line of the blame led nowhere for them.
+
+**Decision.** A line of a commit that Gerrit holds is a link to its change
+on Gerrit. Section 6.5 of the design holds the rules.
+
+- Gerrit is asked with `commit:` terms, and never guessed. A link built
+  from the `Change-Id` alone would open an empty search for a commit that
+  was never pushed.
+- One query for the commits of the lines on the screen that the series
+  does not hold, after the blame is on the screen. Decided on 2026-11-02:
+  the first version asked about every commit of the file, 3 300 of them
+  for a catalog, and the next file waited behind those queries.
+- At most 25 commits for each query, and 30 seconds for it to answer.
+  Decided on 2026-11-02: on one server, 5 commits took a second where 1
+  took 12 ms, so groups of 100 stopped at the 5 second limit. A query that
+  does not answer in time leaves its commits unknown, not absent.
+- The answers are kept for the run. A refresh forgets them.
+- A commit of the series opens in the review, whether Gerrit holds it or
+  not, because the reader reviews it here.
+
+Nothing in the storage format or the export moves.

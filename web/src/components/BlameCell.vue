@@ -26,6 +26,9 @@ const href = computed(() => {
   if (!at.value || !goes.value) {
     return null;
   }
+  if ('url' in goes.value) {
+    return goes.value.url;
+  }
   const place = format({ change: goes.value.key, file: at.value.commit.path });
 
   return `${location.pathname}${location.search}${place}`;
@@ -36,7 +39,7 @@ const href = computed(() => {
 function follow(event: MouseEvent) {
   event.stopPropagation();
   const plain = !(event.ctrlKey || event.metaKey || event.shiftKey || event.altKey);
-  if (plain && at.value) {
+  if (plain && at.value && goes.value && 'key' in goes.value) {
     event.preventDefault();
     emit('open', at.value);
   }
@@ -51,9 +54,15 @@ function follow(event: MouseEvent) {
   >
     <template v-if="at">
       <!-- A link, so the browser shows where it goes, as Gerrit does. -->
-      <a v-if="href" class="blame-label blame-go" :href="href" @click="follow">{{
-        label(at.commit)
-      }}</a>
+      <a
+        v-if="href && goes"
+        class="blame-label blame-go"
+        :href="href"
+        :target="'url' in goes ? '_blank' : undefined"
+        :rel="'url' in goes ? 'noopener' : undefined"
+        @click="follow"
+        >{{ label(at.commit) }}</a
+      >
       <span v-else class="blame-label">{{ label(at.commit) }}</span>
     </template>
     <span v-else-if="waiting && line !== null" class="blame-label blame-wait">…</span>

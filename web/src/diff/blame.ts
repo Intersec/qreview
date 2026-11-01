@@ -10,11 +10,9 @@ export interface BlameLine {
   origin: number;
 }
 
-/** Where a click on a line of the blame goes. */
-export interface BlameTarget {
-  /// The change of the series that the commit is.
-  key: string;
-}
+/** Where a click on a line of the blame goes: the change of the series that
+ * the commit is, or else the page of its change on Gerrit. */
+export type BlameTarget = { key: string } | { url: string };
 
 /** The blame, by line of the file on the left. */
 export function byLine(blame: Blame): Map<number, BlameLine> {
@@ -29,6 +27,23 @@ export function byLine(blame: Blame): Map<number, BlameLine> {
   }
 
   return lines;
+}
+
+/** The commits that wrote the left side of some lines, each one once, in a
+ * fixed order. A line that stands only on the right has none. */
+export function commitsOn(
+  lines: Map<number, BlameLine>,
+  rows: { oldLine: number | null }[],
+): string[] {
+  const found = new Set<string>();
+
+  for (const row of rows) {
+    const at = row.oldLine === null ? undefined : lines.get(row.oldLine);
+    if (at) {
+      found.add(at.commit.commit);
+    }
+  }
+  return [...found].sort();
 }
 
 /** `2026-10-30 Nicolas`: the day and the first name, as Gerrit writes them. */

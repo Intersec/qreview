@@ -294,6 +294,13 @@ for (const scheme of ['light', 'dark'] as const) {
   await second.locator('.talk-box:not(.posted-box)').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-posted.png`) });
 
+  // A line of the blame that opens its change on Gerrit.
+  await second.keyboard.press('b');
+  await second.locator('td.blame a[target="_blank"]').first().hover();
+  await second.getByRole('tooltip').waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-blame-gerrit.png`) });
+  await second.keyboard.press('b');
+
   // A remark Gerrit holds about the whole change, above the message.
   await openFile(second, 'Commit message');
   await second.locator('.posted-box').first().waitFor();

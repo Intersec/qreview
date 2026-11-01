@@ -72,7 +72,8 @@ What the browser shows:
 - A patch set selector, and a diff between any two versions.
 - A blame of the left side, the way Gerrit shows it: who wrote each line,
   and when. The tooltip shows the commit. A click on a line that a change
-  of the series wrote opens that change at that line.
+  of the series wrote opens that change at that line. A click on a line of
+  a commit that Gerrit holds opens its change on Gerrit.
 - A merge read against the auto-merge, so you see the conflict resolution and
   not the whole branch it brought in.
 - A **⟳** button that reads the repository again, so an amend or a new
@@ -222,6 +223,9 @@ When the repository has a Gerrit remote, qreview lists the patch sets already
 pushed and can diff the local commit against them. It reads the host, the
 port, and the project from the remote URL, and the target branch from
 `.gerrit-branch` when the file exists.
+
+A line of the blame opens the change of its commit on Gerrit, when the server
+holds that commit.
 
 qreview only reads. It never votes, never comments on the server, and never
 pushes.
