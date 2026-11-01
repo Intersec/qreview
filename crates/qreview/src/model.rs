@@ -262,3 +262,40 @@ pub struct PostedComment {
     /// Absent on a remark about the whole file.
     pub line: Option<usize>,
 }
+
+/// Who wrote the lines of the file on the left of a diff.
+///
+/// Empty when the left has no history to read: a file the change adds, the
+/// commit message, or the auto-merge of a merge, which is a tree.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Blame {
+    /// Each commit once, in the order its first line comes.
+    pub commits: Vec<BlameCommit>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BlameCommit {
+    pub commit: String,
+    pub author: String,
+    pub email: String,
+    /// The author date, RFC 3339 in UTC.
+    pub date: String,
+    /// The whole message, from the subject to the last trailer.
+    pub message: String,
+    /// The path of the file in that commit. A later rename changes it.
+    pub path: String,
+    pub ranges: Vec<BlameRange>,
+}
+
+/// Lines of the file on the left that one commit wrote.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BlameRange {
+    pub start: usize,
+    /// The last line of the range, included.
+    pub end: usize,
+    /// Where `start` stands in the commit that wrote it.
+    pub origin: usize,
+}

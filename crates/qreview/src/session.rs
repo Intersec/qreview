@@ -11,12 +11,15 @@ use crate::comments::{self, EditComment, NewComment, Target};
 use crate::commitmsg;
 use crate::diff;
 use crate::gerrit::{self, Coordinates};
+use crate::git::blame as git_blame;
 use crate::git::commit;
 use crate::git::exec::Git;
 use crate::git::merge::{self, Base};
 use crate::highlight::Highlighter;
 use crate::lang::Languages;
-use crate::model::{ChangeSummary, FileDiff, FileEntry, RepoInfo, RowKind, Series};
+use crate::model::{
+    Blame, BlameCommit, BlameRange, ChangeSummary, FileDiff, FileEntry, RepoInfo, RowKind, Series,
+};
 use crate::patchset::{self, PatchSet};
 use crate::repo;
 use crate::series::{self, Options, Plan};
@@ -73,6 +76,20 @@ pub enum Against {
     /// A tree named outright, which is how one patch set is read against
     /// another.
     Tree(String),
+}
+
+/// Which part of a blame to read.
+///
+/// The history under the series can take seconds to blame, and the series
+/// alone takes milliseconds. So the interface asks for the lines of the
+/// series first, and then for the whole file.
+#[derive(Clone, Copy, Debug)]
+pub enum BlamePart {
+    /// The lines that a commit above the base of the series wrote. The
+    /// others have no blame yet.
+    Recent,
+    /// Every line.
+    Whole,
 }
 
 impl Session {
@@ -1276,6 +1293,156 @@ impl Session {
         let info = commit::info(&self.git, rev).await?;
 
         merge::merge_list(&self.git, &info).await
+    }
+
+    /// Who wrote the lines of the file on the left of a diff.
+    ///
+    /// The left is what the change is read against: its parent, another
+    /// version of it, or a parent of a merge. That is the code the change
+    /// works on, and the lines it adds are its own.
+    ///
+    /// The blame comes in two parts. See `BlamePart`.
+    pub async fn blame(
+        &self,
+        rev: &str,
+        path: &str,
+        against: &Against,
+        how: &diff::How,
+        part: BlamePart,
+    ) -> Result<Blame> {
+        if commitmsg::is(path) {
+            return Ok(Blame::default());
+        }
+        // The auto-merge and the empty tree are trees. Blame reads history,
+        // and a tree has none.
+        let base = self.base_of(rev, against).await?;
+        if !self.is_commit(&base).await {
+            return Ok(Blame::default());
+        }
+
+        let old = self
+            .entries(&base, rev, how)
+            .await?
+            .into_iter()
+            .find(|e| e.path == path)
+            .and_then(|e| e.old_path)
+            .unwrap_or_else(|| path.to_owned());
+        // A file the change adds has no left side.
+        let spec = format!("{base}:{old}");
+        if self
+            .git
+            .text_of_object(&["cat-file", "-e", &spec])
+            .await
+            .is_err()
+        {
+            return Ok(Blame::default());
+        }
+
+        let floor = self.blame_floor(&base).await;
+        let runs = match (part, floor) {
+            (BlamePart::Recent, None) => Vec::new(),
+            (BlamePart::Recent, Some(floor)) => {
+                let recent = git_blame::of_file(&self.git, &base, Some(&floor), &old).await?;
+                let boundary = recent.boundary;
+                recent
+                    .runs
+                    .into_iter()
+                    .filter(|run| !boundary.contains(&run.commit))
+                    .collect()
+            }
+            (BlamePart::Whole, None) => {
+                git_blame::of_file(&self.git, &base, None, &old).await?.runs
+            }
+            (BlamePart::Whole, Some(floor)) => {
+                let recent = git_blame::of_file(&self.git, &base, Some(&floor), &old).await?;
+                let mut below = std::collections::HashMap::new();
+                for run in &recent.runs {
+                    let key = (run.commit.clone(), run.path.clone());
+                    if recent.boundary.contains(&run.commit) && !below.contains_key(&key) {
+                        let older = git_blame::of_file(&self.git, &key.0, None, &key.1).await?;
+                        below.insert(key, older.runs);
+                    }
+                }
+                git_blame::compose(recent, &below)
+            }
+        };
+
+        let mut order: Vec<&str> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for run in &runs {
+            if seen.insert(run.commit.as_str()) {
+                order.push(&run.commit);
+            }
+        }
+        if order.is_empty() {
+            return Ok(Blame::default());
+        }
+
+        let mut call = vec!["--no-walk=unsorted"];
+        call.extend(order.iter().copied());
+        let infos: std::collections::HashMap<String, commit::CommitInfo> =
+            commit::range(&self.git, &call)
+                .await?
+                .into_iter()
+                .map(|info| (info.hash.clone(), info))
+                .collect();
+
+        let commits = order
+            .into_iter()
+            .filter_map(|sha| {
+                let info = infos.get(sha)?;
+                let mine: Vec<&git_blame::Run> =
+                    runs.iter().filter(|run| run.commit == sha).collect();
+
+                Some(BlameCommit {
+                    commit: info.hash.clone(),
+                    author: info.author.clone(),
+                    email: info.email.clone(),
+                    date: info.date.clone(),
+                    message: info.message.clone(),
+                    path: mine.first().map(|run| run.path.clone()).unwrap_or_default(),
+                    ranges: mine
+                        .iter()
+                        .map(|run| BlameRange {
+                            start: run.start,
+                            end: run.start + run.count - 1,
+                            origin: run.origin,
+                        })
+                        .collect(),
+                })
+            })
+            .collect();
+
+        Ok(Blame { commits })
+    }
+
+    /// Where the blame of a left side stops at first: the commit under the
+    /// series.
+    ///
+    /// Every change of the series shares it, so the blame of the history
+    /// under the series runs once per file for the run. `None` when the left
+    /// side is not above it: a blame of that left side is the history alone.
+    async fn blame_floor(&self, left: &str) -> Option<String> {
+        let floor = self.series.boundary.commit.as_ref()?;
+        if floor == left {
+            return None;
+        }
+        self.git
+            .text_of_object(&["merge-base", "--is-ancestor", floor, left])
+            .await
+            .ok()?;
+
+        Some(floor.clone())
+    }
+
+    async fn is_commit(&self, rev: &str) -> bool {
+        let call = ["cat-file", "-t", rev];
+        let kind = match commit::is_object_name(rev) {
+            true => self.git.text_of_object(&call).await,
+            false => self.git.text(&call).await,
+        };
+
+        kind.is_ok_and(|kind| kind.trim() == "commit")
     }
 }
 

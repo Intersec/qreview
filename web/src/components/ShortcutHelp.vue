@@ -16,6 +16,7 @@ const KEYS: [string, string][] = [
     'Ask the agent about the thread on this line. In a comment box: save, then ask',
   ],
   ['u', 'Show or hide the series'],
+  ['b', 'Show or hide the blame of the left side'],
   ['/', 'Filter the files'],
   [', ', 'Preferences'],
   ['?', 'This list'],

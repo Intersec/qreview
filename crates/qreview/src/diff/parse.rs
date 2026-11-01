@@ -240,7 +240,7 @@ fn range(part: &str, sign: char) -> Option<(usize, usize)> {
 }
 
 /// Undo the C-style quoting git uses for a path with a special character.
-fn unquote(path: &str) -> String {
+pub(crate) fn unquote(path: &str) -> String {
     let path = path.trim_end_matches('\t');
     if !path.starts_with('"') || !path.ends_with('"') || path.len() < 2 {
         return path.to_owned();

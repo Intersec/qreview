@@ -927,3 +927,39 @@ version of each commit.
 
 Nothing in the storage format or the export moves.
 `POST /api/changes/:key/fix` keeps its meaning.
+
+## 2026-11-01 — The blame of the left side
+
+A reader who reviews a change asks who wrote the code that it changes, and
+why. Gerrit answers with a blame column beside the diff. qreview had none,
+so the reader ran `git blame` in a terminal, on a commit that they had to
+name.
+
+**Decision.** A blame column on the left side of the diff, drawn the way
+Gerrit draws it, behind a **Blame** button and `b`. Section 3.7 of the
+design holds the rules.
+
+- The left side only. The lines that the change adds are its own work.
+- `git blame --incremental` on the commit of the left side, with no option
+  of its own, so that the configuration of the user applies.
+- The whole file, once for the run. A blame of the lines on the screen
+  alone saves 30 to 40 percent, and each context that the reader opens
+  would cost one more call.
+- In two parts, decided on 2026-11-02. A catalog of 39 000 lines took 15
+  seconds, and the column showed nothing until the end. The lines of the
+  series come first, from a blame that stops under the series: 0.03
+  seconds. The other lines come from the blame of the commit under the
+  series, which every change of the series shares. On the catalog, the
+  two parts give what a plain `git blame` gives, on every line.
+- A route of its own, `GET /api/changes/:key/blame`. The interface asks
+  for it after the diff, and only while the column is on, so the diff
+  never waits for the history.
+- A click on a line that a change of the series wrote opens that change,
+  at that line.
+- Decided on 2026-11-03: a line that opens something is a link in full ink,
+  and a line that opens nothing is quieter. The first version drew every
+  line in full ink, so a reader could not tell which lines open. A line of
+  the series was a button, which the menu of the browser cannot open in a
+  new tab.
+
+Nothing in the storage format or the export moves.

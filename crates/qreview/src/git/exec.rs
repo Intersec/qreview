@@ -17,6 +17,13 @@ use tokio::process::Command;
 /// and answers in milliseconds. A call that runs this long is stuck.
 const TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How long a call that reads the whole history of a file may take. A
+/// blame of a large file that most commits touch runs for many seconds.
+pub const SLOW: Duration = Duration::from_secs(300);
+
+/// The answer of one call, shared by every caller that waits for it.
+type Answer = Arc<tokio::sync::OnceCell<String>>;
+
 /// A repository, addressed by its top level directory.
 ///
 /// A clone of it is the same repository, and shares what it has already
@@ -26,13 +33,13 @@ pub struct Git {
     root: PathBuf,
     /// The answers of the calls that can only ever answer one thing. See
     /// `text_of_object`.
-    answers: Arc<Mutex<HashMap<String, String>>>,
+    answers: Arc<Mutex<HashMap<String, Answer>>>,
 }
 
 impl Git {
     /// Find the repository that contains `cwd`.
     pub async fn discover(cwd: &Path) -> Result<Self> {
-        let out = run_in(cwd, &["rev-parse", "--show-toplevel"], &[]).await?;
+        let out = run_in(cwd, &["rev-parse", "--show-toplevel"], &[], TIMEOUT).await?;
         let root = String::from_utf8(out.stdout)
             .context("git printed a path that is not UTF-8")?
             .trim()
@@ -66,22 +73,38 @@ impl Git {
     /// A call that failed is never kept. `cat-file -e` on a commit this
     /// clone does not hold is the case that matters: the reader can fetch
     /// it, and then the answer is yes.
+    ///
+    /// Two callers that ask at once share one git. A blame runs for seconds,
+    /// and a reader who opens the file again must not start a second one.
     pub async fn text_of_object<S: AsRef<OsStr>>(&self, args: &[S]) -> Result<String> {
+        self.text_of_object_within(args, TIMEOUT).await
+    }
+
+    /// The same, for a call that may run up to `limit`.
+    pub async fn text_of_object_within<S: AsRef<OsStr>>(
+        &self,
+        args: &[S],
+        limit: Duration,
+    ) -> Result<String> {
         let key = args
             .iter()
             .map(|arg| arg.as_ref().to_string_lossy().into_owned())
             .collect::<Vec<_>>()
             .join("\0");
+        let answer = self.answers.lock().unwrap().entry(key).or_default().clone();
 
-        if let Some(hit) = self.answers.lock().unwrap().get(&key) {
+        if let Some(hit) = answer.get() {
             crate::trace::note(|| format!("git {}, from the cache", describe(args)));
             return Ok(hit.clone());
         }
+        let text = answer
+            .get_or_try_init(|| async {
+                let out = run_in(&self.root, args, &[], limit).await?;
+                String::from_utf8(out.stdout).context("git printed output that is not UTF-8")
+            })
+            .await?;
 
-        let text = self.text(args).await?;
-        self.answers.lock().unwrap().insert(key, text.clone());
-
-        Ok(text)
+        Ok(text.clone())
     }
 
     /// The same, with a few variables added to the environment.
@@ -93,7 +116,7 @@ impl Git {
         args: &[S],
         env: &[(&str, &str)],
     ) -> Result<String> {
-        let out = run_in(&self.root, args, env).await?;
+        let out = run_in(&self.root, args, env, TIMEOUT).await?;
         String::from_utf8(out.stdout).context("git printed output that is not UTF-8")
     }
 
@@ -103,7 +126,7 @@ impl Git {
     /// `merge-tree` does exactly that when the merge conflicts, which is the
     /// case we care about most.
     pub async fn output<S: AsRef<OsStr>>(&self, args: &[S]) -> Result<(bool, String)> {
-        let out = raw(&self.root, args, &[]).await?;
+        let out = raw(&self.root, args, &[], TIMEOUT).await?;
         let text = String::from_utf8_lossy(&out.stdout).into_owned();
 
         Ok((out.status.success(), text))
@@ -114,8 +137,9 @@ async fn run_in<S: AsRef<OsStr>>(
     dir: &Path,
     args: &[S],
     env: &[(&str, &str)],
+    limit: Duration,
 ) -> Result<std::process::Output> {
-    let out = raw(dir, args, env).await?;
+    let out = raw(dir, args, env, limit).await?;
 
     if !out.status.success() {
         let cmd = describe(args);
@@ -130,6 +154,7 @@ async fn raw<S: AsRef<OsStr>>(
     dir: &Path,
     args: &[S],
     env: &[(&str, &str)],
+    limit: Duration,
 ) -> Result<std::process::Output> {
     let mut cmd = Command::new("git");
     cmd.current_dir(dir)
@@ -147,7 +172,7 @@ async fn raw<S: AsRef<OsStr>>(
     }
 
     let started = crate::trace::start();
-    let out = tokio::time::timeout(TIMEOUT, cmd.output()).await;
+    let out = tokio::time::timeout(limit, cmd.output()).await;
     crate::trace::since(started, || format!("git {}", describe(args)));
 
     match out {
@@ -159,7 +184,7 @@ async fn raw<S: AsRef<OsStr>>(
         Err(_) => Err(anyhow!(
             "`git {}` did not answer in {}s",
             describe(args),
-            TIMEOUT.as_secs()
+            limit.as_secs()
         )),
     }
 }

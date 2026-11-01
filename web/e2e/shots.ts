@@ -105,6 +105,37 @@ for (const scheme of ['light', 'dark'] as const) {
   await openFile(page, 'net.blk');
   await page.screenshot({ path: join(OUT, `${scheme}-merge.png`) });
 
+  // The blame of the left side, and the tooltip of a line that the merge
+  // under the series wrote.
+  await openChange(page, /net: retry the read/);
+  await openFile(page, 'net.blk');
+  await page.keyboard.press('b');
+  await page
+    .locator('tr', { has: page.locator('td.gutter[data-column="old"]:text-is("3")') })
+    .locator('td.blame')
+    .hover();
+  await page.getByRole('tooltip').waitFor();
+  await page.screenshot({ path: join(OUT, `${scheme}-blame.png`) });
+  await page.keyboard.press('b');
+
+  // The blame while the older lines are on their way: the lines of the
+  // series first, held here until the shot is taken.
+  const whole = /\/blame\?(?!.*part=recent)/;
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(whole, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.locator('.file-bar h2').hover();
+  await page.keyboard.press('b');
+  await page.getByRole('button', { name: 'Loading blame…' }).waitFor();
+  await page.screenshot({ path: join(OUT, `${scheme}-blame-loading.png`) });
+  release();
+  await page.locator('td.blame .blame-wait').first().waitFor({ state: 'detached' });
+  await page.unroute(whole);
+  await page.keyboard.press('b');
+
   // A range picked with the keyboard, and the comment it offers.
   await openChange(page, /long: touch two places/);
   await openFile(page, 'long.c');

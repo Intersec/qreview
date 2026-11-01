@@ -2,9 +2,11 @@
 // and the diff of the file being read.
 
 import { defineStore } from 'pinia';
-import { computed, ref, type Ref } from 'vue';
+import { computed, ref, watch, type Ref } from 'vue';
 import { api, serverGone } from '@/api/client';
+import { byLine, type BlameTarget } from '@/diff/blame';
 import { Catchup } from '@/diff/catchup';
+import { COMMIT_MSG } from '@/diff/paths';
 import { moveDrafts } from '@/diff/drafts';
 import { askLeave, tell } from '@/notify';
 import { awaitsAgent, isBlocked, repliesBy } from '@/diff/threads';
@@ -12,6 +14,7 @@ import { isCurrent, open, rounds } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
   AgentTask,
+  Blame,
   ChangeComments,
   Comment,
   Config,
@@ -35,6 +38,9 @@ import type {
 /// these means the file list and the diff must be read again; a change to
 /// anything else is the browser's business alone.
 const SERVER_SIDE = ['context', 'ignoreWhitespace', 'syntax'];
+
+/// How long a blame loads before the page says so, in ms.
+const BLAME_SLOW = 1000;
 
 function touchesTheDiff(patch: object): boolean {
   const diff = (patch as { diff?: Record<string, unknown> }).diff;
@@ -824,6 +830,86 @@ export const useReview = defineStore('review', () => {
     });
   }
 
+  /// The blame column is on. The browser keeps it, as it keeps the pane:
+  /// it belongs to this screen, not to the tool.
+  const blameShown = ref(localStorage.getItem('qreview.blame') === 'shown');
+  /// Who wrote the lines on the left of the diff on the screen.
+  const blame = ref<Blame | null>(null);
+
+  /// True once the whole blame of the file on the screen has been on its way
+  /// for `BLAME_SLOW` ms. Most files answer sooner, and a sign that shows
+  /// for a moment only flickers.
+  const blameBusy = ref(false);
+
+  /// The blame by line, for the diff to paint. Null while the column is
+  /// off. Empty while it loads, so the table keeps its shape.
+  const blameLines = computed(() =>
+    blameShown.value && diff.value && diff.value.path !== COMMIT_MSG
+      ? byLine(blame.value ?? { commits: [] })
+      : null,
+  );
+
+  /// Every new diff is a new left side: another file, version, base, or
+  /// whitespace option. So the blame follows the diff, and nothing else.
+  watch(diff, () => void loadBlame());
+
+  /// Counts the loads, so that an answer to an earlier one is dropped.
+  let blameLoads = 0;
+
+  /// The lines of the series first, which take milliseconds, then the whole
+  /// file, which can take seconds on a file with a long history.
+  async function loadBlame() {
+    const shown = diff.value;
+    const key = changeKey.value;
+    const load = ++blameLoads;
+    blame.value = null;
+    blameBusy.value = false;
+    if (!blameShown.value || !shown || !key || shown.path === COMMIT_MSG) {
+      return;
+    }
+    const ask = (part?: 'recent') =>
+      api.blame(key, shown.path, patchSet.value, against.value, ignoreWs.value, part);
+    const current = () => load === blameLoads;
+
+    const slow = setTimeout(() => {
+      if (current()) {
+        blameBusy.value = true;
+      }
+    }, BLAME_SLOW);
+    try {
+      const recent = await ask('recent');
+      if (current()) {
+        blame.value = recent;
+      }
+      const whole = await ask();
+      if (current()) {
+        blame.value = whole;
+      }
+    } catch (e) {
+      if (current()) {
+        error.value = `The blame failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } finally {
+      clearTimeout(slow);
+      if (current()) {
+        blameBusy.value = false;
+      }
+    }
+  }
+
+  function toggleBlame() {
+    blameShown.value = !blameShown.value;
+    localStorage.setItem('qreview.blame', blameShown.value ? 'shown' : 'hidden');
+    void loadBlame();
+  }
+
+  /// A commit of the series opens in the review.
+  function blameTarget(commit: string): BlameTarget | null {
+    const change = series.value?.changes.find((c) => c.commit === commit);
+
+    return change ? { key: change.key } : null;
+  }
+
   function setSplit(value: boolean) {
     void savePrefs({ ui: { diff: value ? 'side-by-side' : 'unified' } });
   }
@@ -877,6 +963,10 @@ export const useReview = defineStore('review', () => {
     savePrefs,
     split,
     setSplit,
+    blameLines,
+    blameBusy,
+    toggleBlame,
+    blameTarget,
     ignoreWs,
     wrap,
     version,

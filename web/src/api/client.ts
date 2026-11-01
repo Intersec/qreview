@@ -2,6 +2,7 @@
 // load left behind, so nothing here carries it.
 
 import type {
+  Blame,
   ChangeComments,
   ChangeSummary,
   Config,
@@ -93,6 +94,26 @@ export const api = {
         ps: num(ps),
         base,
         ws: ignoreWs ? 'ignore' : undefined,
+      })}`,
+    ),
+
+  /// The whole blame, or with `recent` only the lines of the series, which
+  /// answers at once where the whole blame can take seconds.
+  blame: (
+    key: string,
+    file: string,
+    ps?: number,
+    base?: string,
+    ignoreWs = false,
+    part?: 'recent',
+  ) =>
+    call<Blame>(
+      `/api/changes/${encodeURIComponent(key)}/blame${query({
+        file,
+        ps: num(ps),
+        base,
+        ws: ignoreWs ? 'ignore' : undefined,
+        part,
       })}`,
     ),
 

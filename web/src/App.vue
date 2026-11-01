@@ -20,6 +20,7 @@ import { any as anyDraft } from './diff/drafts';
 import { describe as describeTask } from './activity';
 import { show as showSignal, signalOf } from './favicon';
 import type { Anchor, Comment } from './api/types';
+import type { BlameLine } from './diff/blame';
 
 const review = useReview();
 const {
@@ -47,6 +48,8 @@ const {
   mergeList,
   split,
   wrap,
+  blameLines,
+  blameBusy,
   config,
   patchSets,
   patchSet,
@@ -255,7 +258,10 @@ function goToVersion(ps: number | undefined, base: string | undefined) {
 
 /// Open the place a comment speaks of: the change, then the file, then the
 /// lines it covers.
-async function goToComment(key: string, anchor: Anchor | null | undefined) {
+async function goToComment(
+  key: string,
+  anchor: Pick<Anchor, 'file' | 'side' | 'startLine' | 'endLine'> | null | undefined,
+) {
   const file = anchor?.file ?? '';
   const move = async () => {
     if (key !== changeKey.value) {
@@ -271,6 +277,16 @@ async function goToComment(key: string, anchor: Anchor | null | undefined) {
   if (anchor && start !== null) {
     await nextTick();
     await diffView.value?.revealLines(anchor.side, start, anchor.endLine ?? start);
+  }
+}
+
+/// Open the change that wrote a line of the blame, on that line. The commit
+/// added it, so the line stands on the new side of its diff.
+function goToBlame(at: BlameLine) {
+  const target = review.blameTarget(at.commit.commit);
+  if (target) {
+    const line = { file: at.commit.path, side: 'new' as const, startLine: at.origin };
+    void goToComment(target.key, { ...line, endLine: at.origin });
   }
 }
 
@@ -402,6 +418,9 @@ function onKey(event: KeyboardEvent) {
       break;
     case 'u':
       toggleSide();
+      break;
+    case 'b':
+      review.toggleBlame();
       break;
     case ',':
       prefs.value = true;
@@ -712,7 +731,12 @@ onBeforeUnmount(() => {
             :posted-stranded="postedStranded"
             :read-only="readingOlder"
             :load-lines="review.loadLines"
+            :blame="blameLines"
+            :blame-busy="blameBusy"
+            :blame-target="review.blameTarget"
             @update:split="review.setSplit"
+            @update:blame="review.toggleBlame"
+            @open-blame="goToBlame"
             @add="review.addComment"
             @edit="(id, body) => review.editComment(id, { body })"
             @remove="review.deleteComment"
