@@ -422,6 +422,8 @@ A click on a line goes to the commit that wrote it:
 
 - If that commit is a change of the series, the change opens on the file,
   at that line, on the new side of its diff.
+- Otherwise, if Gerrit holds that commit, its change opens on Gerrit, in a
+  new tab. See section 6.5.
 - Otherwise the click does nothing.
 
 A line that opens something is a link, so the menu of the browser opens it
@@ -1047,6 +1049,43 @@ Gerrit is optional at every point. A query that fails, times out, or finds
 nothing produces a warning line in the interface and leaves the local review
 working. The default timeout is 5 seconds. `--no-gerrit` skips the query.
 
+### 6.5 The commits of a blame
+
+A line of the blame opens its change on Gerrit when the server holds its
+commit (section 3.7). The interface asks the server about the commits of
+the lines on the screen that the series does not hold, in one query:
+
+```sh
+ssh -p 29418 review.example.com gerrit query --format=JSON --patch-sets \
+    "(commit:4a91...f0 OR commit:77f2...9a) project:myproject"
+```
+
+A commit is held when a patch set of a change carries it. The link is the
+`url` of that change. A server with no web address gives no `url`, and
+then the line opens nothing.
+
+Gerrit is asked, and never guessed. A link built from the `Change-Id`
+alone would open an empty search for a commit that was never pushed.
+
+The interface asks after the blame is on the screen, so the column never
+waits for the round trip. A line becomes a link when the answer comes. A
+context that the reader opens asks about its new commits. The answers are
+kept for the run, the ones that found nothing included, and a refresh
+forgets them.
+
+Only the lines on the screen are asked about. The blame of a long file
+names thousands of commits, and each commit of a query costs the server
+time: on one server, a query of 5 commits took a second where 1 took 12
+ms. So one query carries at most 25 commits, and it may run for 30
+seconds, where the other queries stop after 5. Nobody waits for it: the
+column is already on the screen. A query that does not answer in time
+says nothing about its commits, so nothing is kept, and the next request
+that names them asks again. The queries of one file do not wait for the
+queries of another.
+
+A `change:` query is no faster. On the same server, one `Change-Id` took
+18 seconds.
+
 ## 7. Languages and colors
 
 The colors are computed in the server by `syntect`, which reads TextMate and
@@ -1124,6 +1163,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `GET /api/changes/:key/files?ps=2&base=parent` | The file list with the statistics, the commit message first |
 | `GET /api/changes/:key/diff?ps=2&base=parent&file=...` | The hunks of one file |
 | `GET /api/changes/:key/blame?ps=2&base=parent&file=...&part=recent` | Who wrote each line of the left side of the diff. With `part=recent`, only the lines that the series wrote. See section 3.7 |
+| `POST /api/gerrit/commits` | The page on Gerrit of each commit that the server holds. Body: `{ "commits": [sha] }`. Answers `{ "urls": { sha: url } }`. See section 6.5 |
 | `GET /api/changes/:key/lines?file=...&from=1&to=400` | A run of lines the diff left out, so the reader can open the context. A run of more than 2000 lines carries no syntax spans |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
 | `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column |

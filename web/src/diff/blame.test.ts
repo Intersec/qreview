@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byLine, head, label } from './blame';
+import { byLine, commitsOn, head, label } from './blame';
 import type { BlameCommit, BlameRange } from '@/api/types';
 
 function commit(sha: string, author: string, ranges: BlameRange[]): BlameCommit {
@@ -46,5 +46,19 @@ describe('head', () => {
       'Author: Jane Doe <jane@example.com>',
       'Date: 2026-10-30 14:02',
     ]);
+  });
+});
+
+describe('commitsOn', () => {
+  it('names each commit of the rows once, and none for a line of the right', () => {
+    const a = commit('a', 'Jane Doe', [{ start: 1, end: 2, origin: 1 }]);
+    const b = commit('b', 'John Roe', [{ start: 3, end: 3, origin: 3 }]);
+    const c = commit('c', 'Ann Poe', [{ start: 9, end: 9, origin: 9 }]);
+    const lines = byLine({ commits: [c, b, a] });
+
+    const rows = [{ oldLine: 2 }, { oldLine: null }, { oldLine: 3 }, { oldLine: 1 }];
+
+    // Line 9 is folded away: its commit is not on the screen.
+    expect(commitsOn(lines, rows)).toEqual([a.commit, b.commit]);
   });
 });

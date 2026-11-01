@@ -117,6 +117,14 @@ export const api = {
       })}`,
     ),
 
+  /// The page on Gerrit of each commit that the server holds.
+  gerritPages: (commits: string[]) =>
+    call<{ urls: Record<string, string> }>('/api/gerrit/commits', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commits }),
+    }),
+
   lines: (key: string, file: string, from: number, to: number, ps?: number) =>
     call<Row[]>(
       `/api/changes/${encodeURIComponent(key)}/lines${query({

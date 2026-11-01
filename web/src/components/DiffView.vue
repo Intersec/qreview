@@ -8,7 +8,7 @@ import ContextBar from './ContextBar.vue';
 import CommentCell from './CommentCell.vue';
 import DiffRow from './DiffRow.vue';
 import PostedCard from './PostedCard.vue';
-import type { BlameLine, BlameTarget } from '@/diff/blame';
+import { commitsOn, type BlameLine, type BlameTarget } from '@/diff/blame';
 import { gaps, type Gap } from '@/diff/gaps';
 import { HOVERED, wordAt } from '@/diff/hover';
 import { COMMIT_MSG, label } from '@/diff/paths';
@@ -74,6 +74,8 @@ const emit = defineEmits<{
   'update:split': [value: boolean];
   'update:blame': [];
   'open-blame': [at: BlameLine];
+  /// The commits of the blame on the lines on the screen.
+  'blame-shown': [commits: string[]];
   add: [comment: NewComment];
   edit: [id: string, body: string];
   remove: [id: string];
@@ -89,11 +91,13 @@ function peek(at: BlameLine, cell: HTMLElement) {
   peeking.value = { at, cell: cell.getBoundingClientRect() };
 }
 
-const peekAction = computed(() =>
-  peeking.value && props.blameTarget(peeking.value.at.commit.commit)
-    ? 'Click to open this change'
-    : null,
-);
+const peekAction = computed(() => {
+  const goes = peeking.value && props.blameTarget(peeking.value.at.commit.commit);
+  if (!goes) {
+    return null;
+  }
+  return 'url' in goes ? 'Click to open it on Gerrit' : 'Click to open this change';
+});
 
 /// The tooltip stands where the cell was. A scroll moves the cell and not
 /// the pointer, so the tooltip would point at another line.
@@ -391,6 +395,27 @@ const shown = computed(() => {
   }
   return out;
 });
+
+/// The commits of the blame on the lines on the screen, folded lines left
+/// out. Only these are worth a question to Gerrit. A string, so that the
+/// watch fires when the set changes and not on each new array.
+const blameOnScreen = computed(() =>
+  props.blame
+    ? commitsOn(props.blame, [
+        ...shown.value.flatMap((h) => h.rows),
+        ...[...opened.values()].flat(),
+      ]).join(' ')
+    : '',
+);
+watch(
+  blameOnScreen,
+  (commits) => {
+    if (commits) {
+      emit('blame-shown', commits.split(' '));
+    }
+  },
+  { immediate: true },
+);
 
 function sideOf(row: Row): Side {
   return row.kind === 'remove' ? 'old' : 'new';

@@ -6,8 +6,8 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
-import { openChange } from './act.ts';
+import { expect, test, type Page } from '@playwright/test';
+import { openChange, openFile } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -67,6 +67,52 @@ test('the version being reviewed is the last one in the list', async ({ page }) 
   // Every version says when it was pushed or written, the server's included.
   await expect(options.nth(0)).toContainText(/\d{4}-\d{2}-\d{2}/);
   await expect(options.nth(1)).toContainText(/\d{4}-\d{2}-\d{2}/);
+});
+
+test.describe('the blame', () => {
+  // The fake Gerrit holds the first commit of the history, which wrote every
+  // line of net.blk but the one of the merge under the series.
+  test.beforeEach(async ({ page }) => {
+    await openFile(page, 'net.blk');
+    await page.keyboard.press('b');
+  });
+
+  /// The cell of the blame on the row of a line of the left side.
+  function blameOf(page: Page, line: number) {
+    return page
+      .locator('tr', { has: page.locator(`td.gutter[data-column="old"]:text-is("${line}")`) })
+      .locator('td.blame');
+  }
+
+  test('a line of a commit that Gerrit holds opens it on Gerrit', async ({ page }) => {
+    const link = blameOf(page, 1).getByRole('link');
+
+    await expect(link).toHaveAttribute('href', 'https://review.example.com/c/myproject/+/12000');
+    await expect(link).toHaveAttribute('target', '_blank');
+    await blameOf(page, 1).hover();
+    await expect(page.getByRole('tooltip')).toContainText('Click to open it on Gerrit');
+  });
+
+  test('a commit of the series opens in the review, Gerrit or not', async ({ page }) => {
+    await expect(blameOf(page, 1).getByRole('link')).toHaveAttribute('target', '_blank');
+
+    const review = blameOf(page, 3).getByRole('link');
+    await expect(review).toHaveAttribute('href', /#change=/);
+    await expect(review).not.toHaveAttribute('target');
+  });
+
+  test('the commits of a blame are one query', async ({ page }) => {
+    // The link is there once the answer came, so the query is written down.
+    await expect(blameOf(page, 1).getByRole('link')).toBeVisible();
+    const log = readFileSync(join(server.fixture.bin!, 'queries.log'), 'utf8');
+    const asked = log.split('\n').filter((line) => line.includes('commit:'));
+
+    // The merge is a change of the series, so only the first commit of the
+    // history is asked about. Each test loads the page again, and the
+    // server still asks only once for the run.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(/\(commit:[0-9a-f]{40}\) project:myproject/);
+  });
 });
 
 test.describe('the query the start sends', () => {

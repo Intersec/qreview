@@ -309,6 +309,10 @@ export const useReview = defineStore('review', () => {
       const body = await api.refresh();
       series.value = body.series;
       void readWritten();
+      // The server asks Gerrit again after a refresh, so the page does too:
+      // a commit pushed since then has a page now.
+      askedGerrit = new Set();
+      gerritPages.value = {};
 
       const was = filePath.value;
       const here =
@@ -849,6 +853,11 @@ export const useReview = defineStore('review', () => {
       : null,
   );
 
+  /// The page on Gerrit of each commit of a blame that the server holds.
+  const gerritPages = ref<Record<string, string>>({});
+  /// The commits already asked about, whatever the answer.
+  let askedGerrit = new Set<string>();
+
   /// Every new diff is a new left side: another file, version, base, or
   /// whitespace option. So the blame follows the diff, and nothing else.
   watch(diff, () => void loadBlame());
@@ -903,11 +912,40 @@ export const useReview = defineStore('review', () => {
     void loadBlame();
   }
 
-  /// A commit of the series opens in the review.
+  /// Ask Gerrit about the commits of the blame on the screen that the series
+  /// does not hold.
+  ///
+  /// Only the lines on the screen: a long file can carry thousands of
+  /// commits, and each hundred is one more round trip to the server. A line
+  /// becomes a link when its answer comes.
+  async function findOnGerrit(shown: string[]) {
+    const commits = shown.filter((c) => !askedGerrit.has(c) && !blameTarget(c));
+    if (commits.length === 0) {
+      return;
+    }
+    const asked = askedGerrit;
+    commits.forEach((c) => asked.add(c));
+    try {
+      const { urls } = await api.gerritPages(commits);
+      if (asked === askedGerrit) {
+        gerritPages.value = { ...gerritPages.value, ...urls };
+      }
+    } catch {
+      // Gerrit is optional. A line with no page is a line that goes nowhere.
+      commits.forEach((c) => asked.delete(c));
+    }
+  }
+
+  /// A commit of the series opens in the review, and a commit that Gerrit
+  /// holds opens on Gerrit.
   function blameTarget(commit: string): BlameTarget | null {
     const change = series.value?.changes.find((c) => c.commit === commit);
+    if (change) {
+      return { key: change.key };
+    }
+    const url = gerritPages.value[commit];
 
-    return change ? { key: change.key } : null;
+    return url ? { url } : null;
   }
 
   function setSplit(value: boolean) {
@@ -967,6 +1005,7 @@ export const useReview = defineStore('review', () => {
     blameBusy,
     toggleBlame,
     blameTarget,
+    findOnGerrit,
     ignoreWs,
     wrap,
     version,

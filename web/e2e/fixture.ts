@@ -146,6 +146,26 @@ function fakeGerrit(base: string, repo: string): { bin: string; served: string }
     `${JSON.stringify(answer)}\n{"type":"stats","rowCount":1}\n`,
   );
 
+  // What the blame asks: which changes hold some commits. The server holds
+  // the first commit of the history, and nothing else of it.
+  const root = git(repo, ['rev-list', '--max-parents=0', 'HEAD']);
+  const holder = {
+    project: 'myproject',
+    branch: 'main',
+    id: 'Istarttreeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    number: 12000,
+    subject: 'base: start the tree',
+    url: 'https://review.example.com/c/myproject/+/12000',
+    status: 'MERGED',
+    patchSets: [
+      { number: 1, revision: root, ref: 'refs/changes/00/12000/1', createdOn: 1740000000 },
+    ],
+  };
+  writeFileSync(
+    join(bin, 'commits.json'),
+    `${JSON.stringify(holder)}\n{"type":"stats","rowCount":1}\n`,
+  );
+
   const ssh = join(bin, 'ssh');
   writeFileSync(
     ssh,
@@ -155,6 +175,7 @@ function fakeGerrit(base: string, repo: string): { bin: string; served: string }
       'case "$*" in',
       // Every query is written down, so a test can say how many were asked
       // and what each one carried.
+      `  *"gerrit query"*commit:*) echo "$*" >> ${JSON.stringify(join(bin, 'queries.log'))}; cat ${JSON.stringify(join(bin, 'commits.json'))} ;;`,
       `  *"gerrit query"*) echo "$*" >> ${JSON.stringify(join(bin, 'queries.log'))}; cat ${JSON.stringify(join(bin, 'query.json'))} ;;`,
       `  *git-upload-pack*) exec git-upload-pack ${JSON.stringify(bare)} ;;`,
       '  *) echo "fake ssh: $*" >&2; exit 1 ;;',

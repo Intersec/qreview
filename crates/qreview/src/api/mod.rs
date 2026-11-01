@@ -112,6 +112,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/files", get(files))
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/blame", get(blame))
+        .route("/api/gerrit/commits", post(gerrit_commits))
         .route("/api/changes/{key}/mergelist", get(mergelist))
         .route("/api/comments", get(all_comments))
         .route("/api/events", get(events))
@@ -707,6 +708,43 @@ struct BlameQuery {
     base: Option<String>,
     ws: Option<String>,
     part: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CommitsBody {
+    commits: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct GerritPages {
+    /// The page of the change that holds each commit, by commit.
+    urls: std::collections::HashMap<String, String>,
+}
+
+/// Where Gerrit shows each of some commits.
+///
+/// A commit that the server does not hold is absent, and so is every commit
+/// when Gerrit is off or does not answer.
+async fn gerrit_commits(
+    State(state): State<AppState>,
+    Json(body): Json<CommitsBody>,
+) -> Result<Json<GerritPages>, ApiError> {
+    // Each commit goes into a query on the server, so it must be a hash and
+    // nothing else.
+    if let Some(bad) = body
+        .commits
+        .iter()
+        .find(|commit| !crate::git::commit::is_object_name(commit))
+    {
+        return Err(ApiError::bad_request(format!(
+            "{bad} is not the full hash of a commit"
+        )));
+    }
+    let session = state.session.read().await;
+
+    Ok(Json(GerritPages {
+        urls: session.gerrit_pages(&body.commits).await,
+    }))
 }
 
 /// The review of a change, and where each comment lands in the patch set
@@ -1910,6 +1948,33 @@ mod tests {
         );
 
         let (status, _) = ask("/api/changes/Ithird/blame?file=a.txt&part=old").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    /// Gerrit is off in every test, so no commit has a page. A word that is
+    /// not a hash never reaches a query.
+    #[tokio::test]
+    async fn the_pages_of_commits_ask_for_hashes_and_need_gerrit() {
+        let repo = fixture().await;
+        let head = repo.sha("HEAD").await;
+        let server = server(&repo).await;
+
+        let (status, pages) = json(
+            server.clone(),
+            post(
+                "/api/gerrit/commits",
+                &format!(r#"{{ "commits": ["{head}"] }}"#),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(pages, serde_json::json!({ "urls": {} }));
+
+        let (status, _) = json(
+            server,
+            post("/api/gerrit/commits", r#"{ "commits": ["HEAD OR x"] }"#),
+        )
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 

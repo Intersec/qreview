@@ -35,6 +35,10 @@ use crate::worktree;
 /// looking for a line in it, not reading it in colour.
 const PLAIN_RUN: usize = 2000;
 
+/// The most commits that one Gerrit query asks about. Each one costs the
+/// server time: on one server, 5 commits took a second where 1 took 12 ms.
+const PAGES_PER_QUERY: usize = 25;
+
 pub struct Session {
     pub git: Git,
     pub repo: RepoInfo,
@@ -60,6 +64,9 @@ pub struct Session {
     linked: std::collections::HashMap<String, Vec<String>>,
     /// One query per change, kept for the life of the run.
     gerrit_answers: tokio::sync::Mutex<std::collections::HashMap<String, Option<gerrit::Change>>>,
+    /// The page of the change that holds each commit of a blame, or `None`
+    /// when Gerrit holds none. Asked once per commit for the run.
+    gerrit_pages: tokio::sync::Mutex<std::collections::HashMap<String, Option<String>>>,
     /// The file lists this run has read. Shared, so the task that reads the
     /// series ahead of the reader fills the same one.
     pub lists: Arc<diff::FileLists>,
@@ -164,6 +171,7 @@ impl Session {
             extends: Vec::new(),
             linked: std::collections::HashMap::new(),
             gerrit_answers: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            gerrit_pages: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             lists: Arc::new(diff::FileLists::default()),
         };
         session.make_keys_unique();
@@ -296,6 +304,7 @@ impl Session {
         // A patch set pushed since the page loaded is part of what git holds
         // now, so the answer kept for the run is thrown away.
         self.gerrit_answers.lock().await.clear();
+        self.gerrit_pages.lock().await.clear();
 
         for count in std::mem::take(&mut self.extends) {
             // The boundary can be gone, and then there is nothing to walk.
@@ -1433,6 +1442,67 @@ impl Session {
             .ok()?;
 
         Some(floor.clone())
+    }
+
+    /// The page on Gerrit of each commit that the server holds.
+    ///
+    /// A commit that the server does not hold is absent. Each query asks
+    /// about at most `PAGES_PER_QUERY` commits, and each answer is kept for
+    /// the run, the ones that found nothing included.
+    pub async fn gerrit_pages(
+        &self,
+        commits: &[String],
+    ) -> std::collections::HashMap<String, String> {
+        let Some(coords) = self.gerrit.as_ref() else {
+            return std::collections::HashMap::new();
+        };
+
+        // The lock is not held during a query. A file with a few commits must
+        // not wait behind one with thousands.
+        let mut wanted: Vec<String> = {
+            let known = self.gerrit_pages.lock().await;
+            commits
+                .iter()
+                .filter(|commit| !known.contains_key(*commit))
+                .cloned()
+                .collect()
+        };
+        wanted.sort_unstable();
+        wanted.dedup();
+
+        for chunk in wanted.chunks(PAGES_PER_QUERY) {
+            let asked: Vec<&str> = chunk.iter().map(String::as_str).collect();
+            match gerrit::query_commits(coords, &asked).await {
+                Ok(found) => {
+                    let mut known = self.gerrit_pages.lock().await;
+                    for commit in chunk {
+                        known.insert(commit.clone(), gerrit::url_of(&found, commit));
+                    }
+                }
+                // The server said no. Nothing is written down, so the next
+                // file asks again.
+                Err(gerrit::Failed::Refused(error)) => {
+                    eprintln!("qreview: {error}");
+                    break;
+                }
+                // Nothing answered in time. That says nothing about the
+                // commits, so none is written down: the next request that
+                // names them asks again. The other groups would wait as long.
+                Err(gerrit::Failed::Unreachable(error)) => {
+                    eprintln!("qreview: {error}");
+                    break;
+                }
+            }
+        }
+
+        let known = self.gerrit_pages.lock().await;
+        commits
+            .iter()
+            .filter_map(|commit| {
+                let url = known.get(commit)?.clone()?;
+                Some((commit.clone(), url))
+            })
+            .collect()
     }
 
     async fn is_commit(&self, rev: &str) -> bool {
