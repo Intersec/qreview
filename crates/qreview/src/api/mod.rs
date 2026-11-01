@@ -111,6 +111,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}", get(change).patch(mark_change))
         .route("/api/changes/{key}/files", get(files))
         .route("/api/changes/{key}/diff", get(diff))
+        .route("/api/changes/{key}/blame", get(blame))
         .route("/api/changes/{key}/mergelist", get(mergelist))
         .route("/api/comments", get(all_comments))
         .route("/api/events", get(events))
@@ -660,6 +661,52 @@ async fn diff(
         .await?
         .map(Json)
         .ok_or_else(|| ApiError::not_found(format!("{} is not in the change", query.file)))
+}
+
+/// Who wrote the lines of the file on the left of the diff.
+///
+/// The interface asks for it apart from the diff, and only while the column
+/// is on. A blame reads the history of the file, and the diff must not wait
+/// for that.
+async fn blame(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Query(query): Query<BlameQuery>,
+) -> Result<Json<crate::model::Blame>, ApiError> {
+    let part = match query.part.as_deref() {
+        None => crate::session::BlamePart::Whole,
+        Some("recent") => crate::session::BlamePart::Recent,
+        Some(other) => {
+            return Err(ApiError::bad_request(format!(
+                "{other} is not a part of a blame: use recent, or no part"
+            )));
+        }
+    };
+    let session = state.session.read().await;
+    let commit = target(&session, &key, query.ps).await?;
+    let against = resolve_base(&session, &key, parse_base(query.base.as_deref())?).await?;
+
+    Ok(Json(
+        session
+            .blame(
+                &commit,
+                &query.file,
+                &against,
+                &how(&state, query.ws.as_deref()),
+                part,
+            )
+            .await?,
+    ))
+}
+
+/// The query of a diff, and the part of the blame to read.
+#[derive(Deserialize)]
+struct BlameQuery {
+    file: String,
+    ps: Option<usize>,
+    base: Option<String>,
+    ws: Option<String>,
+    part: Option<String>,
 }
 
 /// The review of a change, and where each comment lands in the patch set
@@ -1721,6 +1768,208 @@ mod tests {
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body[0]["subject"], "side work");
+    }
+
+    /// The left of the diff is the parent, and each of its lines names the
+    /// commit that wrote it, with what the tooltip shows.
+    #[tokio::test]
+    async fn the_blame_names_who_wrote_each_line_on_the_left() {
+        let repo = build_repo(&[
+            commit("first: start").file("a.txt", "one\ntwo\nthree\n"),
+            commit("second: change a line")
+                .body("Why the line changed.")
+                .file("a.txt", "one\nTWO\nthree\n")
+                .author("Second Author", "second@example.com"),
+            commit("third: add a line")
+                .file("a.txt", "one\nTWO\nthree\nfour\n")
+                .file("new.txt", "new\n")
+                .change_id("Iblame"),
+        ])
+        .await;
+        let first = repo.sha("HEAD~2").await;
+        let second = repo.sha("HEAD~1").await;
+        let server = server(&repo).await;
+
+        let (status, blame) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Iblame/blame?file=a.txt", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let commits = blame["commits"].as_array().unwrap();
+        assert_eq!(commits.len(), 2);
+
+        assert_eq!(commits[0]["commit"], first.as_str());
+        assert_eq!(commits[0]["author"], "Test Author");
+        assert_eq!(commits[0]["path"], "a.txt");
+        assert_eq!(
+            commits[0]["ranges"],
+            serde_json::json!([
+                { "start": 1, "end": 1, "origin": 1 },
+                { "start": 3, "end": 3, "origin": 3 },
+            ])
+        );
+
+        assert_eq!(commits[1]["commit"], second.as_str());
+        assert_eq!(commits[1]["author"], "Second Author");
+        assert_eq!(commits[1]["email"], "second@example.com");
+        assert!(
+            commits[1]["date"]
+                .as_str()
+                .unwrap()
+                .starts_with("2026-01-01T")
+        );
+        assert!(
+            commits[1]["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("second: change a line\n\nWhy the line changed.")
+        );
+
+        // A file the change adds has no left side, and the message is no
+        // file of the history.
+        for file in ["new.txt", "/COMMIT_MSG"] {
+            let (status, blame) = json(
+                server.clone(),
+                get_with_cookie(&format!("/api/changes/Iblame/blame?file={file}"), TOKEN),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{file}");
+            assert_eq!(blame["commits"], serde_json::json!([]), "{file}");
+        }
+    }
+
+    /// The recent part names only the lines that the series wrote, at once.
+    /// The whole blame takes the others from the history under the series.
+    #[tokio::test]
+    async fn the_recent_part_of_a_blame_stops_at_the_series() {
+        let repo = build_repo(&[
+            commit("first: start").file("a.txt", "one\ntwo\nthree\n"),
+            commit("second: change a line").file("a.txt", "one\nTWO\nthree\n"),
+            commit("third: change a line")
+                .file("a.txt", "one\nTWO\nTHREE\n")
+                .change_id("Ithird"),
+            commit("fourth: add a line")
+                .file("a.txt", "one\nTWO\nTHREE\nfour\n")
+                .change_id("Ifourth"),
+        ])
+        .await;
+        let first = repo.sha("HEAD~3").await;
+        let second = repo.sha("HEAD~2").await;
+        let third = repo.sha("HEAD~1").await;
+        let opts = Options {
+            base: Some(second.clone()),
+            ..Options::new()
+        };
+        let app = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
+        let lines = |blame: &serde_json::Value| -> Vec<(String, u64, u64)> {
+            let mut out: Vec<(String, u64, u64)> = blame["commits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|c| {
+                    c["ranges"].as_array().unwrap().iter().map(|r| {
+                        (
+                            c["commit"].as_str().unwrap().to_owned(),
+                            r["start"].as_u64().unwrap(),
+                            r["end"].as_u64().unwrap(),
+                        )
+                    })
+                })
+                .collect();
+            out.sort_by_key(|(_, start, _)| *start);
+            out
+        };
+        let ask = |url: &str| json(app.clone(), get_with_cookie(url, TOKEN));
+
+        let (status, recent) = ask("/api/changes/Ifourth/blame?file=a.txt&part=recent").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(lines(&recent), [(third.clone(), 3, 3)]);
+
+        let (_, whole) = ask("/api/changes/Ifourth/blame?file=a.txt").await;
+        assert_eq!(
+            lines(&whole),
+            [
+                (first.clone(), 1, 1),
+                (second.clone(), 2, 2),
+                (third.clone(), 3, 3)
+            ]
+        );
+
+        // The oldest change stands on the base: all of its left is history.
+        let (_, recent) = ask("/api/changes/Ithird/blame?file=a.txt&part=recent").await;
+        assert_eq!(lines(&recent), []);
+        let (_, whole) = ask("/api/changes/Ithird/blame?file=a.txt").await;
+        assert_eq!(
+            lines(&whole),
+            [(first.clone(), 1, 1), (second, 2, 2), (first, 3, 3)]
+        );
+
+        let (status, _) = ask("/api/changes/Ithird/blame?file=a.txt&part=old").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    /// The left of a renamed file is the old path, so the blame reads that
+    /// one.
+    #[tokio::test]
+    async fn the_blame_of_a_renamed_file_reads_its_old_path() {
+        let repo = build_repo(&[
+            commit("first: start").file("old.txt", "one\ntwo\nthree\nfour\n"),
+            commit("second: rename")
+                .delete("old.txt")
+                .file("new.txt", "one\ntwo\nthree\nfour\nfive\n")
+                .change_id("Irename"),
+        ])
+        .await;
+        let server = server(&repo).await;
+
+        let (_, blame) = json(
+            server,
+            get_with_cookie("/api/changes/Irename/blame?file=new.txt", TOKEN),
+        )
+        .await;
+
+        assert_eq!(blame["commits"][0]["path"], "old.txt");
+        assert_eq!(blame["commits"][0]["ranges"][0]["end"], 4);
+    }
+
+    /// The auto-merge is a tree that no commit holds, so it has no history.
+    /// A parent of the merge is a commit, and it has one.
+    #[tokio::test]
+    async fn a_merge_has_a_blame_on_a_parent_and_none_on_the_auto_merge() {
+        let repo = merged().await;
+        let server = server(&repo).await;
+        let (_, session) = json(server.clone(), get_with_cookie("/api/session", TOKEN)).await;
+        let m = merge_key(&session);
+
+        let (status, auto) = json(
+            server.clone(),
+            get_with_cookie(&format!("/api/changes/{m}/blame?file=f"), TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(auto["commits"], serde_json::json!([]));
+
+        let (_, first) = json(
+            server,
+            get_with_cookie(
+                &format!("/api/changes/{m}/blame?file=f&base=parent1"),
+                TOKEN,
+            ),
+        )
+        .await;
+        let lines: Vec<u64> = first["commits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|c| c["ranges"].as_array().unwrap().clone())
+            .map(|r| r["end"].as_u64().unwrap() - r["start"].as_u64().unwrap() + 1)
+            .collect();
+        assert_eq!(lines.iter().sum::<u64>(), 3, "every line of the parent");
     }
 
     fn post(uri: &str, body: &str) -> Request<Body> {

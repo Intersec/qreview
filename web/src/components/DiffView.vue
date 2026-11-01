@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, provide, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue';
+import BlameCell from './BlameCell.vue';
+import BlameTip from './BlameTip.vue';
 import CommentBox from './CommentBox.vue';
 import CommentCard from './CommentCard.vue';
 import ContextBar from './ContextBar.vue';
 import CommentCell from './CommentCell.vue';
 import DiffRow from './DiffRow.vue';
 import PostedCard from './PostedCard.vue';
+import type { BlameLine, BlameTarget } from '@/diff/blame';
 import { gaps, type Gap } from '@/diff/gaps';
 import { HOVERED, wordAt } from '@/diff/hover';
 import { COMMIT_MSG, label } from '@/diff/paths';
@@ -58,13 +61,49 @@ const props = defineProps<{
   /// True when the diff leaves out what differs only by whitespace.
   /// True when a long line is folded rather than scrolled to.
   wrap: boolean;
+  /// Who wrote each line of the left side. Null while the blame is off, and
+  /// empty while it loads, so the table keeps its shape.
+  blame: Map<number, BlameLine> | null;
+  /// The whole blame is still on its way, and has been for a while. The
+  /// lines of the series may already be in `blame`.
+  blameBusy?: boolean;
+  /// Where a click on a line of the blame goes, or null when nowhere.
+  blameTarget: (commit: string) => BlameTarget | null;
 }>();
 const emit = defineEmits<{
   'update:split': [value: boolean];
+  'update:blame': [];
+  'open-blame': [at: BlameLine];
   add: [comment: NewComment];
   edit: [id: string, body: string];
   remove: [id: string];
 }>();
+
+/// The blame column, counted by the rows that span the whole table.
+const extra = computed(() => (props.blame ? 1 : 0));
+
+/// The line of the blame under the pointer, and where its cell stands.
+const peeking = ref<{ at: BlameLine; cell: DOMRect } | null>(null);
+
+function peek(at: BlameLine, cell: HTMLElement) {
+  peeking.value = { at, cell: cell.getBoundingClientRect() };
+}
+
+const peekAction = computed(() =>
+  peeking.value && props.blameTarget(peeking.value.at.commit.commit)
+    ? 'Click to open this change'
+    : null,
+);
+
+/// The tooltip stands where the cell was. A scroll moves the cell and not
+/// the pointer, so the tooltip would point at another line.
+function unpeek() {
+  peeking.value = null;
+}
+// A cell that goes away under the pointer never hears it leave.
+watch([() => props.blame === null, () => props.diff], unpeek);
+onMounted(() => window.addEventListener('scroll', unpeek, true));
+onBeforeUnmount(() => window.removeEventListener('scroll', unpeek, true));
 
 /// Above this, the browser spends more time building the DOM than the reader
 /// spends reading. The rest is one command away in the terminal.
@@ -158,6 +197,7 @@ const homeFile = computed(() =>
   props.paths.includes(COMMIT_MSG) ? COMMIT_MSG : (props.paths[0] ?? ''),
 );
 const isHome = computed(() => props.diff.path === homeFile.value);
+const isMessage = computed(() => props.diff.path === COMMIT_MSG);
 
 /// What stands before the first line of the file, the way Gerrit puts a
 /// remark about a file above line 1 rather than in a band of its own.
@@ -1043,6 +1083,19 @@ function toggle(row: Row | null, column: Side) {
         <button v-if="!readOnly" type="button" class="chip" @click="aboutFile = !aboutFile">
           {{ isHome ? 'Comment on the change' : 'Comment on the file' }}
         </button>
+        <!-- Who wrote the code the change works on, the way Gerrit shows
+           it. The message has no history to read. -->
+        <button
+          v-if="!isMessage"
+          type="button"
+          class="chip"
+          :aria-pressed="blame !== null"
+          :aria-busy="blame !== null && blameBusy"
+          title="Show who wrote each line on the left (b)"
+          @click="emit('update:blame')"
+        >
+          {{ blame !== null && blameBusy ? 'Loading blame…' : 'Blame' }}
+        </button>
         <button
           type="button"
           class="chip"
@@ -1096,6 +1149,7 @@ function toggle(row: Row | null, column: Side) {
     >
       <table v-if="split" class="code" :class="[wrap ? '' : 'nowrap', only]">
         <colgroup>
+          <col v-if="blame" class="blame-col" />
           <col class="gut" />
           <col />
           <col class="gut" />
@@ -1106,7 +1160,7 @@ function toggle(row: Row | null, column: Side) {
            screen, on every file, whether it held anything or not. -->
         <tbody v-if="opensWithRemarks">
           <tr class="talk">
-            <td colspan="4">
+            <td :colspan="4 + extra">
               <PostedCard
                 v-for="remark in postedBeforeFirstLine"
                 :key="remark.id"
@@ -1138,6 +1192,16 @@ function toggle(row: Row | null, column: Side) {
           <template v-if="block.kind === 'gap'">
             <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
               <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                <BlameCell
+                  v-if="blame"
+                  :line="row.oldLine"
+                  :lines="blame"
+                  :target="blameTarget"
+                  :waiting="blameBusy"
+                  @open="(at) => emit('open-blame', at)"
+                  @peek="peek"
+                  @leave="peeking = null"
+                />
                 <DiffRow
                   :row="row"
                   side="old"
@@ -1154,6 +1218,7 @@ function toggle(row: Row | null, column: Side) {
                 />
               </tr>
               <tr v-if="talkative(row, 'old') || talkative(row, 'new')" class="talk">
+                <td v-if="blame" class="blame" />
                 <td colspan="2">
                   <CommentCell
                     :comments="at(row, 'old')"
@@ -1192,12 +1257,22 @@ function toggle(row: Row | null, column: Side) {
               v-if="!isOpen(block.gap)"
               :from="rest(block.gap).from"
               :to="rest(block.gap).to"
-              :columns="4"
+              :columns="4 + extra"
               :busy="loading"
               @open="(from, to) => open(block.gap, from, to)"
             />
             <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
               <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                <BlameCell
+                  v-if="blame"
+                  :line="row.oldLine"
+                  :lines="blame"
+                  :target="blameTarget"
+                  :waiting="blameBusy"
+                  @open="(at) => emit('open-blame', at)"
+                  @peek="peek"
+                  @leave="peeking = null"
+                />
                 <DiffRow
                   :row="row"
                   side="old"
@@ -1214,6 +1289,7 @@ function toggle(row: Row | null, column: Side) {
                 />
               </tr>
               <tr v-if="talkative(row, 'old') || talkative(row, 'new')" class="talk">
+                <td v-if="blame" class="blame" />
                 <td colspan="2">
                   <CommentCell
                     :comments="at(row, 'old')"
@@ -1254,6 +1330,16 @@ function toggle(row: Row | null, column: Side) {
             <!-- A comment sits under the side it was written on, not across
                both, so the two columns keep meaning what they mean. -->
             <tr :class="onCursor(pair.left) || onCursor(pair.right) ? 'row-cursor' : ''">
+              <BlameCell
+                v-if="blame"
+                :line="pair.left?.oldLine ?? null"
+                :lines="blame"
+                :target="blameTarget"
+                :waiting="blameBusy"
+                @open="(at) => emit('open-blame', at)"
+                @peek="peek"
+                @leave="peeking = null"
+              />
               <DiffRow
                 :row="pair.left"
                 side="old"
@@ -1270,6 +1356,7 @@ function toggle(row: Row | null, column: Side) {
               />
             </tr>
             <tr v-if="talkative(pair.left, 'old') || talkative(pair.right, 'new')" class="talk">
+              <td v-if="blame" class="blame" />
               <td colspan="2">
                 <CommentCell
                   :comments="at(pair.left, 'old')"
@@ -1309,6 +1396,7 @@ function toggle(row: Row | null, column: Side) {
 
       <table v-else class="code" :class="[wrap ? '' : 'nowrap', only]">
         <colgroup>
+          <col v-if="blame" class="blame-col" />
           <col class="gut" />
           <col class="gut" />
           <col />
@@ -1318,7 +1406,7 @@ function toggle(row: Row | null, column: Side) {
            screen, on every file, whether it held anything or not. -->
         <tbody v-if="opensWithRemarks">
           <tr class="talk">
-            <td colspan="3">
+            <td :colspan="3 + extra">
               <PostedCard
                 v-for="remark in postedBeforeFirstLine"
                 :key="remark.id"
@@ -1350,6 +1438,16 @@ function toggle(row: Row | null, column: Side) {
           <template v-if="block.kind === 'gap'">
             <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
               <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                <BlameCell
+                  v-if="blame"
+                  :line="row.oldLine"
+                  :lines="blame"
+                  :target="blameTarget"
+                  :waiting="blameBusy"
+                  @open="(at) => emit('open-blame', at)"
+                  @peek="peek"
+                  @leave="peeking = null"
+                />
                 <td
                   class="gutter"
                   :class="[
@@ -1375,6 +1473,7 @@ function toggle(row: Row | null, column: Side) {
                 />
               </tr>
               <tr v-if="speaks(row)" class="talk">
+                <td v-if="blame" class="blame" />
                 <td colspan="3">
                   <CommentCell
                     v-for="column in columnsOf(row)"
@@ -1399,12 +1498,22 @@ function toggle(row: Row | null, column: Side) {
               v-if="!isOpen(block.gap)"
               :from="rest(block.gap).from"
               :to="rest(block.gap).to"
-              :columns="3"
+              :columns="3 + extra"
               :busy="loading"
               @open="(from, to) => open(block.gap, from, to)"
             />
             <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
               <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                <BlameCell
+                  v-if="blame"
+                  :line="row.oldLine"
+                  :lines="blame"
+                  :target="blameTarget"
+                  :waiting="blameBusy"
+                  @open="(at) => emit('open-blame', at)"
+                  @peek="peek"
+                  @leave="peeking = null"
+                />
                 <td
                   class="gutter"
                   :class="[
@@ -1430,6 +1539,7 @@ function toggle(row: Row | null, column: Side) {
                 />
               </tr>
               <tr v-if="speaks(row)" class="talk">
+                <td v-if="blame" class="blame" />
                 <td colspan="3">
                   <CommentCell
                     v-for="column in columnsOf(row)"
@@ -1454,6 +1564,16 @@ function toggle(row: Row | null, column: Side) {
 
           <template v-for="(row, r) in block.hunk?.rows ?? []" v-else :key="r">
             <tr :class="onCursor(row) ? 'row-cursor' : ''">
+              <BlameCell
+                v-if="blame"
+                :line="row.oldLine"
+                :lines="blame"
+                :target="blameTarget"
+                :waiting="blameBusy"
+                @open="(at) => emit('open-blame', at)"
+                @peek="peek"
+                @leave="peeking = null"
+              />
               <td
                 class="gutter"
                 :class="[
@@ -1479,6 +1599,7 @@ function toggle(row: Row | null, column: Side) {
               />
             </tr>
             <tr v-if="speaks(row)" class="talk">
+              <td v-if="blame" class="blame" />
               <td colspan="3">
                 <CommentCell
                   v-for="column in columnsOf(row)"
@@ -1512,6 +1633,8 @@ function toggle(row: Row | null, column: Side) {
     >
       {{ offerLabel }}
     </button>
+
+    <BlameTip v-if="peeking" :at="peeking.at" :cell="peeking.cell" :action="peekAction" />
 
     <p v-if="capped" role="status" class="note warn">
       This file is very large. {{ total - MAX_ROWS }} rows are not shown, because building them

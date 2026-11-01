@@ -375,3 +375,32 @@ export interface Review extends ChangeFile {
   /// of the copy: the thread they became, and the version it went to.
   moved?: Record<string, { id: string; commit: string }>;
 }
+
+/** Who wrote the lines of the file on the left of a diff. */
+export interface Blame {
+  /// Each commit once, in the order its first line comes. Empty when the
+  /// left has no history: an added file, the message, an auto-merge.
+  commits: BlameCommit[];
+}
+
+export interface BlameCommit {
+  commit: string;
+  author: string;
+  email: string;
+  /// The author date, ISO 8601 in UTC.
+  date: string;
+  /// The whole message, from the subject to the last trailer.
+  message: string;
+  /// The path of the file in that commit. A later rename changes it.
+  path: string;
+  ranges: BlameRange[];
+}
+
+/** Lines of the file on the left that one commit wrote. */
+export interface BlameRange {
+  start: number;
+  /// The last line, included.
+  end: number;
+  /// Where `start` stands in the commit that wrote it.
+  origin: number;
+}

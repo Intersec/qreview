@@ -353,6 +353,81 @@ back to `git diff-tree --cc`: a combined diff is a different format with no
 single old line number, and an untested parser for it is worse than a base
 selector the reader can see.
 
+### 3.7 Blame
+
+The diff can show who wrote each line of its left side, the way Gerrit
+does. The **Blame** button and `b` turn the column on and off. The browser
+keeps the choice (section 10.1).
+
+The column reads the left side only, because that is the code the change
+works on. The lines that the change adds are its own work, and a blame of
+the right side would name the change on each of them.
+
+| The left side | What the column shows |
+|---|---|
+| The parent, another version, or a parent of a merge | `git blame` of that commit, at the path of the left side |
+| The auto-merge | Nothing. It is a tree, and a tree has no history |
+| An added file, or the commit message | Nothing |
+
+The server runs `git blame --incremental` and adds no option of its own.
+So the configuration of the user applies, `blame.ignoreRevsFile` included,
+and the column agrees with the terminal.
+
+On a C code base with 240 000 commits, a file of 1 700 to 5 300 lines
+costs 0.2 to 0.6 seconds. A long file that most commits touch costs much
+more: a translation catalog of 39 000 lines and 7 400 commits takes 15
+seconds. So the blame comes in two parts, and the interface asks for one
+after the other:
+
+| Part | What the server runs | What it answers |
+|---|---|---|
+| `recent` | `git blame --incremental <floor>..<left> -- <path>` | The lines that a commit above the floor wrote. 0.03 seconds on that catalog |
+| whole | The same, then `git blame --incremental <commit> -- <path>` on each commit where the first blame stopped | Every line |
+
+The floor is the commit under the series, the one that the boundary card
+names. A line that the first blame leaves on a boundary commit names its
+place in that commit, and the blame of that commit names who wrote it. So
+the whole part answers what a plain `git blame` of the left side answers.
+On the catalog, the two agree on all 39 000 lines. Every change of the
+series shares the floor, so the long blame runs once per file for the run.
+When the left side is not above the floor, the whole part is a plain blame
+and the recent part is empty.
+
+The lines of the series show at once, and they are the ones that open in
+the review. If the whole part takes more than a second, the other lines
+show `…` and the button reads **Loading blame…**, the way Gerrit says it.
+A faster file shows neither, so nothing flickers from file to file. Gerrit
+also shows a message at the bottom of the page. qreview does not: the
+column stays on from file to file, and the message would come back each
+time. Two requests for one blame share one `git`. A blame may run for 5
+minutes, where any other call to git stops after 30 seconds.
+
+Two other ways were measured on the catalog, and neither helps. A blame of
+the lines on the screen alone (`-L`) still takes 4.5 seconds, because the
+oldest line decides, and each context that the reader opens costs one more
+call. The `--incremental` output, read as it comes, gives the lines on the
+screen last.
+
+The diff never waits for the blame: the interface asks for it after the
+diff, and only while the column is on.
+
+Each line shows the author date and the first name of the author. A line
+that opens something is in full ink, and a line that opens nothing is
+quieter, so the eye finds the links. Gerrit makes the rest of a run of one
+commit quieter instead, and that read as noise. The tooltip heads the
+commit the way `git log` does: the hash, the author and the date. The
+whole message follows.
+
+A click on a line goes to the commit that wrote it:
+
+- If that commit is a change of the series, the change opens on the file,
+  at that line, on the new side of its diff.
+- Otherwise the click does nothing.
+
+A line that opens something is a link, so the menu of the browser opens it
+in a new tab. A change of the series has the address of section 8.2, which
+names no line, so its new tab lands on the file.
+
 ## 4. Data model
 
 The types below are the contract between the two sides. The Rust structs in
@@ -443,6 +518,25 @@ type Span = {
   start: number;           // a byte offset into text
   end: number;
   cls: string;             // a CSS class, for example "src keyword control"
+};
+
+type Blame = {
+  commits: BlameCommit[];  // each commit once, in the order its first line
+                           //   comes. Empty when the left side has no history
+};
+
+type BlameCommit = {
+  commit: string;
+  author: string;
+  email: string;
+  date: string;            // the author date, ISO 8601 in UTC
+  message: string;         // the whole message
+  path: string;            // the path of the file in that commit
+  ranges: {
+    start: number;         // the first line, on the left side of the diff
+    end: number;           // the last line, included
+    origin: number;        // the line of start in that commit
+  }[];
 };
 ```
 
@@ -1029,6 +1123,7 @@ All routes are under `/api`, all answers are JSON, all errors carry
 | `PATCH /api/changes/:key` | Mark the change read, or unread |
 | `GET /api/changes/:key/files?ps=2&base=parent` | The file list with the statistics, the commit message first |
 | `GET /api/changes/:key/diff?ps=2&base=parent&file=...` | The hunks of one file |
+| `GET /api/changes/:key/blame?ps=2&base=parent&file=...&part=recent` | Who wrote each line of the left side of the diff. With `part=recent`, only the lines that the series wrote. See section 3.7 |
 | `GET /api/changes/:key/lines?file=...&from=1&to=400` | A run of lines the diff left out, so the reader can open the context. A run of more than 2000 lines carries no syntax spans |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
 | `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column |
@@ -1374,6 +1469,7 @@ configuration file never sees it:
 | `qreview.side` | The series pane is shown or hidden |
 | `qreview.side.width` | How wide the series pane is |
 | `qreview.comments.height` | How tall the list of comments is |
+| `qreview.blame` | The blame column is on or off |
 | `qreview.drafts` | Remarks typed and not saved, by change, file and line, and replies and edits by thread |
 
 A size dragged with the mouse would be a poor thing to write to a file that

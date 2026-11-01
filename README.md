@@ -70,6 +70,9 @@ What the browser shows:
   or on the change. Markdown in the body. Select the code with the mouse, or
   press `v` and grow the range with `j` and `k`.
 - A patch set selector, and a diff between any two versions.
+- A blame of the left side, the way Gerrit shows it: who wrote each line,
+  and when. The tooltip shows the commit. A click on a line that a change
+  of the series wrote opens that change at that line.
 - A merge read against the auto-merge, so you see the conflict resolution and
   not the whole branch it brought in.
 - A **⟳** button that reads the repository again, so an amend or a new
@@ -89,6 +92,7 @@ second set of habits. `?` lists them in the interface.
 | `v` | Start a range on this line. `j` and `k` grow it |
 | `c` | Write on the line, on the range, or on what the mouse selected |
 | `u` | Show or hide the series |
+| `b` | Show or hide the blame of the left side |
 | `/` | Filter the files |
 | `,` | Preferences |
 | `?` | The list of keys |
