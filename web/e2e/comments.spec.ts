@@ -1,7 +1,7 @@
 // What the session holds: the counts, and the list of them.
 
 import { expect, test, type Page } from '@playwright/test';
-import { openChange, openFile } from './act.ts';
+import { card, openChange, openFile, useSplit, useUnified } from './act.ts';
 import { start, type Running } from './server.ts';
 
 // A server for each test. Every test writes a comment, and a count that one
@@ -93,3 +93,43 @@ test('a row of the list opens the place it names', async ({ page }) => {
   await expect(page.locator('.file-bar h2')).toContainText('net.blk');
   await expect(page.locator('tr.row-cursor')).toHaveCount(1);
 });
+
+/// Write a remark on lines of `long.c` the way the agent does, past the page,
+/// and load the page again so it reads it.
+///
+/// The diff of `long.c` leaves lines 14 to 39 in a gap.
+async function remarkOnLong(page: Page, startLine: number, endLine: number) {
+  const api = (path: string) => new URL(path, server.url).href;
+  const session = (await (await page.request.get(api('/api/session'))).json()) as {
+    series: { changes: { key: string; subject: string }[] };
+  };
+  const long = session.series.changes.find((c) => c.subject.startsWith('long:'));
+  const body = `About lines ${startLine} to ${endLine}.`;
+  const answer = await page.request.post(api(`/api/changes/${long?.key}/comments`), {
+    data: { scope: 'line', file: 'src/long.c', side: 'new', startLine, endLine, body },
+  });
+  expect(answer.ok()).toBe(true);
+  await page.reload();
+
+  return body;
+}
+
+for (const view of ['unified', 'side by side'] as const) {
+  test(`a row of the list goes to a line opened by hand, ${view}`, async ({ page }) => {
+    const body = await remarkOnLong(page, 20, 20);
+    await openChange(page, /long: touch two places/);
+    await openFile(page, 'long.c');
+    await (view === 'unified' ? useUnified(page) : useSplit(page));
+
+    // The whole gap, so line 20 lands above where the bar stood.
+    await page.getByRole('button', { name: '+26 common lines' }).click();
+    await expect(card(page, body)).toBeVisible();
+
+    await page.locator('.comment-list .list-row', { hasText: body }).click();
+
+    // The keyboard landed on the line, but the row drew no cursor, so
+    // nothing scrolled to it.
+    await expect(page.locator('tr.row-cursor')).toHaveCount(1);
+    await expect(page.locator('tr.row-cursor')).toContainText('line 20');
+  });
+}

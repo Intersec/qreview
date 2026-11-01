@@ -1106,7 +1106,7 @@ function toggle(row: Row | null, column: Side) {
         <tbody v-for="(block, b) in blocks" :key="b">
           <template v-if="block.kind === 'gap'">
             <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
-              <tr>
+              <tr :class="onCursor(row) ? 'row-cursor' : ''">
                 <DiffRow
                   :row="row"
                   side="old"
@@ -1318,7 +1318,7 @@ function toggle(row: Row | null, column: Side) {
         <tbody v-for="(block, b) in blocks" :key="b">
           <template v-if="block.kind === 'gap'">
             <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
-              <tr>
+              <tr :class="onCursor(row) ? 'row-cursor' : ''">
                 <td
                   class="gutter"
                   :class="[
