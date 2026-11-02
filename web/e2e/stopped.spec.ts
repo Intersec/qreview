@@ -25,6 +25,29 @@ test('a stopped server leaves a banner that says to close the tab', async ({ pag
   }
 });
 
+test('a request that the stopped server cannot answer adds no alert', async ({ page }) => {
+  const server = await start();
+  try {
+    await page.goto(server.url);
+    await expect(page.getByRole('button', { name: /net: retry the read/ })).toBeVisible();
+    server.kill();
+    await expect(page.locator('.stopped')).toBeVisible();
+
+    // Another change asks the server, which is gone. The banner already
+    // says why, and a bare "Failed to fetch" beside it says nothing more.
+    const failed = page.waitForEvent('requestfailed', (r) => r.url().includes('/api/changes/'));
+    await page.getByRole('button', { name: /net: retry the read/ }).click();
+    await failed;
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+
+    expect(await page.getByRole('alert').allTextContents()).toEqual([
+      expect.stringContaining('The qreview server stopped'),
+    ]);
+  } finally {
+    server.stop();
+  }
+});
+
 test('a stopped server closes a tab that a script opened', async ({ page }) => {
   const server = await start();
   try {

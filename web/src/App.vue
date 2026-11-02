@@ -630,7 +630,9 @@ onBeforeUnmount(() => {
     <p v-else-if="agentLeft" role="status" class="agent-left">
       The agent stopped listening. To reattach it, ask it to run <code>qreview wait</code> again.
     </p>
-    <p v-if="error" role="alert" class="error">{{ error }}</p>
+    <!-- Once the server is gone, each request fails for that one reason,
+       and the banner above already gives it. -->
+    <p v-if="error && !stopped" role="alert" class="error">{{ error }}</p>
 
     <main
       v-if="series"
