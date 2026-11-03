@@ -12,6 +12,35 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.17.0]
+
+### Added
+
+- **Blame** — `b`, or the Blame button, shows who wrote each line of the left
+  side of the diff, the way Gerrit does. A tooltip shows the commit. A click
+  on a line that a change of the series wrote opens that change at that line.
+  A click on a line of a commit that Gerrit holds opens its change on Gerrit.
+  These lines are links, so they open in a new tab too. A line that opens
+  nothing is grey.
+- **More of the Gerrit keys** — `X` opens every folded line of the file, or
+  folds them back. `N` and `P` go to the next or the previous thread of the
+  file, and open its lines if they are folded. `e` unfolds every done thread
+  of the file, and `E` folds them all. `m` switches between the unified and
+  the side by side views. `r` marks the change read, or unread. `.` puts the
+  cursor on the code on the screen, after a scroll with the mouse.
+
+### Fixed
+
+- The top bar no longer misses an agent that connects or leaves while the
+  page loads or reads comments. It kept the old state for up to 30 seconds.
+- The cursor now shows on a line that you open above the bar of common lines,
+  and the page scrolls to it. Before, a click in the comment list on a thread
+  there did nothing.
+- A click in the comment list on a thread outside every hunk now opens the
+  folded lines and goes to the thread. Before, it did nothing.
+- A request that fails because the server stopped no longer shows a bare
+  `Failed to fetch` beside the banner that says the server stopped.
+
 ## [0.16.0]
 
 ### Added
