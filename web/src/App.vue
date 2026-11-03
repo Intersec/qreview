@@ -388,6 +388,9 @@ function onKey(event: KeyboardEvent) {
     case 'p':
       diffView.value?.moveHunk(-1);
       break;
+    case 'X':
+      void diffView.value?.toggleContext();
+      break;
     case ']':
       stepFile(1);
       break;

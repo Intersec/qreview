@@ -1,7 +1,7 @@
 // The lines a diff does not carry, opened from the bar between two hunks.
 
 import { expect, test } from '@playwright/test';
-import { card, openChange, openFile, useSplit } from './act.ts';
+import { card, openChange, openFile, useSplit, useUnified } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -110,3 +110,44 @@ for (const [button, line] of [
     await expect(card(page, `A remark on ${line}.`)).toBeVisible();
   });
 }
+
+for (const view of ['unified', 'side by side'] as const) {
+  test(`X opens every folded line, and X again folds them back, ${view}`, async ({ page }) => {
+    await (view === 'unified' ? useUnified(page) : useSplit(page));
+    const bar = page.getByRole('button', { name: '+26 common lines' });
+    await expect(bar).toBeVisible();
+
+    await page.keyboard.press('Shift+X');
+    await expect(page.getByText('line 20', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /common lines/ })).toHaveCount(0);
+
+    await page.keyboard.press('Shift+X');
+    await expect(bar).toBeVisible();
+    await expect(page.getByText('line 20', { exact: true })).toHaveCount(0);
+  });
+}
+
+test('X opens what a short step left folded, and draws each line once', async ({ page }) => {
+  await useUnified(page);
+  await page.getByRole('button', { name: '+10 ↑' }).click();
+  await expect(page.getByRole('button', { name: '+16 common lines' })).toBeVisible();
+
+  await page.keyboard.press('Shift+X');
+
+  await expect(page.getByRole('button', { name: /common lines/ })).toHaveCount(0);
+  await expect(page.getByText('line 14', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('line 39', { exact: true })).toHaveCount(1);
+});
+
+test('folding back takes the keyboard to the next line still shown', async ({ page }) => {
+  await useUnified(page);
+  await page.keyboard.press('Shift+X');
+  await page.locator('td.code-cell[data-line="20"]').first().click();
+  await expect(page.locator('tr.row-cursor')).toContainText('line 20');
+
+  await page.keyboard.press('Shift+X');
+
+  // Line 20 is folded again. The hunk below starts at line 40.
+  await expect(page.locator('tr.row-cursor')).toHaveCount(1);
+  await expect(page.locator('tr.row-cursor')).toContainText('line 40');
+});

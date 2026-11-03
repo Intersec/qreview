@@ -42,3 +42,22 @@ test('the colors go while the file is that long, and the bar says so', async ({ 
   await expect(page.locator('td.code-cell span[class*="tok-"]')).toHaveCount(0);
   await expect(page.locator('.file-bar')).toContainText('shown without color');
 });
+
+test('X opens the gaps on both sides of the hunk, and folds them back', async ({ page }) => {
+  // The fixture changes line 2480, so one gap stands above the hunk and one
+  // under it. One request reads both, and the hunk lines it also carries
+  // must not be drawn twice.
+  await expect(page.getByRole('button', { name: /common lines/ })).toHaveCount(2);
+
+  await page.keyboard.press('Shift+X');
+
+  await expect(page.getByRole('button', { name: /common lines/ })).toHaveCount(0);
+  await expect(page.getByText('int a1;', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('int a2475;', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('int a2500;', { exact: true })).toHaveCount(1);
+
+  // Folded back, the hunk is short again, and in color.
+  await page.keyboard.press('Shift+X');
+  await expect(page.getByRole('button', { name: /common lines/ })).toHaveCount(2);
+  await expect(page.locator('td.code-cell span[class*="tok-"]').first()).toBeVisible();
+});
