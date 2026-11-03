@@ -87,6 +87,7 @@ second set of habits. `?` lists them in the interface.
 | Key | What it does |
 |---|---|
 | `j` / `k` | The next or the previous line |
+| `.` | Put the cursor on the code on the screen |
 | `n` / `p` | The next or the previous hunk |
 | `N` / `P` | The next or the previous thread of the file, folded lines included |
 | `X` | Open every folded line of the file, or fold them back |

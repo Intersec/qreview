@@ -151,3 +151,29 @@ test('folding back takes the keyboard to the next line still shown', async ({ pa
   await expect(page.locator('tr.row-cursor')).toHaveCount(1);
   await expect(page.locator('tr.row-cursor')).toContainText('line 40');
 });
+
+test('. puts the cursor on the code on the screen, and leaves one that is there', async ({
+  page,
+}) => {
+  // Short enough that the 60 lines of the file do not fit.
+  await page.setViewportSize({ width: 1280, height: 500 });
+  await useUnified(page);
+  await page.keyboard.press('Shift+X');
+  await expect(page.getByRole('button', { name: /common lines/ })).toHaveCount(0);
+  await page.keyboard.press('j');
+  const first = page.locator('tr.row-cursor td.code-cell[data-line="1"]');
+  await expect(first).toHaveCount(1);
+
+  await page.keyboard.press('.');
+  await expect(first).toHaveCount(1);
+
+  // The mouse scrolls away from the cursor.
+  await page.locator('.diff-scroll').evaluate((code) => {
+    code.scrollTop = code.scrollHeight;
+  });
+  await expect(page.locator('tr.row-cursor')).not.toBeInViewport();
+
+  await page.keyboard.press('.');
+  await expect(page.locator('tr.row-cursor')).toBeInViewport();
+  await expect(first).toHaveCount(0);
+});

@@ -842,6 +842,50 @@ async function moveThread(by: number) {
   place(walkable.value.find((r) => lineIn(r, goes.side) === goes.end));
 }
 
+/// The box that scrolls the code.
+const scroller = ref<HTMLElement | null>(null);
+
+/// Put the keyboard on the code on the screen. This is `.` in Gerrit.
+///
+/// Without it, a reader who scrolled with the mouse goes back to the old
+/// line at the next `j`. A keyboard that is already on the screen stays.
+function cursorToScreen() {
+  const code = scroller.value;
+  const pane = code?.closest('.diff-pane');
+  if (!code || !pane) {
+    return;
+  }
+  // Both the code and the pane around it can scroll, and the file bar can
+  // stand over the code. What is on the screen is what all three leave.
+  const inner = code.getBoundingClientRect();
+  const outer = pane.getBoundingClientRect();
+  const bar = pane.querySelector('.file-bar')?.getBoundingClientRect();
+  const top = Math.max(inner.top, outer.top, bar?.bottom ?? outer.top);
+  const bottom = Math.min(inner.bottom, outer.bottom);
+  const seen = (element: Element) => {
+    const box = element.getBoundingClientRect();
+    return box.top >= top && box.bottom <= bottom;
+  };
+  const now = code.querySelector('.row-cursor');
+  if (now && seen(now)) {
+    return;
+  }
+
+  for (const cell of code.querySelectorAll<HTMLElement>('td.code-cell[data-line]')) {
+    if (!seen(cell)) {
+      continue;
+    }
+    const side: Side = cell.dataset.side === 'old' ? 'old' : 'new';
+    const line = Number(cell.dataset.line);
+    const row = walkable.value.find((r) => lineIn(r, side) === line);
+    if (row) {
+      clearPicked();
+      cursor.value = key(row);
+      return;
+    }
+  }
+}
+
 /// Write on what is picked, or on the line the keyboard is on.
 function commentHere() {
   if (props.readOnly) {
@@ -930,6 +974,7 @@ defineExpose({
   moveLine,
   moveHunk,
   moveThread,
+  cursorToScreen,
   commentHere,
   threadHere,
   startRange,
@@ -1324,6 +1369,7 @@ function toggle(row: Row | null, column: Side) {
 
     <div
       v-else
+      ref="scroller"
       class="diff-scroll"
       @mousedown="onDown"
       @mouseup="onSelect"
