@@ -35,6 +35,17 @@ test('a thread on a line is shown, read only', async ({ page }) => {
   await expect(thread.nth(0).getByRole('button')).toHaveCount(0);
 });
 
+test('N goes to a thread of Gerrit too', async ({ page }) => {
+  await expect(page.locator('tr.talk .posted-box').first()).toBeVisible();
+
+  await page.keyboard.press('Shift+N');
+
+  // The keyboard is on the line, and the card stands right under it.
+  await expect(page.locator('tr.row-cursor + tr.talk .posted-box').first()).toContainText(
+    'It still never stops.',
+  );
+});
+
 test('a remark about the whole file stands above the diff', async ({ page }) => {
   const band = page.locator('table.code .posted-box').filter({ hasText: 'buildbot' });
 

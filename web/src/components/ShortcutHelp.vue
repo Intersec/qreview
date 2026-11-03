@@ -6,6 +6,7 @@ defineEmits<{ close: [] }>();
 const KEYS: [string, string][] = [
   ['j / k', 'The next or the previous line'],
   ['n / p', 'The next or the previous hunk'],
+  ['N / P', 'The next or the previous thread of the file, folded lines included'],
   ['X', 'Open every folded line of the file, or fold them back'],
   ['] / [', 'The next or the previous file'],
   ['J / K', 'The next or the previous change'],

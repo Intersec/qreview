@@ -388,6 +388,12 @@ function onKey(event: KeyboardEvent) {
     case 'p':
       diffView.value?.moveHunk(-1);
       break;
+    case 'N':
+      void diffView.value?.moveThread(1);
+      break;
+    case 'P':
+      void diffView.value?.moveThread(-1);
+      break;
     case 'X':
       void diffView.value?.toggleContext();
       break;

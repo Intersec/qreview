@@ -165,3 +165,27 @@ test('a thread near the hunk below opens from that hunk', async ({ page }) => {
   // Three lines above the thread, then down to the hunk.
   await expect(page.getByRole('button', { name: '+19 common lines' })).toBeVisible();
 });
+
+for (const view of ['unified', 'side by side'] as const) {
+  test(`N and P walk the threads of the file, folded ones too, ${view}`, async ({ page }) => {
+    const folded = await remarkOnLong(page, 20, 22);
+    const shown = await remarkOnLong(page, 50, 50);
+    await openChange(page, /long: touch two places/);
+    await openFile(page, 'long.c');
+    await (view === 'unified' ? useUnified(page) : useSplit(page));
+    await expect(card(page, shown)).toBeVisible();
+    await expect(card(page, folded)).toBeHidden();
+
+    // The keyboard lands on the last line of the thread, where its card
+    // stands, and the folded lines open.
+    await page.keyboard.press('Shift+N');
+    await expect(page.locator('tr.row-cursor')).toContainText('line 22');
+    await expect(card(page, folded)).toBeVisible();
+
+    await page.keyboard.press('Shift+N');
+    await expect(page.locator('tr.row-cursor')).toContainText('LINE FIFTY');
+
+    await page.keyboard.press('Shift+P');
+    await expect(page.locator('tr.row-cursor')).toContainText('line 22');
+  });
+}
