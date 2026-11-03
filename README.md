@@ -88,6 +88,7 @@ second set of habits. `?` lists them in the interface.
 |---|---|
 | `j` / `k` | The next or the previous line |
 | `n` / `p` | The next or the previous hunk |
+| `X` | Open every folded line of the file, or fold them back |
 | `]` / `[` | The next or the previous file |
 | `J` / `K` | The next or the previous change |
 | `v` | Start a range on this line. `j` and `k` grow it |

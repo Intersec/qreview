@@ -334,30 +334,98 @@ function rowsAfter(gap: Gap): Row[] {
   return rowsOf(gap).filter((row) => (row.newLine ?? 0) > still.to);
 }
 
-/// Open a run of the gap, and keep what is still closed.
+/// Put the lines of a run into the gap, and keep what is still closed.
+function fill(gap: Gap, from: number, to: number, fetched: Row[]) {
+  for (const row of fetched) {
+    row.oldLine = row.newLine === null ? null : row.newLine + gap.offset;
+  }
+
+  const before = rowsOf(gap);
+  const all = [...before, ...fetched].sort((a, b) => (a.newLine ?? 0) - (b.newLine ?? 0));
+  opened.set(gap.key, all);
+
+  const range = rest(gap);
+  left.set(gap.key, {
+    from: from <= range.from ? to + 1 : range.from,
+    to: to >= range.to ? from - 1 : range.to,
+  });
+}
+
+/// Open a run of the gap.
 async function open(gap: Gap, from: number, to: number) {
   if (loading.value) {
     return;
   }
   loading.value = true;
   try {
-    const fetched = await props.loadLines(from, to);
-    for (const row of fetched) {
-      row.oldLine = row.newLine === null ? null : row.newLine + gap.offset;
+    fill(gap, from, to, await props.loadLines(from, to));
+  } finally {
+    loading.value = false;
+  }
+}
+
+/// Open every line that the gaps still hide. If none is left, fold every
+/// gap back. This is `X` in Gerrit.
+async function toggleContext() {
+  if (loading.value) {
+    return;
+  }
+  const closed = blocks.value.flatMap((block) =>
+    block.kind === 'gap' && !isOpen(block.gap) ? [block.gap] : [],
+  );
+  if (closed.length === 0) {
+    foldAll();
+    return;
+  }
+
+  // One request for all the gaps. The lines of the hunks between them come
+  // too, and are dropped. The server leaves the colors out of a run longer
+  // than its PLAIN_RUN. Such a run fills the table past MAX_ROWS, the same
+  // number, and the table is plain anyway.
+  const runs = closed.map(rest);
+  const diff = props.diff;
+  loading.value = true;
+  try {
+    const fetched = await props.loadLines(runs[0].from, runs[runs.length - 1].to);
+    // If the reader went to another file, these lines are not its lines. If
+    // the request failed, the gaps stay closed rather than open on nothing.
+    if (props.diff !== diff || fetched.length === 0) {
+      return;
     }
-
-    const before = rowsOf(gap);
-    const all = [...before, ...fetched].sort((a, b) => (a.newLine ?? 0) - (b.newLine ?? 0));
-    opened.set(gap.key, all);
-
-    const range = rest(gap);
-    left.set(gap.key, {
-      from: from <= range.from ? to + 1 : range.from,
-      to: to >= range.to ? from - 1 : range.to,
+    closed.forEach((gap, index) => {
+      const { from, to } = runs[index];
+      const inside = fetched.filter(
+        (row) => row.newLine !== null && row.newLine >= from && row.newLine <= to,
+      );
+      fill(gap, from, to, inside);
     });
   } finally {
     loading.value = false;
   }
+}
+
+/// Fold every gap back to what the diff carries.
+///
+/// If the keyboard was on a folded line, it goes to the next line that is
+/// still shown, so `j` and `k` go on from where the reader was.
+function foldAll() {
+  const was = walkable.value;
+  const at = was.findIndex((row) => key(row) === cursor.value);
+  opened.clear();
+  left.clear();
+  // The rows move, so the button of a selection would float over another
+  // line, and a range could end on a line that is not shown.
+  clearPicked();
+
+  const kept = new Set(walkable.value);
+  if (at === -1 || kept.has(was[at])) {
+    return;
+  }
+  const next =
+    was.slice(at).find((row) => kept.has(row)) ??
+    [...was.slice(0, at)].reverse().find((row) => kept.has(row));
+  cursor.value = null;
+  place(next);
 }
 
 const total = computed(() => props.diff.hunks.reduce((n, h) => n + h.rows.length, 0));
@@ -779,6 +847,7 @@ defineExpose({
   startRange,
   clearPicked,
   revealLines,
+  toggleContext,
 });
 
 /// True while the reader holds a selection that starts in the code.
