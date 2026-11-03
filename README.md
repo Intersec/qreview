@@ -95,6 +95,7 @@ second set of habits. `?` lists them in the interface.
 | `c` | Write on the line, on the range, or on what the mouse selected |
 | `u` | Show or hide the series |
 | `b` | Show or hide the blame of the left side |
+| `m` | Switch between the unified and the side by side views |
 | `/` | Filter the files |
 | `,` | Preferences |
 | `?` | The list of keys |

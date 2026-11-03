@@ -18,6 +18,7 @@ const KEYS: [string, string][] = [
   ],
   ['u', 'Show or hide the series'],
   ['b', 'Show or hide the blame of the left side'],
+  ['m', 'Switch between the unified and the side by side views'],
   ['/', 'Filter the files'],
   [', ', 'Preferences'],
   ['?', 'This list'],
