@@ -1100,6 +1100,8 @@ struct EventsQuery {
     /// `agent` on a wait of `qreview wait`, so the server knows one listens.
     /// `reader` on a wait of the page, so the server knows the page is open.
     who: Option<String>,
+    /// The `state` of the last answer that the party got.
+    state: Option<String>,
 }
 
 /// How long a wait on the events is held before it answers empty. Short
@@ -1114,7 +1116,10 @@ async fn events(State(state): State<AppState>, Query(query): Query<EventsQuery>)
     let mut agent = (query.who.as_deref() == Some("agent")).then(|| state.events.agent_waits());
     let _page = (query.who.as_deref() == Some("reader")).then(|| state.events.page_waits());
 
-    let batch = state.events.after(query.after, EVENTS_WAIT).await;
+    let batch = state
+        .events
+        .after(query.after, EVENTS_WAIT, query.state.as_deref())
+        .await;
     // Reached only when the agent did not hang up, which drops this future.
     if let Some(agent) = &mut agent {
         agent.answered();
@@ -3520,6 +3525,32 @@ mod tests {
 
         assert_eq!(state.busy.lock().unwrap().in_hand, 0);
         waiting.abort();
+    }
+
+    #[tokio::test]
+    async fn a_page_wait_with_an_old_state_answers_at_once() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        let server = app(state.clone());
+        let (_, start) = json(server.clone(), get_with_cookie("/api/events", TOKEN)).await;
+        assert_eq!(start["agent"], false);
+
+        let mut waiting = state.events.agent_waits();
+        waiting.answered();
+        drop(waiting);
+
+        let uri = format!(
+            "/api/events?after={}&who=reader&state={}",
+            start["next"],
+            start["state"].as_str().unwrap()
+        );
+        let (_, batch) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            json(server, get_with_cookie(&uri, TOKEN)),
+        )
+        .await
+        .expect("the page knew of no agent");
+        assert_eq!(batch["agent"], true);
     }
 
     #[tokio::test]

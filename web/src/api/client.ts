@@ -180,9 +180,9 @@ export const api = {
   /// The writes to the store after a number, held until one comes.
   /// A wait names the page, so the server says in its terminal when the
   /// page closes.
-  events: (after?: number) =>
+  events: (after?: number, state?: string) =>
     call<EventBatch>(
-      `/api/events${query({ after: num(after), who: after === undefined ? undefined : 'reader' })}`,
+      `/api/events${query({ after: num(after), who: after === undefined ? undefined : 'reader', state })}`,
     ),
 
   /// Where places of one version stand in the next one. Null for a file the

@@ -245,6 +245,9 @@ export interface EventBatch {
   left: boolean;
   /// What the agent does now.
   task: AgentTask | null;
+  /// A digest of `agent`, `working`, `left` and `task`. The next wait sends
+  /// it back, and answers at once if the digest changed since.
+  state: string;
 }
 
 /// A piece of work that the reader handed to the agent.

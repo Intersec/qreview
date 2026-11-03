@@ -5,6 +5,7 @@
 //! every write when it makes it, and each party learns of the other's here.
 
 use std::collections::VecDeque;
+use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -87,10 +88,13 @@ pub struct Batch {
     pub left: bool,
     /// What the agent does now, so the page can name it.
     pub task: Option<Task>,
+    /// A digest of `agent`, `working`, `left` and `task`. A page sends back
+    /// the last one it got, and its next wait answers at once if it changed.
+    pub state: String,
 }
 
 /// A piece of work that the reader handed to the agent.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
     pub kind: TaskKind,
@@ -100,7 +104,7 @@ pub struct Task {
     pub id: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub enum TaskKind {
     Fix,
@@ -366,15 +370,16 @@ impl Events {
         self.notify.notify_waiters();
     }
 
-    /// The events after `after`, as soon as there is one, or none once
-    /// `wait` has passed. With no `after`, the number to start from, at once.
     /// Answer every wait now, and every later one at once.
     pub fn close(&self) {
         self.closed.store(true, std::sync::atomic::Ordering::SeqCst);
         self.notify.notify_waiters();
     }
 
-    pub async fn after(&self, after: Option<u64>, wait: Duration) -> Batch {
+    /// The events after `after`, as soon as there is one, or none once
+    /// `wait` has passed. With no `after`, the number to start from, at once.
+    /// If `seen` is not the state of now, the wait answers at once too.
+    pub async fn after(&self, after: Option<u64>, wait: Duration, seen: Option<&str>) -> Batch {
         let Some(after) = after else {
             return self.since(u64::MAX);
         };
@@ -387,7 +392,10 @@ impl Events {
 
         let batch = self.since(after);
         let closed = self.closed.load(std::sync::atomic::Ordering::SeqCst);
-        if !batch.events.is_empty() || batch.reset || closed {
+        // The agent can arrive or leave between two waits of a page, when
+        // no wait is there to wake.
+        let changed = seen.is_some_and(|seen| seen != batch.state);
+        if !batch.events.is_empty() || batch.reset || closed || changed {
             return batch;
         }
         // The page shows the agent as gone once its grace runs out, with no
@@ -403,6 +411,11 @@ impl Events {
         let agent = self.agent_listens();
         let left = self.agent_left();
         let task = self.agent_task();
+        let state = {
+            let mut hasher = std::hash::DefaultHasher::new();
+            (agent, working, left, &task).hash(&mut hasher);
+            format!("{:016x}", hasher.finish())
+        };
         let log = self.log.lock().expect("the event log is poisoned");
         let next = log.last;
 
@@ -415,6 +428,7 @@ impl Events {
                 working,
                 left,
                 task: task.clone(),
+                state: state.clone(),
             };
         }
         let first = log.kept.front().map_or(log.last + 1, |e| e.seq);
@@ -429,6 +443,7 @@ impl Events {
                 working,
                 left,
                 task: task.clone(),
+                state: state.clone(),
             };
         }
         Batch {
@@ -439,6 +454,7 @@ impl Events {
             working,
             left,
             task,
+            state,
         }
     }
 }
@@ -490,7 +506,7 @@ mod tests {
         let events = Events::default();
         events.push(Kind::Comment, Author::Reader, "I1", Some("c-1"));
 
-        let batch = events.after(None, Duration::from_secs(30)).await;
+        let batch = events.after(None, Duration::from_secs(30), None).await;
 
         assert_eq!(batch.events, []);
         assert_eq!(batch.next, 1);
@@ -503,7 +519,7 @@ mod tests {
         events.push(Kind::Comment, Author::Reader, "I1", Some("c-1"));
         events.push(Kind::Reply, Author::Agent, "I1", Some("c-2"));
 
-        let batch = events.after(Some(1), SHORT).await;
+        let batch = events.after(Some(1), SHORT, None).await;
 
         assert_eq!(batch.events.len(), 1);
         assert_eq!(batch.events[0].kind, Kind::Reply);
@@ -515,7 +531,7 @@ mod tests {
     async fn a_wait_ends_empty_when_nothing_comes() {
         let events = Events::default();
 
-        let batch = events.after(Some(0), SHORT).await;
+        let batch = events.after(Some(0), SHORT, None).await;
 
         assert_eq!(batch.events, []);
         assert_eq!(batch.next, 0);
@@ -527,7 +543,7 @@ mod tests {
         let events = Arc::new(Events::default());
         let waiting = {
             let events = events.clone();
-            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30)).await })
+            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30), None).await })
         };
         tokio::time::sleep(SHORT).await;
 
@@ -545,7 +561,7 @@ mod tests {
         let events = Arc::new(Events::default());
         let waiting = {
             let events = events.clone();
-            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30)).await })
+            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30), None).await })
         };
         tokio::time::sleep(SHORT).await;
 
@@ -557,7 +573,7 @@ mod tests {
             .unwrap();
         let later = tokio::time::timeout(
             Duration::from_secs(5),
-            events.after(Some(0), Duration::from_secs(30)),
+            events.after(Some(0), Duration::from_secs(30), None),
         )
         .await;
         assert!(
@@ -606,7 +622,7 @@ mod tests {
         let waiting = events.agent_waits();
         let page = {
             let events = events.clone();
-            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30)).await })
+            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30), None).await })
         };
         tokio::time::sleep(SHORT).await;
 
@@ -621,7 +637,7 @@ mod tests {
             Some(std::time::Instant::now() - HUNG_UP_FOR + Duration::from_millis(200));
         let gone = tokio::time::timeout(
             Duration::from_secs(1),
-            events.after(Some(0), Duration::from_secs(30)),
+            events.after(Some(0), Duration::from_secs(30), None),
         )
         .await
         .expect("the page wait ends with the grace");
@@ -629,19 +645,78 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_agent_that_listened_and_stopped_has_left() {
+    async fn a_page_wait_hears_at_once_of_an_agent_that_came_since_its_last_answer() {
         let events = Events::default();
-        assert!(!events.after(None, SHORT).await.left, "no agent came yet");
+        let start = events.after(None, SHORT, None).await;
+        assert!(!start.agent);
 
-        drop(events.agent_waits());
-        assert!(!events.after(None, SHORT).await.left);
+        // Between two waits of the page: nothing to wake.
+        let mut waiting = events.agent_waits();
+        waiting.answered();
+        drop(waiting);
+
+        let came = tokio::time::timeout(
+            Duration::from_secs(1),
+            events.after(
+                Some(start.next),
+                Duration::from_secs(30),
+                Some(&start.state),
+            ),
+        )
+        .await
+        .expect("the page knew of no agent");
+        assert!(came.agent);
+
+        let held = tokio::time::timeout(
+            SHORT,
+            events.after(Some(came.next), Duration::from_secs(30), Some(&came.state)),
+        )
+        .await;
+        assert!(held.is_err(), "the page knows of the agent: nothing to say");
+    }
+
+    #[tokio::test]
+    async fn a_page_wait_hears_at_once_of_an_agent_that_left_since_its_last_answer() {
+        let events = Events::default();
+        let mut waiting = events.agent_waits();
+        waiting.answered();
+        drop(waiting);
+        let start = events.after(None, SHORT, None).await;
+        assert!(start.agent);
 
         events.agent.lock().unwrap().ended =
             Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
-        assert!(events.after(None, SHORT).await.left);
+        let gone = tokio::time::timeout(
+            Duration::from_secs(1),
+            events.after(
+                Some(start.next),
+                Duration::from_secs(30),
+                Some(&start.state),
+            ),
+        )
+        .await
+        .expect("the page still shows the agent");
+        assert!(!gone.agent);
+        assert!(gone.left);
+    }
+
+    #[tokio::test]
+    async fn an_agent_that_listened_and_stopped_has_left() {
+        let events = Events::default();
+        assert!(
+            !events.after(None, SHORT, None).await.left,
+            "no agent came yet"
+        );
 
         drop(events.agent_waits());
-        assert!(!events.after(None, SHORT).await.left, "it came back");
+        assert!(!events.after(None, SHORT, None).await.left);
+
+        events.agent.lock().unwrap().ended =
+            Some(std::time::Instant::now() - LISTENS_FOR - Duration::from_secs(1));
+        assert!(events.after(None, SHORT, None).await.left);
+
+        drop(events.agent_waits());
+        assert!(!events.after(None, SHORT, None).await.left, "it came back");
     }
 
     #[tokio::test]
@@ -665,7 +740,7 @@ mod tests {
         let events = Arc::new(Events::default());
         let page = {
             let events = events.clone();
-            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30)).await })
+            tokio::spawn(async move { events.after(Some(0), Duration::from_secs(30), None).await })
         };
         tokio::time::sleep(SHORT).await;
 
@@ -695,7 +770,7 @@ mod tests {
         );
 
         events.push(Kind::Fix, Author::Reader, "I2", None);
-        let task = events.after(None, SHORT).await.task.unwrap();
+        let task = events.after(None, SHORT, None).await.task.unwrap();
         assert_eq!((task.kind, task.key.as_str()), (TaskKind::Fix, "I2"));
 
         drop(events.agent_waits());
@@ -715,7 +790,7 @@ mod tests {
         let events = Events::default();
         drop(events.agent_waits());
         assert_eq!(
-            events.after(None, SHORT).await.next,
+            events.after(None, SHORT, None).await.next,
             0,
             "nothing written yet"
         );
@@ -725,7 +800,7 @@ mod tests {
         drop(events.agent_waits());
         drop(events.agent_waits());
 
-        let batch = events.after(Some(2), SHORT).await;
+        let batch = events.after(Some(2), SHORT, None).await;
         assert_eq!(batch.events.len(), 1, "one idle, not one per wait");
         assert_eq!(batch.events[0].kind, Kind::Idle);
     }
@@ -763,13 +838,15 @@ mod tests {
             },
         );
 
-        let json = serde_json::to_value(&events.after(Some(0), SHORT).await.events[0]).unwrap();
+        let json =
+            serde_json::to_value(&events.after(Some(0), SHORT, None).await.events[0]).unwrap();
         assert_eq!(json["from"], "a");
         assert_eq!(json["to"], "b");
         assert_eq!(json["fromKey"], "sha-a");
         let other = Events::default();
         other.push(Kind::Reply, Author::Agent, "I1", None);
-        let json = serde_json::to_value(&other.after(Some(0), SHORT).await.events[0]).unwrap();
+        let json =
+            serde_json::to_value(&other.after(Some(0), SHORT, None).await.events[0]).unwrap();
         assert!(json.get("from").is_none());
     }
 
@@ -777,7 +854,7 @@ mod tests {
     async fn a_number_this_server_never_gave_reads_everything_again() {
         let events = Events::default();
 
-        assert!(events.after(Some(7), SHORT).await.reset);
+        assert!(events.after(Some(7), SHORT, None).await.reset);
     }
 
     #[tokio::test]
@@ -787,7 +864,7 @@ mod tests {
             events.push(Kind::Comment, Author::Reader, "I1", None);
         }
 
-        assert!(events.after(Some(1), SHORT).await.reset);
-        assert!(!events.after(Some(2), SHORT).await.reset);
+        assert!(events.after(Some(1), SHORT, None).await.reset);
+        assert!(!events.after(Some(2), SHORT, None).await.reset);
     }
 }

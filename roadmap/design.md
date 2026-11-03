@@ -1266,6 +1266,8 @@ for 5 seconds more. An agent that arrives or hangs up wakes the waits of
 the pages, and a page wait answers when that grace runs out, so the page
 hears of it at once and not at the end of its wait.
 
+Each answer also carries `state`, a digest of `agent`, `working`, `left` and `task`. A page wait sends back, as `state=<digest>`, the `state` of the last answer that the page got. If the digest changed since, the wait answers at once. An agent can arrive or leave between two waits of a page, when no wait is there to wake, and the next wait hears of it this way. A wait with no `state` holds as before.
+
 `task` names what the agent does: `{ "kind": "fix", "key" }` during a fix,
 with an empty key on a fix of the series,
 `{ "kind": "answer", "key", "id" }` after an `ask` that reached a listening

@@ -704,6 +704,7 @@ export const useReview = defineStore('review', () => {
       try {
         const start = await api.events();
         let after = start.next;
+        let state = start.state;
         agent.value = start.agent;
         agentLeft.value = start.left;
         task.value = start.task;
@@ -720,8 +721,9 @@ export const useReview = defineStore('review', () => {
           start.working,
         );
         for (;;) {
-          const batch = await api.events(after);
+          const batch = await api.events(after, state);
           after = batch.next;
+          state = batch.state;
           if (agent.value && !batch.agent) {
             tell('The agent disconnected', 'Ask it to run qreview wait again.');
           }

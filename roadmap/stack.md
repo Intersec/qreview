@@ -989,3 +989,13 @@ on Gerrit. Section 6.5 of the design holds the rules.
   not, because the reader reviews it here.
 
 Nothing in the storage format or the export moves.
+
+## 2026-11-03 — A page wait sends back what it knows of the agent
+
+An agent that arrived between two waits of a page woke no wait. The next wait of the page then held for up to 30 seconds, and the top bar said that no agent listened. The same gap kept "Agent connected" for up to 30 seconds after the agent left. A page has such a gap after each answer: it reads the comments that an event names before it waits again, and a page that loads has one too.
+
+**Decision.** Each answer of `/api/events` carries `state`, a digest of `agent`, `working`, `left` and `task`. The page sends back the last one it got. If the state changed since, the wait answers at once. A party that sends no `state` waits as before, so `qreview wait` does not change.
+
+Rejected: an event in the log for each arrival and each departure. A departure has no moment of its own: the grace runs out, and nothing runs then to write the event. `qreview wait` would also have to skip these events.
+
+Nothing in the storage format or the export moves.
