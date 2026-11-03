@@ -428,6 +428,12 @@ function onKey(event: KeyboardEvent) {
     case 'm':
       review.setSplit(!split.value);
       break;
+    case 'r':
+      // Gerrit marks a file. qreview marks the change, as its series does.
+      if (change.value) {
+        void review.markChange(change.value.key, !change.value.reviewed);
+      }
+      break;
     case ',':
       prefs.value = true;
       break;

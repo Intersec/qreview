@@ -9,6 +9,7 @@ const KEYS: [string, string][] = [
   ['X', 'Open every folded line of the file, or fold them back'],
   ['] / [', 'The next or the previous file'],
   ['J / K', 'The next or the previous change'],
+  ['r', 'Mark the change read, or unread'],
   ['v', 'Start a range on this line. j and k grow it'],
   ['c', 'Write on the line, or on the range, or on what the mouse selected'],
   ['a / A', 'Ask the agent to fix this change, or the whole series'],
