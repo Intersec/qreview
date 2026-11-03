@@ -382,6 +382,9 @@ function onKey(event: KeyboardEvent) {
     case 'k':
       diffView.value?.moveLine(-1);
       break;
+    case '.':
+      diffView.value?.cursorToScreen();
+      break;
     case 'n':
       diffView.value?.moveHunk(1);
       break;
