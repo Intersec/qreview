@@ -755,6 +755,82 @@ function moveHunk(by: number) {
   place(found ?? heads[by > 0 ? heads.length - 1 : 0]);
 }
 
+/// Where a line stands in the order the file is read: its block, then its
+/// place in that block.
+///
+/// A line that a gap still hides has a place too, so a thread on a folded
+/// line has its turn in the walk.
+function orderOf(side: Side, line: number): [number, number] | null {
+  for (const [index, block] of blocks.value.entries()) {
+    if (block.kind === 'hunk') {
+      const at = block.hunk.rows.findIndex((row) => lineIn(row, side) === line);
+      if (at !== -1) {
+        return [index, at];
+      }
+      continue;
+    }
+    // A gap counts its lines on the new side.
+    const shift = side === 'old' ? block.gap.offset : 0;
+    if (line - shift >= block.gap.from && line - shift <= block.gap.to) {
+      return [index, line - shift];
+    }
+  }
+  return null;
+}
+
+function compareOrder(a: [number, number], b: [number, number]): number {
+  return a[0] - b[0] || a[1] - b[1];
+}
+
+/// The threads on the lines of the file, ours and those of Gerrit, in the
+/// order the file is read.
+const threadsInFile = computed(() => {
+  const places: { side: Side; start: number; end: number }[] = [];
+  for (const comment of props.comments) {
+    const at = span(comment);
+    if (at) {
+      places.push(at);
+    }
+  }
+  for (const remark of props.posted) {
+    const placed =
+      remark.file === props.diff.path && remark.line !== null && props.postedPlacement(remark.id);
+    if (placed && !placed.lost && placed.line !== null) {
+      places.push({ side: placed.side, start: placed.line, end: placed.line });
+    }
+  }
+
+  // A card stands under the last line of what it covers, so that line is
+  // the place of the thread.
+  return places
+    .map((at) => ({ ...at, order: orderOf(at.side, at.end) }))
+    .filter((at): at is typeof at & { order: [number, number] } => at.order !== null)
+    .sort((a, b) => compareOrder(a.order, b.order));
+});
+
+/// The last line of the next thread, or of the one before.
+///
+/// The keyboard lands where the card stands, so the agent key asks about
+/// this thread. A thread on a folded line opens its lines first.
+async function moveThread(by: number) {
+  const list = threadsInFile.value;
+  if (list.length === 0) {
+    return;
+  }
+  const row = walkable.value.find((r) => key(r) === cursor.value);
+  const line = row ? lineOf(row) : null;
+  const here = row && line !== null ? orderOf(sideOf(row), line) : null;
+  const found =
+    by > 0
+      ? list.find((at) => here === null || compareOrder(at.order, here) > 0)
+      : [...list].reverse().find((at) => here !== null && compareOrder(at.order, here) < 0);
+  const goes = found ?? list[by > 0 ? list.length - 1 : 0];
+
+  await unfold(goes.side, goes.start, goes.end);
+  clearPicked();
+  place(walkable.value.find((r) => lineIn(r, goes.side) === goes.end));
+}
+
 /// Write on what is picked, or on the line the keyboard is on.
 function commentHere() {
   if (props.readOnly) {
@@ -842,6 +918,7 @@ async function unfold(side: Side, start: number, end: number) {
 defineExpose({
   moveLine,
   moveHunk,
+  moveThread,
   commentHere,
   threadHere,
   startRange,
