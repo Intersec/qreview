@@ -94,6 +94,12 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.screenshot({ path: join(OUT, `${scheme}-preferences.png`) });
   await page.getByRole('button', { name: 'Cancel' }).click();
 
+  // The list of keys, which grows with each key taken from Gerrit.
+  await page.keyboard.press('?');
+  await page.getByRole('dialog', { name: 'Keyboard shortcuts' }).waitFor();
+  await page.screenshot({ path: join(OUT, `${scheme}-keys.png`) });
+  await page.keyboard.press('Escape');
+
   // The whole Change-Id in the bar, and the file filter under the keyboard.
   await openChange(page, /long: touch two places/);
   await page.keyboard.press('/');
