@@ -260,6 +260,18 @@ test('a change can be marked read, and stays read', async ({ page }) => {
   ).toBeVisible();
 });
 
+test('r marks the change being read, and r again unmarks it', async ({ page }) => {
+  await openChange(page, /long: touch two places/);
+  const change = page.locator('li', { hasText: 'long: touch two places' });
+  await expect(change.getByRole('button', { name: '☐' })).toBeVisible();
+
+  await page.keyboard.press('r');
+  await expect(change.getByRole('button', { name: '☑' })).toBeVisible();
+
+  await page.keyboard.press('r');
+  await expect(change.getByRole('button', { name: '☐' })).toBeVisible();
+});
+
 test('the files are grouped under the directory they live in', async ({ page }) => {
   await page.getByRole('button', { name: /long: touch two places/ }).click();
 
