@@ -3,7 +3,7 @@ import { computed, inject, ref, watch } from 'vue';
 import CommentBox from './CommentBox.vue';
 import { read, threadSlot } from '@/diff/drafts';
 import { render } from '@/diff/markdown';
-import { THREADS, awaitsAgent, isBlocked } from '@/diff/threads';
+import { FOLD_DONE, THREADS, awaitsAgent, isBlocked } from '@/diff/threads';
 import { isCurrent } from '@/diff/versions';
 import type { Comment, PatchSet } from '@/api/types';
 
@@ -39,11 +39,23 @@ const askable = computed(() => awaitsAgent(props.comment, replies.value));
 
 /// A done thread is folded, and one click on its head unfolds it without
 /// a change of state. A thread that waits for the reader is never folded.
-const folded = ref(props.comment.done);
+///
+/// `e` and `E` fold or unfold every done thread at once. A card that comes
+/// later, on a line opened since, follows what the reader asked.
+const foldDone = inject(FOLD_DONE, null);
+const folded = ref(foldDone?.value?.folded ?? props.comment.done);
 watch(
   () => props.comment.done,
   (done) => {
     folded.value = done;
+  },
+);
+watch(
+  () => foldDone?.value,
+  (asked) => {
+    if (asked) {
+      folded.value = asked.folded;
+    }
   },
 );
 const shut = computed(() => folded.value && props.comment.done && !blocked.value);

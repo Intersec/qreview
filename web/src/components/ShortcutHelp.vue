@@ -8,6 +8,7 @@ const KEYS: [string, string][] = [
   ['n / p', 'The next or the previous hunk'],
   ['N / P', 'The next or the previous thread of the file, folded lines included'],
   ['X', 'Open every folded line of the file, or fold them back'],
+  ['e / E', 'Unfold every done thread of the file, or fold them all'],
   ['] / [', 'The next or the previous file'],
   ['J / K', 'The next or the previous change'],
   ['r', 'Mark the change read, or unread'],

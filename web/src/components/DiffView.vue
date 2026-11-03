@@ -11,6 +11,7 @@ import PostedCard from './PostedCard.vue';
 import { commitsOn, type BlameLine, type BlameTarget } from '@/diff/blame';
 import { gaps, type Gap } from '@/diff/gaps';
 import { HOVERED, wordAt } from '@/diff/hover';
+import { FOLD_DONE, type FoldDone } from '@/diff/threads';
 import { COMMIT_MSG, label } from '@/diff/paths';
 import { pairs } from '@/diff/pairs';
 import { places, slot } from '@/diff/drafts';
@@ -189,6 +190,14 @@ function onDown(event: MouseEvent) {
 const hovered = ref<string | null>(null);
 provide(HOVERED, hovered);
 
+/// What `e` and `E` asked of the done threads of this file.
+const foldDone = ref<FoldDone | null>(null);
+provide(FOLD_DONE, foldDone);
+
+function foldThreads(folded: boolean) {
+  foldDone.value = { folded };
+}
+
 /// True while a remark about the file as a whole is being written.
 const aboutFile = ref(false);
 
@@ -261,6 +270,8 @@ watch(
       // save comes back instead, on the lines it was typed on.
       aboutFile.value = false;
       cursor.value = null;
+      // Another file starts with its done threads folded.
+      foldDone.value = null;
       writing.value = new Set(places(props.changeKey, fresh.path));
 
       return;
@@ -925,6 +936,7 @@ defineExpose({
   clearPicked,
   revealLines,
   toggleContext,
+  foldThreads,
 });
 
 /// True while the reader holds a selection that starts in the code.

@@ -189,3 +189,22 @@ for (const view of ['unified', 'side by side'] as const) {
     await expect(page.locator('tr.row-cursor')).toContainText('line 22');
   });
 }
+
+test('e unfolds every done thread of the file, and E folds them', async ({ page }) => {
+  const body = await remarkOnLong(page, 50, 50);
+  await openChange(page, /long: touch two places/);
+  await openFile(page, 'long.c');
+  const prose = card(page, body).locator('.prose-comment');
+  await expect(prose).toBeVisible();
+
+  await card(page, body).getByRole('checkbox').check();
+  await expect(prose).toHaveCount(0);
+  // The keys go to the page, not to the box that was just checked.
+  await page.locator('td.code-cell[data-line="45"]').first().click();
+
+  await page.keyboard.press('e');
+  await expect(prose).toBeVisible();
+
+  await page.keyboard.press('Shift+E');
+  await expect(prose).toHaveCount(0);
+});

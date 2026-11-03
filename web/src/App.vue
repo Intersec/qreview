@@ -397,6 +397,12 @@ function onKey(event: KeyboardEvent) {
     case 'X':
       void diffView.value?.toggleContext();
       break;
+    case 'e':
+      diffView.value?.foldThreads(false);
+      break;
+    case 'E':
+      diffView.value?.foldThreads(true);
+      break;
     case ']':
       stepFile(1);
       break;

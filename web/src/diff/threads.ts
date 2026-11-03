@@ -3,7 +3,7 @@
 // The cards stand in many places of the diff, so they reach the threads
 // through one context rather than through every component between them.
 
-import type { ComputedRef, InjectionKey } from 'vue';
+import type { ComputedRef, InjectionKey, Ref } from 'vue';
 import type { Comment } from '@/api/types';
 
 export interface Threads {
@@ -25,6 +25,16 @@ export interface Threads {
 }
 
 export const THREADS: InjectionKey<Threads> = Symbol('threads');
+
+/// What the reader last asked of every done thread on the screen: folded or
+/// not. Null until the reader asks, so each card starts the way its state
+/// says. Each request is a new object: the same key pressed twice must still
+/// reach a card that the reader unfolded by hand in between.
+export interface FoldDone {
+  folded: boolean;
+}
+
+export const FOLD_DONE: InjectionKey<Ref<FoldDone | null>> = Symbol('fold done threads');
 
 /// The replies of each remark, oldest first.
 export function repliesBy(comments: Comment[]): Map<string, Comment[]> {
