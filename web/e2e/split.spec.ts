@@ -131,3 +131,13 @@ test('a remark about the file stands before the first line', async ({ page }) =>
   await expect(first).toHaveClass(/talk/);
   await expect(first).toContainText('This file does two things.');
 });
+
+test('m switches to the unified view, and back', async ({ page }) => {
+  const toggle = page.getByRole('button', { name: /^(Unified|Side by side)$/ });
+
+  await page.keyboard.press('m');
+  await expect(toggle).toHaveText('Side by side');
+
+  await page.keyboard.press('m');
+  await expect(toggle).toHaveText('Unified');
+});

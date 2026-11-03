@@ -425,6 +425,9 @@ function onKey(event: KeyboardEvent) {
     case 'b':
       review.toggleBlame();
       break;
+    case 'm':
+      review.setSplit(!split.value);
+      break;
     case ',':
       prefs.value = true;
       break;
