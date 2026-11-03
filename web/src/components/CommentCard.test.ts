@@ -4,11 +4,11 @@
 // folds it, and the mark of a thread that waits for the reader.
 
 import { mount, type DOMWrapper } from '@vue/test-utils';
-import { computed, nextTick } from 'vue';
+import { computed, nextTick, ref, type Ref } from 'vue';
 import { describe, expect, it, vi } from 'vitest';
 import CommentCard from './CommentCard.vue';
 import { threadSlot, write } from '@/diff/drafts';
-import { THREADS, type Threads } from '@/diff/threads';
+import { FOLD_DONE, THREADS, type FoldDone, type Threads } from '@/diff/threads';
 import type { Comment } from '@/api/types';
 
 function comment(id: string, extra: Partial<Comment> = {}): Comment {
@@ -34,6 +34,7 @@ function card(
   replies: Comment[] = [],
   attach = false,
   moved: Record<string, { id: string; commit: string }> = {},
+  foldDone: Ref<FoldDone | null> = ref(null),
 ) {
   const threads: Threads = {
     repliesOf: () => replies,
@@ -47,7 +48,7 @@ function card(
   };
   const wrapper = mount(CommentCard, {
     props: { comment: remark, at: 'abc' },
-    global: { provide: { [THREADS as symbol]: threads } },
+    global: { provide: { [THREADS as symbol]: threads, [FOLD_DONE as symbol]: foldDone } },
     ...(attach ? { attachTo: document.body } : {}),
   });
   return { wrapper, threads };
@@ -81,6 +82,33 @@ describe('a thread', () => {
 
     expect(wrapper.find('.prose-comment').exists()).toBe(true);
     expect(threads.setDone).not.toHaveBeenCalled();
+  });
+
+  it('unfolds and folds with the whole file, even after a click by hand', async () => {
+    const foldDone = ref<FoldDone | null>(null);
+    const { wrapper } = card(comment('a', { done: true }), [], false, {}, foldDone);
+    const open = () => wrapper.find('.prose-comment').exists();
+
+    foldDone.value = { folded: false };
+    await nextTick();
+    expect(open()).toBe(true);
+
+    // The reader folds it again, then asks to unfold them all once more.
+    await wrapper.get('.talk-fold').trigger('click');
+    expect(open()).toBe(false);
+    foldDone.value = { folded: false };
+    await nextTick();
+    expect(open()).toBe(true);
+
+    foldDone.value = { folded: true };
+    await nextTick();
+    expect(open()).toBe(false);
+  });
+
+  it('comes unfolded on a line opened after the reader unfolded them all', () => {
+    const { wrapper } = card(comment('a', { done: true }), [], false, {}, ref({ folded: false }));
+
+    expect(wrapper.find('.prose-comment').exists()).toBe(true);
   });
 
   it('checks the Done box through the threads', async () => {
