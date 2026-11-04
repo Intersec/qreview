@@ -211,6 +211,9 @@ const aboutFile = ref(false);
 /// Markdown file to the next until they hide it.
 const rendered = ref(false);
 const beside = computed(() => rendered.value && props.diff.markdown === true);
+/// Beside the pane, the diff has half the width. A table as wide as its
+/// longest line would push the bar of a gap under the pane.
+const wraps = computed(() => props.wrap || beside.value);
 
 const pane = ref<HTMLElement | null>(null);
 const bar = ref<HTMLElement | null>(null);
@@ -1469,7 +1472,7 @@ function toggle(row: Row | null, column: Side) {
           @mousemove="onMove"
           @mouseleave="hovered = null"
         >
-          <table v-if="split" class="code" :class="[wrap ? '' : 'nowrap', only]">
+          <table v-if="split" class="code" :class="[wraps ? '' : 'nowrap', only]">
             <colgroup>
               <col v-if="blame" class="blame-col" />
               <col class="gut" />
@@ -1716,7 +1719,7 @@ function toggle(row: Row | null, column: Side) {
             </tbody>
           </table>
 
-          <table v-else class="code" :class="[wrap ? '' : 'nowrap', only]">
+          <table v-else class="code" :class="[wraps ? '' : 'nowrap', only]">
             <colgroup>
               <col v-if="blame" class="blame-col" />
               <col class="gut" />
