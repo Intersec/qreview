@@ -1,7 +1,7 @@
 // A Markdown file read rendered, beside its diff.
 
 import { expect, test } from '@playwright/test';
-import { openChange, openFile } from './act.ts';
+import { openChange, openFile, useSplit } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -131,4 +131,21 @@ test('a file that is not Markdown offers no rendered view', async ({ page }) => 
 
   await expect(page.locator('table.code')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Show rendered' })).toHaveCount(0);
+});
+
+test('the diff wraps its long lines while the pane is open', async ({ page }) => {
+  await useSplit(page);
+  await openChange(page, /docs: rework the guide/);
+  await openFile(page, 'guide.md');
+  const table = page.locator('table.code');
+  await expect(table).toHaveClass(/nowrap/);
+
+  // A table as wide as its longest line pushed the bar of a gap under the
+  // pane, out of reach.
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+  await expect(page.getByRole('button', { name: /common lines/ }).first()).toBeInViewport();
+  await expect(table).not.toHaveClass(/nowrap/);
+
+  await page.getByRole('button', { name: 'Hide rendered' }).click();
+  await expect(table).toHaveClass(/nowrap/);
 });
