@@ -407,7 +407,11 @@ export function addGuide(repo: string) {
       .replace('  - a nested item\n', '  - a nested item\n  - a second nested item\n')
       .replace('| a.c  | 12   |', '| a.c  | 14   |')
       .replace('Raw <b>HTML</b> stays text.\n\n', '')
-      .replace('The text of section 20.', 'The text of section 20, longer now.'),
+      // Wider than the diff, so the table grows past what it shows.
+      .replace(
+        'The text of section 20.',
+        `The text of section 20, longer now: ${'and longer still, '.repeat(12)}to the end.`,
+      ),
   );
   commit(repo, 'docs: rework the guide', 'Change-Id: Iguidereworkaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 }

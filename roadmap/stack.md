@@ -876,6 +876,12 @@ changes shows where to look. See design section 3.8.
 The reader asks for it. A file always opens on its diff alone, so a review
 that never renders a file costs what it did before.
 
+Decided on 2026-11-04: while the pane is open, the diff wraps its long
+lines, whatever `diff.wrap` says. Beside the pane, the diff has about half
+the width. Without the wrap, a table as wide as its longest line put the
+buttons of a gap under the pane, out of reach. The setting does not change:
+a diff with no pane beside it still follows it.
+
 **Why on the server.** The rows leave the server finished, and this HTML
 does too. The server also holds `syntect` for the code blocks.
 `pulldown-cmark` gives the byte range of each block, which is what the pane

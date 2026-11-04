@@ -488,6 +488,11 @@ the new side that the diff shows. A blank line between two blocks counts for
 the next block. A diff that fits on the screen never scrolls, so the opening
 is what puts the pane on its hunk.
 
+**The diff wraps beside the pane.** While the pane is open, the diff wraps
+its long lines, whatever `diff.wrap` says. The diff has about half the width
+there. A table as wide as its longest line put the buttons of a gap under the
+pane. When the pane closes, the diff follows `diff.wrap` again.
+
 **Which files.** The language of the file decides, not its extension, so the
 map of section 7 can make a house extension Markdown. A deleted file has no
 new side, so it has no rendered page. A file of more than 1 MiB has none
