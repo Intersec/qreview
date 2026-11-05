@@ -92,7 +92,7 @@ const owner = computed(() => {
   </td>
   <td
     class="code-cell"
-    :class="`row-${kind}`"
+    :class="[`row-${kind}`, row?.rebase ? 'row-rebase' : '']"
     :data-kind="kind"
     :data-side="owner?.side"
     :data-line="owner?.line"

@@ -28,9 +28,8 @@ const baseSet = computed(() => {
   return Number.isFinite(number) ? props.sets.find((s) => s.number === number) : undefined;
 });
 
-/// Two versions written on different parents. A diff between them used to
-/// carry the rebase; it no longer does, but the reader still has to know
-/// that the two sides did not start from the same place.
+/// Two versions written on different parents. The diff paints apart the
+/// lines that the rebase brought, and the bar says what its colours mean.
 const rebased = computed(
   () => target.value && baseSet.value && target.value.parent !== baseSet.value.parent,
 );
@@ -119,7 +118,10 @@ function pickTarget(value: string) {
     </span>
 
     <span v-if="rebased" class="rebased">
-      These two versions sit on different bases. Only what the change touches is listed.
+      These two versions sit on different bases. Lines
+      <span class="rebase-swatch rebase-swatch-add">added</span> or
+      <span class="rebase-swatch rebase-swatch-remove">removed</span> in these colours came with the
+      rebase. A file with nothing else is not listed.
     </span>
   </div>
 </template>

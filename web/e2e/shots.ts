@@ -8,6 +8,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import config from '../playwright.config.ts';
 import { openChange, openFile, useSplit } from './act.ts';
+import { build, rebaseNewest } from './fixture.ts';
 import { start } from './server.ts';
 
 const OUT = join(import.meta.dirname, '.shots');
@@ -21,6 +22,10 @@ const server = await start();
 // A second repository, with work that is not committed and a Gerrit that
 // already holds remarks. Both put things on the screen the first one cannot.
 const other = await start({ dirty: true, gerrit: true });
+// A third one, where the newest change has a second version on a new base.
+const moved = build();
+moved.previous = rebaseNewest(moved);
+const rebased = await start({ on: moved, prev: true });
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
@@ -358,9 +363,25 @@ for (const scheme of ['light', 'dark'] as const) {
   await second.screenshot({ path: join(OUT, `${scheme}-stopped.png`) });
 
   await second.close();
+
+  // Two versions on two bases: the lines that the rebase brought, apart
+  // from the work of the change.
+  const third = await browser.newPage({
+    viewport: { width: 1600, height: 1000 },
+    colorScheme: scheme,
+  });
+  await third.goto(rebased.url);
+  await openChange(third, /docs: rename the document/);
+  await third.locator('#base-of').selectOption('ps:1');
+  await openFile(third, 'new-name.md');
+  await third.screenshot({ path: join(OUT, `${scheme}-rebase.png`) });
+  await useSplit(third);
+  await third.screenshot({ path: join(OUT, `${scheme}-rebase-split.png`) });
+  await third.close();
 }
 
 await browser.close();
+rebased.stop();
 other.stop();
 server.stop();
 console.log(`screenshots in ${OUT}`);

@@ -304,3 +304,36 @@ export function build(): Fixture {
     remove: () => rmSync(base, { recursive: true, force: true }),
   };
 }
+
+/// Write the newest change again on a new base, the way a rebase does, and
+/// give back its first version, for `--prev`.
+///
+/// The new base retitles the document and changes a line of `huge.c`. The
+/// second version also rewrites the last line of the document, and keeps
+/// the rest, so that git still sees the rename. So the diff between the two
+/// versions holds lines of both kinds, and `huge.c` holds nothing that the
+/// rebase did not bring.
+export function rebaseNewest(fixture: Fixture): string {
+  const repo = fixture.repo;
+  const first = git(repo, ['rev-parse', 'HEAD']);
+  // `git` trims what it prints, and the file ends with a newline.
+  const huge = `${git(repo, ['show', 'HEAD~1:src/huge.c'])}\n`.replace('int a10;\n', 'int b10;\n');
+
+  git(repo, ['switch', '--quiet', '--detach', 'HEAD~1']);
+  write(repo, 'docs/old-name.md', '# The document\n\nIt has words in it.\n');
+  write(repo, 'src/huge.c', huge);
+  commit(repo, 'docs: retitle the document');
+
+  git(repo, ['mv', 'docs/old-name.md', 'docs/new-name.md']);
+  write(
+    repo,
+    'docs/new-name.md',
+    '# The document\n\nIt has words in it.\nAnd one more line, again.\n',
+  );
+  write(repo, 'src/huge.c', huge.replace('int a2480;\n', 'int zzz;\n'));
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '--quiet', '-C', first]);
+  git(repo, ['switch', '--quiet', '-C', 'main']);
+
+  return first;
+}

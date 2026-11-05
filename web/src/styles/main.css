@@ -22,6 +22,11 @@
   --add-word: #aaf2aa;
   --remove-line: #ffebee;
   --remove-word: #ffcdd2;
+  /* What a rebase brought between two patch sets. Gerrit paints it so. */
+  --rebase-add-line: #eeeeff;
+  --rebase-add-word: #d7d7f9;
+  --rebase-remove-line: #fff8dc;
+  --rebase-remove-word: #f7e8b7;
   --same-word: #ffd97d;
   --context-bar: #fff7d4;
   --context-ink: #6b5900;
@@ -74,6 +79,10 @@
     --add-word: #35603f;
     --remove-line: #320f10;
     --remove-word: #6b2d2f;
+    --rebase-add-line: #1d2142;
+    --rebase-add-word: #343a6e;
+    --rebase-remove-line: #2e2610;
+    --rebase-remove-word: #5a4a1c;
     --same-word: #8a6a1e;
     --context-bar: #2a2410;
     --context-ink: #d6bf6a;
@@ -112,6 +121,10 @@
   --add-word: #35603f;
   --remove-line: #320f10;
   --remove-word: #6b2d2f;
+  --rebase-add-line: #1d2142;
+  --rebase-add-word: #343a6e;
+  --rebase-remove-line: #2e2610;
+  --rebase-remove-word: #5a4a1c;
   --same-word: #8a6a1e;
   --context-bar: #2a2410;
   --context-ink: #d6bf6a;
@@ -387,6 +400,14 @@ table.code.nowrap .blame {
 }
 .row-remove .word {
   background: var(--remove-word);
+}
+/* A row that the rebase brought takes the colours of Gerrit, so that green
+   and red stay the work of the change. The rules above read them. */
+.row-rebase {
+  --add-line: var(--rebase-add-line);
+  --add-word: var(--rebase-add-word);
+  --remove-line: var(--rebase-remove-line);
+  --remove-word: var(--rebase-remove-word);
 }
 .no-newline {
   margin-left: 6px;
@@ -1365,6 +1386,19 @@ a.change-id:hover {
 }
 .rebased {
   color: var(--context-ink);
+}
+.rebase-swatch {
+  padding: 0 4px;
+  border-radius: 2px;
+  color: var(--ink);
+}
+.rebase-swatch-add {
+  background: var(--rebase-add-line);
+  box-shadow: inset 0 0 0 1px var(--rebase-add-word);
+}
+.rebase-swatch-remove {
+  background: var(--rebase-remove-line);
+  box-shadow: inset 0 0 0 1px var(--rebase-remove-word);
 }
 
 /* ---------------------------------------------------------- the panel */
