@@ -382,6 +382,11 @@ export function addGuide(repo: string) {
         { length: 40 },
         (_, i) => `## Section ${i + 1}\n\nThe text of section ${i + 1}.\n`,
       ),
+      // One block longer than a screen: the pane follows a line inside it.
+      '```',
+      ...Array.from({ length: 80 }, (_, i) => `step ${i + 1}.`),
+      '```',
+      '',
     ].join('\n'),
   );
   commit(repo, 'docs: write a guide', 'Change-Id: Iguidedocaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
