@@ -14,7 +14,7 @@ import MergeBar from './components/MergeBar.vue';
 import PaneSplit from './components/PaneSplit.vue';
 import PatchSetBar from './components/PatchSetBar.vue';
 import SidePane from './components/SidePane.vue';
-import { useReview } from './stores/review';
+import { useReview, type Remark } from './stores/review';
 import { THREADS } from './diff/threads';
 import { any as anyDraft } from './diff/drafts';
 import { describe as describeTask } from './activity';
@@ -110,7 +110,11 @@ async function openTask() {
   const remark = now.id
     ? written.value.find((c) => c.key === now.key)?.comments.find((c) => c.id === now.id)
     : undefined;
-  await goToComment(now.key, remark?.anchor);
+  if (remark) {
+    await goToComment(now.key, remark);
+  } else if (now.key !== changeKey.value) {
+    await goToChange(now.key);
+  }
 }
 
 /// Why the agent takes no fix now, as both Fix buttons say it.
@@ -143,7 +147,7 @@ async function sendFix() {
 
 async function jumpTo(thread: { key: string; comment: Comment }) {
   fixing.value = null;
-  await goToComment(thread.key, thread.comment.anchor);
+  await goToComment(thread.key, thread.comment);
 }
 
 /// Clean waits a moment before it deletes, because nothing brings a
@@ -256,25 +260,21 @@ function goToVersion(ps: number | undefined, base: string | undefined) {
   return goTo(at && { ...at, ps, base }, review.openPatchSet(ps, base));
 }
 
-/// Open the place a comment speaks of: the change, then the file, then the
-/// lines it covers.
-async function goToComment(
-  key: string,
-  anchor: Pick<Anchor, 'file' | 'side' | 'startLine' | 'endLine'> | null | undefined,
-) {
-  const file = anchor?.file ?? '';
-  const move = async () => {
-    if (key !== changeKey.value) {
-      await review.openChange(key);
-    }
-    if (file !== '' && file !== filePath.value) {
-      await review.openFile(file);
-    }
-  };
-  await goTo({ change: key, file: file === '' ? undefined : file }, move());
+/// A remark, with the lines it covers.
+type Target = Remark & {
+  anchor?: Pick<Anchor, 'file' | 'side' | 'startLine' | 'endLine'> | null;
+};
 
+/// Open the place a remark speaks of: the change, then the file on a
+/// version that shows the remark, then the lines it covers.
+async function goToComment(key: string, remark: Target) {
+  const anchor = remark.anchor;
+  const move = review.openRemark(key, remark);
+  await goTo({ change: key, file: anchor?.file || undefined }, move);
+
+  // The lines of another file are not the lines of the remark.
   const start = anchor?.startLine ?? null;
-  if (anchor && start !== null) {
+  if (anchor && start !== null && (await move)) {
     await nextTick();
     await diffView.value?.revealLines(anchor.side, start, anchor.endLine ?? start);
   }
@@ -286,7 +286,10 @@ function goToBlame(at: BlameLine) {
   const target = review.blameTarget(at.commit.commit);
   if (target && 'key' in target) {
     const line = { file: at.commit.path, side: 'new' as const, startLine: at.origin };
-    void goToComment(target.key, { ...line, endLine: at.origin });
+    void goToComment(target.key, {
+      commit: at.commit.commit,
+      anchor: { ...line, endLine: at.origin },
+    });
   }
 }
 
@@ -297,7 +300,7 @@ async function followThread(id: string) {
   await goToVersion(last, undefined);
   const thread = review.review?.comments.find((c) => c.id === id);
   if (changeKey.value && thread?.anchor) {
-    await goToComment(changeKey.value, thread.anchor);
+    await goToComment(changeKey.value, thread);
   }
 }
 

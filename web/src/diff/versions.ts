@@ -12,7 +12,7 @@ import type { ChangeComments, Comment, Version } from '@/api/types';
 /// A remark from a store older than format 3 names no version. It counts as
 /// current: it is the only version it can belong to, and leaving it out
 /// would hide a review that nothing else would show again.
-export function isCurrent(comment: Comment, commit: string): boolean {
+export function isCurrent(comment: Pick<Comment, 'commit'>, commit: string): boolean {
   return comment.commit === '' || comment.commit === commit;
 }
 

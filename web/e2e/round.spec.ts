@@ -157,3 +157,35 @@ test('an older version is read, not written on', async ({ page }) => {
   await page.keyboard.press('c');
   await expect(page.getByRole('textbox')).toHaveCount(0);
 });
+
+test('a previous remark on a file that the next version dropped opens its version', async ({
+  page,
+}) => {
+  server = await start();
+  await page.goto(server.url);
+  await openChange(page, /docs: rename the document/);
+  await openFile(page, 'new-name.md');
+  await remark(page, '4', 'This line says nothing.');
+
+  // The correction gives the rename up, so the newest version has no
+  // docs/new-name.md.
+  const repo = server.fixture.repo;
+  server.kill();
+  execFileSync('git', ['mv', 'docs/new-name.md', 'docs/old-name.md'], { cwd: repo });
+  execFileSync('git', ['checkout', 'HEAD~1', '--', 'docs/old-name.md'], { cwd: repo });
+  execFileSync('git', ['commit', '--amend', '--no-edit'], { cwd: repo });
+  server = await start({ on: server.fixture });
+  await page.goto(server.url);
+  await openChange(page, /docs: rename the document/);
+
+  await page
+    .locator('.comment-list .list-row.is-previous', { hasText: 'This line says nothing.' })
+    .click();
+
+  // The version that the remark was written on has the file and shows the
+  // remark.
+  await expect(page.locator('#read-set')).toHaveValue('1');
+  await expect(page.locator('.file-bar h2')).toContainText('new-name.md');
+  await expect(card(page, 'This line says nothing.')).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});

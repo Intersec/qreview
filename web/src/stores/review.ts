@@ -14,6 +14,7 @@ import { isCurrent, open, rounds } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
   AgentTask,
+  Anchor,
   Blame,
   ChangeComments,
   Comment,
@@ -41,6 +42,12 @@ const SERVER_SIDE = ['context', 'ignoreWhitespace', 'syntax'];
 
 /// How long a blame loads before the page says so, in ms.
 const BLAME_SLOW = 1000;
+
+/// A remark, as far as a move to it needs: the version it was written on,
+/// and its place.
+export type Remark = Pick<Comment, 'commit'> & {
+  anchor?: Pick<Anchor, 'file' | 'side'> | null;
+};
 
 function touchesTheDiff(patch: object): boolean {
   const diff = (patch as { diff?: Record<string, unknown> }).diff;
@@ -72,6 +79,9 @@ export const useReview = defineStore('review', () => {
   /// file too, and a counter cannot tell those two apart.
   const review = ref<Review | null>(null);
   const patchSets = ref<PatchSet[]>([]);
+  /// The read of the patch sets of the change being read, which opening the
+  /// change does not wait for. A move that needs them waits for this.
+  let patchSetsRead: Promise<unknown> = Promise.resolve();
   const gerrit = ref<GerritChange | null>(null);
   /// The patch set being read. The last one when it is not set.
   const patchSet = ref<number | undefined>(undefined);
@@ -260,7 +270,7 @@ export const useReview = defineStore('review', () => {
       // The patch sets are asked for on their own. That call reaches Gerrit
       // over ssh, and the file list must not wait a second for it. The
       // remarks already on the server ride the same answer.
-      void api
+      patchSetsRead = api
         .patchSets(key)
         .then((versions) => {
           if (changeKey.value !== key) {
@@ -536,16 +546,47 @@ export const useReview = defineStore('review', () => {
     return patchSets.value.find((one) => one.number === number)?.commit;
   });
 
-  /// The comments the diff shows: the ones written on the versions on the
+  /// The comments the diff shows. See `shows`.
+  function comments(): Comment[] {
+    return (review.value?.comments ?? []).filter((c) => c.parent === null && shows(c));
+  }
+
+  /// True when the diff shows a remark: it was written on a version on the
   /// screen. See `reading`. A remark on a removed line of the left version
   /// speaks of its parent, which no column shows.
-  function comments(): Comment[] {
-    return (review.value?.comments ?? []).filter(
-      (c) =>
-        c.parent === null &&
-        (isCurrent(c, reading.value) ||
-          (c.commit === readingLeft.value && c.anchor?.side === 'new')),
+  function shows(remark: Remark): boolean {
+    return (
+      isCurrent(remark, reading.value) ||
+      (remark.commit === readingLeft.value && remark.anchor?.side === 'new')
     );
+  }
+
+  /// Open the file of a remark, on a version that shows the remark.
+  ///
+  /// The versions on the screen may not show it, or may not touch its file:
+  /// one version can add or drop a file that another has. The remark then
+  /// opens on the version it was written on, against its parent. Answers
+  /// whether the file of the remark is on the screen.
+  async function openRemark(key: string, remark: Remark): Promise<boolean> {
+    const file = remark.anchor?.file || undefined;
+    if (key !== changeKey.value) {
+      await openChange(key, file);
+    }
+    const listed = (path: string) => files.value.some((f) => f.path === path);
+
+    if (!shows(remark) || (file !== undefined && !listed(file))) {
+      await patchSetsRead;
+      const sets = patchSets.value;
+      const own = sets.find((set) => set.commit === remark.commit);
+      const number = own === sets[sets.length - 1] ? undefined : own?.number;
+      if (own && (number !== patchSet.value || against.value !== undefined)) {
+        await openPatchSet(number, undefined, file);
+      }
+    }
+    if (file !== undefined && file !== filePath.value && listed(file)) {
+      await openFile(file);
+    }
+    return file !== undefined && filePath.value === file;
   }
 
   async function reload() {
@@ -1039,6 +1080,7 @@ export const useReview = defineStore('review', () => {
     onMerge,
     load,
     openPlace,
+    openRemark,
     loadMore,
     refresh,
     openChange,
