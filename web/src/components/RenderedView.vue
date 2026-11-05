@@ -126,8 +126,28 @@ function follow(at: number) {
     return;
   }
   const index = blockOf(blocks, at) ?? blocks.length - 1;
-  const top = blocks[index].el.getBoundingClientRect().top;
+  const top = topOf(blocks[index], at);
   scroller.scrollTop += top - scroller.getBoundingClientRect().top - 12;
+}
+
+/// Where a line of the source stands on the screen.
+///
+/// A code block can be longer than the pane, and its top can be far above
+/// the line. Its lines do not wrap, so each one has the same height.
+function topOf(block: Block & { el: HTMLElement }, at: number): number {
+  const el = block.el;
+  const box = el.getBoundingClientRect().top;
+  if (el.tagName !== 'PRE') {
+    return box;
+  }
+  const rows = (el.textContent ?? '').split('\n').length;
+  // The lines of a fenced block count its fences, and the text does not.
+  const first = block.to - block.from + 1 > rows ? block.from + 1 : block.from;
+  const row = Math.min(Math.max(at - first, 0), rows - 1);
+  const style = getComputedStyle(el);
+  const above = parseFloat(style.paddingTop);
+  const height = (el.clientHeight - above - parseFloat(style.paddingBottom)) / rows;
+  return row === 0 ? box : box + el.clientTop + above + row * height;
 }
 
 /// A tick where lines went away brings the diff to them.
