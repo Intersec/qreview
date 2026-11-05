@@ -222,6 +222,10 @@ pub struct Row {
     /// Intra-line marks. Absent on a context row.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub words: Vec<WordSpan>,
+    /// Between two patch sets, the rebase brought this row rather than the
+    /// work of the change. See `rebase.rs`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub rebase: bool,
 }
 
 /// A range of `Row::text` that carries a syntax class.

@@ -180,6 +180,7 @@ fn row(kind: RowKind, old_line: Option<usize>, new_line: Option<usize>, text: &s
         no_newline: false,
         tokens: Vec::new(),
         words: Vec::new(),
+        rebase: false,
     }
 }
 

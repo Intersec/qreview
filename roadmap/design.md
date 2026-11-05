@@ -256,10 +256,27 @@ Each patch set carries its commit hash, its parent, its author date, and its
 origin. The interface can diff any patch set against its own parent (the
 default, the Gerrit behavior) or against another patch set.
 
-CAUTION: A diff between two patch sets that sit on different bases shows the
-rebase noise. This is a known limit of the simple approach. The interface
-labels the pair when the parents differ, so the reader is not surprised. A
-real rebase-aware diff is a later task.
+Two patch sets on two bases differ by the work of the change and by what the
+rebase brought. qreview marks the second the way Gerrit does:
+
+- The diff of the two parents is the rebase. Each of its hunks moves onto
+  the old patch set through the diff of that patch set against its parent,
+  and onto the new one the same way. A hunk that overlaps a change of either
+  patch set is dropped.
+- A hunk of the diff between the patch sets is **due to rebase** when it
+  equals one of the moved hunks, on both sides. Its rows carry
+  `rebase: true`, and the interface paints them apart.
+- The added and removed counts leave those rows out, in the file list and in
+  the diff.
+- The file list holds the files that one of the two commits touches against
+  its own parent. Of those, a file whose hunks are all due to rebase leaves
+  the list, unless the diff renames or copies it.
+- Nothing is marked when the two parents are the same commit, or when one
+  patch set is the parent of the other.
+
+The mark is best effort, as in Gerrit. A hunk that touches a change of the
+patch set is the work of the change. The interface labels the pair when the
+parents differ.
 
 ### 3.4 Diff production
 
@@ -514,6 +531,7 @@ type Row = {
   text: string;
   tokens: Span[];          // syntax classes, from syntect
   words?: WordSpan[];      // intra-line marks, absent on a context row
+  rebase?: boolean;        // the rebase brought the row, see section 3.3
 };
 
 type Span = {

@@ -89,6 +89,7 @@ mod tests {
                 .iter()
                 .map(|(s, e)| WordSpan { start: *s, end: *e })
                 .collect(),
+            rebase: false,
         }
     }
 

@@ -999,3 +999,22 @@ An agent that arrived between two waits of a page woke no wait. The next wait of
 Rejected: an event in the log for each arrival and each departure. A departure has no moment of its own: the grace runs out, and nothing runs then to write the event. `qreview wait` would also have to skip these events.
 
 Nothing in the storage format or the export moves.
+
+## 2026-11-05 — The diff between two patch sets marks what the rebase brought
+
+Two patch sets on two bases differ by the work of the change and by what the rebase brought. The diff showed both the same way, and the file list counted both. Section 3.3 called it a known limit. The reader wants the behaviour of Gerrit.
+
+**Decision.** qreview finds the hunks that the rebase brought the way Gerrit does, and treats them the way Gerrit does. Section 3.3 of the design holds the rules.
+
+- The diff of the two parents is the rebase. Its hunks move onto each patch set through the diff of that patch set against its parent. A hunk that overlaps a change of either patch set is dropped, as Gerrit drops it.
+- A hunk of the diff between the patch sets is due to rebase when it equals one of the moved hunks, on both sides. A hunk that the rebase and the change share is the work of the change.
+- Its rows carry `rebase: true`, and the interface paints them in the colours of Gerrit: lavender for an added line, pale yellow for a removed one.
+- The counts of the file list and of the diff leave those rows out.
+- A file whose hunks are all due to rebase leaves the file list, unless the diff renames or copies it. The filter by the files that the two commits touch stays, and runs first: it is cheap, and it drops most of what a rebase brings before a hunk is read.
+- Nothing is marked when the two parents are the same commit, or when one patch set is the parent of the other.
+
+Like the one of Gerrit, the mark is best effort. A hunk that touches a change of the patch set is not marked, so a file that the rebase added and the change edited still reads as added in whole.
+
+Rejected: a mark for each line rather than for each hunk. It marks more lines, but it disagrees with Gerrit on the same pair of versions, and Gerrit is what the reader compares with.
+
+Nothing in the storage format or the export moves. A row of the API gains `rebase`, absent when false.

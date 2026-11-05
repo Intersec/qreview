@@ -118,6 +118,7 @@ mod tests {
             no_newline: false,
             tokens: Vec::new(),
             words: Vec::new(),
+            rebase: false,
         }
     }
 

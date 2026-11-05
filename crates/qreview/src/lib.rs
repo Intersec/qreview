@@ -23,6 +23,7 @@ pub mod migrate;
 pub mod model;
 pub mod offsets;
 pub mod patchset;
+pub mod rebase;
 pub mod reflog;
 pub mod repo;
 pub mod report;

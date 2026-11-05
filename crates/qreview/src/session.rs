@@ -18,9 +18,11 @@ use crate::git::merge::{self, Base};
 use crate::highlight::Highlighter;
 use crate::lang::Languages;
 use crate::model::{
-    Blame, BlameCommit, BlameRange, ChangeSummary, FileDiff, FileEntry, RepoInfo, RowKind, Series,
+    Blame, BlameCommit, BlameRange, ChangeSummary, FileDiff, FileEntry, FileStatus, RepoInfo,
+    RowKind, Series,
 };
 use crate::patchset::{self, PatchSet};
+use crate::rebase;
 use crate::repo;
 use crate::series::{self, Options, Plan};
 use crate::store::Store;
@@ -614,10 +616,98 @@ impl Session {
             });
         }
 
+        if let Some(sides) = self.rebase_sides(rev, against).await {
+            self.leave_rebase_out(&sides, &mut entries, how).await;
+        }
+
         for entry in &mut entries {
             entry.language = self.langs.of(&entry.path).unwrap_or_default().to_owned();
         }
         Ok(entries)
+    }
+
+    /// The two patch sets and their parents, when a rebase sits between the
+    /// two versions read one against the other.
+    async fn rebase_sides(&self, rev: &str, against: &Against) -> Option<rebase::Sides> {
+        let Against::Tree(other) = against else {
+            return None;
+        };
+        let new = commit::info(&self.git, rev).await.ok()?;
+        let old = commit::info(&self.git, other).await.ok()?;
+        let new_parent = new.parents.first()?.clone();
+        let old_parent = old.parents.first()?.clone();
+
+        // A version written on top of the other is no rebase, and Gerrit
+        // leaves that pair alone too.
+        if old_parent == new_parent || new_parent == old.hash || old_parent == new.hash {
+            return None;
+        }
+        Some(rebase::Sides {
+            old: old.hash,
+            new: new.hash,
+            old_parent,
+            new_parent,
+        })
+    }
+
+    /// Where a file of the diff between two patch sets stands in the four
+    /// trees.
+    async fn rebase_paths(
+        &self,
+        sides: &rebase::Sides,
+        entry: &FileEntry,
+        how: &diff::How,
+    ) -> rebase::Paths {
+        let new = (entry.status != FileStatus::Deleted).then(|| entry.path.clone());
+        let old = (entry.status != FileStatus::Added)
+            .then(|| entry.old_path.clone().unwrap_or_else(|| entry.path.clone()));
+        let (own_old, own_new) = tokio::join!(
+            self.entries(&sides.old_parent, &sides.old, how),
+            self.entries(&sides.new_parent, &sides.new, how),
+        );
+        let (own_old, own_new) = (own_old.unwrap_or_default(), own_new.unwrap_or_default());
+
+        rebase::Paths {
+            old_parent: rebase::parent_path(&own_old, old.as_deref(), new.as_deref()),
+            new_parent: rebase::parent_path(&own_new, new.as_deref(), old.as_deref()),
+            old,
+            new,
+        }
+    }
+
+    /// Take what the rebase brought out of the file list: out of the counts,
+    /// and out of the list for a file that holds nothing else.
+    ///
+    /// The marks are best effort. If git fails to read them, the list stays
+    /// as git gave it.
+    async fn leave_rebase_out(
+        &self,
+        sides: &rebase::Sides,
+        entries: &mut Vec<FileEntry>,
+        how: &diff::How,
+    ) {
+        let mut paths = Vec::with_capacity(entries.len());
+        for entry in entries.iter() {
+            paths.push(self.rebase_paths(sides, entry, how).await);
+        }
+        let Ok(reads) = rebase::Reads::of(&self.git, sides, &paths, how.ignore_ws, true).await
+        else {
+            return;
+        };
+
+        let mut kept = Vec::with_capacity(entries.len());
+        for (mut entry, paths) in entries.drain(..).zip(&paths) {
+            let brought = reads.brought(paths);
+            // Gerrit keeps a rename or a copy: the new name is news.
+            let named = matches!(entry.status, FileStatus::Renamed | FileStatus::Copied);
+            if brought.all && !named {
+                continue;
+            }
+            entry.added = entry.added.saturating_sub(brought.added);
+            entry.removed = entry.removed.saturating_sub(brought.removed);
+            kept.push(entry);
+        }
+        *entries = kept;
     }
 
     /// The files that these commits touch, each against its own parent.
@@ -667,6 +757,19 @@ impl Session {
             .and_then(|e| e.old_path);
 
         let mut found = diff::file(&self.git, &base, rev, path, old.as_deref(), how).await?;
+
+        if let Some(file) = found.as_mut()
+            && let Some(sides) = self.rebase_sides(rev, against).await
+        {
+            let paths = self.rebase_paths(&sides, &file.file, how).await;
+            let files = std::slice::from_ref(&paths);
+            // Best effort, like the list: unmarked rows are the diff of git.
+            if let Ok(reads) =
+                rebase::Reads::of(&self.git, &sides, files, how.ignore_ws, false).await
+            {
+                rebase::mark(file, &reads.rebase(&paths));
+            }
+        }
 
         if let Some(file) = found.as_mut() {
             let language = self.langs.of(path).map(str::to_owned);
@@ -765,6 +868,7 @@ impl Session {
                 no_newline: false,
                 tokens: spans.get(number - 1).cloned().unwrap_or_default(),
                 words: Vec::new(),
+                rebase: false,
             };
             crate::offsets::to_utf16(&mut row);
             rows.push(row);

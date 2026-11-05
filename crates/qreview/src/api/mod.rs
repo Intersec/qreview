@@ -2866,6 +2866,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_rows_that_the_rebase_brought_are_marked_and_not_counted() {
+        // Ten lines, `1` to `10`, with some of them replaced.
+        let ten = |changes: &[(usize, &str)]| -> String {
+            (1..=10)
+                .map(|n| match changes.iter().find(|(at, _)| *at == n) {
+                    Some((_, text)) => format!("{text}\n"),
+                    None => format!("{n}\n"),
+                })
+                .collect()
+        };
+        // Both versions change line 2 of both files. The rebase changes line
+        // 8 of both, and the second version also changes line 5 of a.txt.
+        let repo = build_repo(&[
+            commit("base")
+                .file("a.txt", &ten(&[]))
+                .file("b.txt", &ten(&[])),
+            commit("work: the change")
+                .file("a.txt", &ten(&[(2, "two")]))
+                .file("b.txt", &ten(&[(2, "two")]))
+                .change_id("Iwork"),
+        ])
+        .await;
+        let first = repo.sha("HEAD").await;
+        repo.git(&["switch", "--quiet", "--detach", "HEAD~1"]).await;
+        repo.add(
+            &commit("upstream")
+                .file("a.txt", &ten(&[(8, "eight")]))
+                .file("b.txt", &ten(&[(8, "eight")])),
+        )
+        .await;
+        repo.add(
+            &commit("work: the change")
+                .file("a.txt", &ten(&[(2, "two"), (5, "five"), (8, "eight")]))
+                .file("b.txt", &ten(&[(2, "two"), (8, "eight")]))
+                .change_id("Iwork"),
+        )
+        .await;
+
+        let mut opts = Options::new();
+        opts.prevs = vec![first];
+        let server = app(AppState::new(
+            session_of(&repo, opts).await,
+            TOKEN.to_owned(),
+        ));
+
+        let (_, files) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Iwork/files?ps=2&base=ps:1", TOKEN),
+        )
+        .await;
+        assert_eq!(
+            tree_paths(&files),
+            ["a.txt"],
+            "b.txt holds nothing that the rebase did not bring"
+        );
+        let a = &files.as_array().unwrap()[1];
+        assert_eq!((&a["added"], &a["removed"]), (&1.into(), &1.into()));
+
+        let (status, diff) = json(
+            server,
+            get_with_cookie("/api/changes/Iwork/diff?file=a.txt&ps=2&base=ps:1", TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!((&diff["added"], &diff["removed"]), (&1.into(), &1.into()));
+        let changed: Vec<_> = diff["hunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|hunk| hunk["rows"].as_array().unwrap())
+            .filter(|row| row["kind"] != "context")
+            .map(|row| (row["text"].as_str().unwrap(), row["rebase"] == true))
+            .collect();
+        assert_eq!(
+            changed,
+            [("5", false), ("five", false), ("8", true), ("eight", true)]
+        );
+    }
+
+    #[tokio::test]
     async fn the_commit_message_is_a_file_of_the_change() {
         let repo = fixture().await;
         let (status, body) = json(

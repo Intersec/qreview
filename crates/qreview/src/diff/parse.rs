@@ -170,6 +170,7 @@ impl Builder {
                 no_newline: false,
                 tokens: Vec::new(),
                 words: Vec::new(),
+                rebase: false,
             });
         }
     }

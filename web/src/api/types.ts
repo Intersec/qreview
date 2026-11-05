@@ -101,6 +101,9 @@ export interface Row {
   noNewline?: boolean;
   tokens?: Span[];
   words?: WordSpan[];
+  /// Between two patch sets, the rebase brought this row rather than the
+  /// work of the change.
+  rebase?: boolean;
 }
 
 export interface Hunk {
