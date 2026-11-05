@@ -485,7 +485,8 @@ so a nested item is marked in the same column as a paragraph.
 **The pane follows the diff.** When the pane opens, and each time the diff
 scrolls, the pane brings to its top the block that holds the first line of
 the new side that the diff shows. A blank line between two blocks counts for
-the next block. A diff that fits on the screen never scrolls, so the opening
+the next block. A code block can be longer than the screen. In a code
+block, the pane brings that line itself, not the top of the block. A diff that fits on the screen never scrolls, so the opening
 is what puts the pane on its hunk.
 
 **The diff wraps beside the pane.** While the pane is open, the diff wraps

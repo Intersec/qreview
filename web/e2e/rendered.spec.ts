@@ -64,6 +64,48 @@ test('the pane follows the diff as it scrolls', async ({ page }) => {
     .toBeLessThan(40);
 });
 
+test('the pane follows a line inside a long code block', async ({ page }) => {
+  await openChange(page, /docs: write a guide/);
+  await openFile(page, 'guide.md');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+  const pane = page.getByRole('complementary', { name: 'The file, rendered' });
+  await expect(pane.locator('h1')).toHaveText('The guide');
+
+  const row = page.locator('td.code-cell[data-side="new"]', { hasText: 'step 20.' });
+  await row.evaluate((cell) => {
+    const scroller = cell.closest<HTMLElement>('.diff-pane');
+    const bar = scroller?.querySelector<HTMLElement>('.file-bar');
+    if (scroller && bar) {
+      scroller.scrollTop += cell.getBoundingClientRect().top - bar.getBoundingClientRect().bottom;
+    }
+  });
+
+  // The top of the block is far above: the line itself comes to the top.
+  await expect
+    .poll(() =>
+      pane.evaluate((aside) => {
+        const pre = [...aside.querySelectorAll('pre')].find((el) =>
+          el.textContent?.includes('step 20.'),
+        );
+        const text = pre?.textContent ?? '';
+        const at = text.indexOf('step 20.');
+        const walker = document.createTreeWalker(pre ?? aside, NodeFilter.SHOW_TEXT);
+        let seen = 0;
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const length = node.textContent?.length ?? 0;
+          if (seen + length > at) {
+            const range = document.createRange();
+            range.setStart(node, at - seen);
+            return Math.abs(range.getBoundingClientRect().top - aside.getBoundingClientRect().top);
+          }
+          seen += length;
+        }
+        return Infinity;
+      }),
+    )
+    .toBeLessThan(40);
+});
+
 test('the pane opens on the part of the file the diff shows', async ({ page }) => {
   await openChange(page, /docs: reword a section/);
   await openFile(page, 'guide.md');
