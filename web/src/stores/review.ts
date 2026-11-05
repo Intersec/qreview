@@ -215,14 +215,17 @@ export const useReview = defineStore('review', () => {
   /// Each step is skipped when the reader is already there, so walking the
   /// history inside one change reads one diff and no file list.
   async function openPlace(at: Place) {
-    if (at.change !== changeKey.value) {
+    const other = at.change !== changeKey.value;
+    if (other) {
       await openChange(at.change, at.file);
-    } else if (at.file && at.file !== filePath.value) {
-      await openFile(at.file);
     }
 
+    // The file is opened with its version. The version on the screen may
+    // not hold it: one version can add or drop a file that another has.
     if (at.ps !== patchSet.value || at.base !== against.value) {
-      await openPatchSet(at.ps, at.base);
+      await openPatchSet(at.ps, at.base, at.file);
+    } else if (!other && at.file && at.file !== filePath.value) {
+      await openFile(at.file);
     }
   }
 
@@ -358,12 +361,16 @@ export const useReview = defineStore('review', () => {
   }
 
   /// Read another version of the change, against another one.
-  async function openPatchSet(number: number | undefined, base?: string) {
+  ///
+  /// `prefer` names the file to open when that version has it. The file on
+  /// the screen stays otherwise.
+  async function openPatchSet(number: number | undefined, base?: string, prefer?: string) {
     const key = changeKey.value;
     if (!key) {
       return;
     }
     const was = filePath.value;
+    const wanted = prefer ?? was;
 
     await guard(async () => {
       patchSet.value = number;
@@ -372,7 +379,7 @@ export const useReview = defineStore('review', () => {
       void loadPosted(key, number, base);
       files.value = await track(filesLoading, api.files(key, number, base));
 
-      const stays = files.value.find((f) => f.path === was && !f.binary);
+      const stays = files.value.find((f) => f.path === wanted && !f.binary);
       const first = stays ?? files.value.find((f) => !f.binary);
       const read = first ? await track(diffLoading, api.diff(key, first.path, number, base)) : null;
 

@@ -250,16 +250,19 @@ export function build(): Fixture {
     'src/net.blk',
     'int connect_once(int fd)\n{\n    for (;;) {\n        recv(fd);\n    }\n}\n',
   );
+  write(repo, 'src/retry.h', 'int retry_count(void);\n');
   commit(repo, 'net: retry the read', 'Change-Id: Iretryreadaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
   // A second version of that change, so the patch set selectors have two
   // things to choose between. The first version stays reachable by its hash.
+  // It drops a file of the first one, so one file is in one version only.
   const previous = git(repo, ['rev-parse', 'HEAD']);
   write(
     repo,
     'src/net.blk',
     'int connect_once(int fd)\n{\n    for (;;) {\n        recvmsg(fd);\n    }\n}\n',
   );
+  rmSync(join(repo, 'src', 'retry.h'));
   git(repo, ['add', '-A']);
   git(repo, ['commit', '--amend', '--no-edit']);
 

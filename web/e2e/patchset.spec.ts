@@ -29,15 +29,46 @@ test('the two selectors name the versions', async ({ page }) => {
 test('reading one version against the other shows only the work', async ({ page }) => {
   await page.locator('#base-of').selectOption('ps:1');
 
-  // The message and the one file the amend touched.
-  await expect(page.locator('.file-row')).toHaveCount(2);
+  // The message and the two files that the amend touched.
+  await expect(page.locator('.file-row')).toHaveCount(3);
   await expect(page.locator('.file-row').nth(1)).toContainText('net.blk');
+  await expect(page.locator('.file-row').nth(2)).toContainText('retry.h');
 
   await openFile(page, 'net.blk');
   // One version differs from the other by that one word, and by nothing
   // else. Against the parent it would be the whole loop.
   await expect(page.locator('td.code-cell.row-add')).toHaveCount(1);
   await expect(page.locator('td.code-cell.row-add')).toContainText('recvmsg');
+});
+
+test('a reload comes back to a file that the newest version dropped', async ({ page }) => {
+  await page.locator('#base-of').selectOption('ps:1');
+  await openFile(page, 'retry.h');
+
+  await page.reload();
+
+  await expect(page.locator('#base-of')).toHaveValue('ps:1');
+  await expect(page.locator('.file-bar h2')).toContainText('retry.h');
+});
+
+test('back returns to a file that the newest version dropped', async ({ page }) => {
+  const failed: string[] = [];
+  page.on('response', (response) => {
+    if (!response.ok()) {
+      failed.push(response.url());
+    }
+  });
+  await page.locator('#base-of').selectOption('ps:1');
+  await openFile(page, 'retry.h');
+  await page.locator('#base-of').selectOption('parent');
+  await expect(page.locator('.file-bar h2')).not.toContainText('retry.h');
+
+  await page.goBack();
+
+  await expect(page.locator('#base-of')).toHaveValue('ps:1');
+  await expect(page.locator('.file-bar h2')).toContainText('retry.h');
+  // The newest version holds no such file, so asking it for one fails.
+  expect(failed).toEqual([]);
 });
 
 test('a version has no selector when it is the only one', async ({ page }) => {
