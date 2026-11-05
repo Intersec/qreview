@@ -189,3 +189,35 @@ test('a previous remark on a file that the next version dropped opens its versio
   await expect(card(page, 'This line says nothing.')).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
+
+test('a remark of the version read against opens on its line, from the pane', async ({ page }) => {
+  server = await start();
+  await page.goto(server.url);
+  await openChange(page, /docs: rename the document/);
+  await openFile(page, 'new-name.md');
+  await remark(page, '3', 'Say which words.');
+
+  // The correction writes a paragraph above the line, so the line has
+  // another number in each version.
+  const repo = server.fixture.repo;
+  server.kill();
+  writeFileSync(
+    join(repo, 'docs', 'new-name.md'),
+    '# A document\n\nA new first paragraph.\n\nIt has words in it.\nAnd one more line.\n',
+  );
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['commit', '--amend', '--no-edit'], { cwd: repo });
+  server = await start({ on: server.fixture });
+  await page.goto(server.url);
+  await openChange(page, /docs: rename the document/);
+  await page.locator('#base-of').selectOption('ps:1');
+  await openFile(page, 'new-name.md');
+
+  await page
+    .locator('.comment-list .list-row.is-previous', { hasText: 'Say which words.' })
+    .click();
+
+  // Line 3 of patch set 1 is in the left column. Line 3 of the right column
+  // is the new paragraph.
+  await expect(page.locator('tr.row-cursor')).toContainText('It has words in it.');
+});

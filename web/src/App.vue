@@ -260,8 +260,10 @@ function goToVersion(ps: number | undefined, base: string | undefined) {
   return goTo(at && { ...at, ps, base }, review.openPatchSet(ps, base));
 }
 
-/// A remark, with the lines it covers.
+/// A remark, with the lines it covers. A line of the blame is no remark,
+/// and has no id.
 type Target = Remark & {
+  id?: string;
   anchor?: Pick<Anchor, 'file' | 'side' | 'startLine' | 'endLine'> | null;
 };
 
@@ -273,10 +275,19 @@ async function goToComment(key: string, remark: Target) {
   await goTo({ change: key, file: anchor?.file || undefined }, move);
 
   // The lines of another file are not the lines of the remark.
-  const start = anchor?.startLine ?? null;
-  if (anchor && start !== null && (await move)) {
+  if (!anchor || !(await move)) {
+    return;
+  }
+  // The diff may stand the remark away from its anchor: a remark of the
+  // version on the left stands in the old column, and a remark that moved
+  // stands on its new line.
+  const placed = remark.id === undefined ? undefined : review.placement(remark.id);
+  const side = placed?.side ?? anchor.side;
+  const start = placed ? placed.line : anchor.startLine;
+  const end = (placed ? placed.endLine : anchor.endLine) ?? start;
+  if (start !== null && end !== null) {
     await nextTick();
-    await diffView.value?.revealLines(anchor.side, start, anchor.endLine ?? start);
+    await diffView.value?.revealLines(side, start, end);
   }
 }
 
