@@ -482,12 +482,23 @@ text is not rendered. The bars and the ticks stand in one column at the
 left of the page. The interface places each one at the height of its block,
 so a nested item is marked in the same column as a paragraph.
 
-**The pane follows the diff.** When the pane opens, and each time the diff
-scrolls, the pane brings to its top the block that holds the first line of
-the new side that the diff shows. A blank line between two blocks counts for
-the next block. A code block can be longer than the screen. In a code
-block, the pane brings that line itself, not the top of the block. A diff that fits on the screen never scrolls, so the opening
-is what puts the pane on its hunk.
+**The pane and the diff follow each other.** When the pane opens, and each
+time the diff scrolls, the pane brings to its top the first line of the new
+side that the diff shows. A diff that fits on the screen never scrolls, so
+the opening is what puts the pane on its hunk. When the reader scrolls the
+pane, the diff brings under its bar the line at the top of the pane.
+
+- The pane finds the block that holds the line. A blank line between two
+  blocks counts for the next block.
+- In a code block, the rows do not wrap, so each line of the source is one
+  row, and the pane finds the row of the line.
+- In any other block, the text wraps to the width of the pane, so a line of
+  the source has no place of its own. The pane places the line by its share
+  of the lines of the block, and reads a height back to a line the same way.
+- A line that the diff folds has no row. The first line below the fold
+  stands in for it.
+- A scroll that one side makes to follow the other does not make the other
+  side follow it back.
 
 **The diff wraps beside the pane.** While the pane is open, the diff wraps
 its long lines, whatever `diff.wrap` says. The diff has about half the width

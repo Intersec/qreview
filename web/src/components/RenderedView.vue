@@ -2,11 +2,11 @@
 // A Markdown file, rendered by the server, beside its diff.
 //
 // The pane is read only: a remark is written in the diff. Each block of the
-// page knows the lines it came from, which is how the pane follows the diff
-// as it scrolls. See `roadmap/design.md` section 3.8.
+// page knows the lines it came from, which is how the pane and the diff
+// follow each other as they scroll. See `roadmap/design.md` section 3.8.
 
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { blockOf, linesOf, type Block } from '@/diff/blocks';
+import { blockOf, lineWithin, linesOf, within, type Block } from '@/diff/blocks';
 import { clean } from '@/diff/markdown';
 import type { FileDiff } from '@/api/types';
 
@@ -21,6 +21,8 @@ const emit = defineEmits<{
   ready: [];
   /// The reader asked to see removed lines, in the diff.
   reveal: [side: 'old', line: number];
+  /// The reader scrolled the pane: the diff can follow to this line.
+  lead: [line: number];
 }>();
 
 const html = ref('');
@@ -44,6 +46,10 @@ const marks = ref<Mark[]>([]);
 let blocks: (Block & { el: HTMLElement })[] = [];
 /// The line the diff stands on, kept so a page that arrives late lands there.
 let line = 1;
+/// Where the pane scrolled to follow the diff. That scroll is not the
+/// reader's, and the diff must not follow it back.
+let own: number | null = null;
+let leading = false;
 
 async function read() {
   loading.value = true;
@@ -118,7 +124,10 @@ onMounted(read);
 // Another version of the file, or another file, is another page.
 watch(() => props.diff, read);
 
-/// Bring the block of a line of the new side to the top of the pane.
+/// The height in the pane where the line of the diff stands.
+const MARGIN = 12;
+
+/// Bring a line of the new side to the top of the pane.
 function follow(at: number) {
   line = at;
   const scroller = pane.value;
@@ -127,27 +136,95 @@ function follow(at: number) {
   }
   const index = blockOf(blocks, at) ?? blocks.length - 1;
   const top = topOf(blocks[index], at);
-  scroller.scrollTop += top - scroller.getBoundingClientRect().top - 12;
+  scroller.scrollTop += top - scroller.getBoundingClientRect().top - MARGIN;
+  own = scroller.scrollTop;
 }
 
-/// Where a line of the source stands on the screen.
+function onScroll() {
+  const scroller = pane.value;
+  if (!scroller || blocks.length === 0) {
+    return;
+  }
+  if (own !== null && Math.abs(scroller.scrollTop - own) < 1) {
+    own = null;
+    return;
+  }
+  if (leading) {
+    return;
+  }
+  leading = true;
+  requestAnimationFrame(() => {
+    leading = false;
+    lead();
+  });
+}
+
+/// Tell the diff which line of the source stands at the top of the pane.
+function lead() {
+  const scroller = pane.value;
+  if (!scroller || blocks.length === 0) {
+    return;
+  }
+  const y = scroller.getBoundingClientRect().top + MARGIN;
+  // The blocks stand in the order of the page, so the last one that starts
+  // above the line is found by halves.
+  let low = 0;
+  let high = blocks.length - 1;
+  while (low < high) {
+    const middle = (low + high + 1) >> 1;
+    if (blocks[middle].el.getBoundingClientRect().top <= y) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  const block = blocks[low];
+  // Below the bottom of a block is the gap before the next one, which
+  // counts for the next block.
+  const below = y > block.el.getBoundingClientRect().bottom;
+  line = below ? (blocks[low + 1]?.from ?? block.to) : lineAt(block, y);
+  emit('lead', line);
+}
+
+/// The rows of a code block.
 ///
-/// A code block can be longer than the pane, and its top can be far above
-/// the line. Its lines do not wrap, so each one has the same height.
-function topOf(block: Block & { el: HTMLElement }, at: number): number {
+/// The rows of a code block do not wrap, so each line of its source is one
+/// row of the same height, and the place of a line is exact.
+function rowsOf(block: Block & { el: HTMLElement }) {
   const el = block.el;
-  const box = el.getBoundingClientRect().top;
   if (el.tagName !== 'PRE') {
-    return box;
+    return null;
   }
   const rows = (el.textContent ?? '').split('\n').length;
   // The lines of a fenced block count its fences, and the text does not.
   const first = block.to - block.from + 1 > rows ? block.from + 1 : block.from;
-  const row = Math.min(Math.max(at - first, 0), rows - 1);
   const style = getComputedStyle(el);
   const above = parseFloat(style.paddingTop);
   const height = (el.clientHeight - above - parseFloat(style.paddingBottom)) / rows;
-  return row === 0 ? box : box + el.clientTop + above + row * height;
+  const top = el.getBoundingClientRect().top + el.clientTop + above;
+  return { first, rows, top, height };
+}
+
+/// Where a line of the source stands on the screen.
+function topOf(block: Block & { el: HTMLElement }, at: number): number {
+  const box = block.el.getBoundingClientRect();
+  const code = rowsOf(block);
+  if (!code) {
+    return box.top + within(block, at) * box.height;
+  }
+  const row = Math.min(Math.max(at - code.first, 0), code.rows - 1);
+  return row === 0 ? box.top : code.top + row * code.height;
+}
+
+/// The line of the source at a height on the screen. The inverse of `topOf`.
+function lineAt(block: Block & { el: HTMLElement }, y: number): number {
+  const box = block.el.getBoundingClientRect();
+  const code = rowsOf(block);
+  if (!code) {
+    return box.height > 0 ? lineWithin(block, (y - box.top) / box.height) : block.from;
+  }
+  const row = Math.floor((y - code.top) / code.height);
+  return code.first + Math.min(Math.max(row, 0), code.rows - 1);
 }
 
 /// A tick where lines went away brings the diff to them.
@@ -162,7 +239,7 @@ defineExpose({ follow });
 </script>
 
 <template>
-  <aside ref="pane" class="rendered-pane" aria-label="The file, rendered">
+  <aside ref="pane" class="rendered-pane" aria-label="The file, rendered" @scroll="onScroll">
     <p v-if="failed" class="note warn">{{ failed }}</p>
     <p v-else-if="loading && html === ''" class="note">Rendering the file…</p>
     <div class="md-page">

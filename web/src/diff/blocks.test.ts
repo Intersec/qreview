@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blockOf, linesOf } from './blocks';
+import { blockOf, lineWithin, linesOf, within } from './blocks';
 
 describe('linesOf', () => {
   it('reads a range', () => {
@@ -32,5 +32,32 @@ describe('blockOf', () => {
 
   it('has no place past the last block', () => {
     expect(blockOf(blocks, 9)).toBeNull();
+  });
+});
+
+describe('within', () => {
+  const block = { from: 10, to: 13 };
+
+  it('places a line by its share of the lines of the block', () => {
+    expect(within(block, 10)).toBe(0);
+    expect(within(block, 12)).toBe(0.5);
+  });
+
+  it('keeps a line outside the block at an edge', () => {
+    expect(within(block, 2)).toBe(0);
+    expect(within(block, 40)).toBe(0.75);
+  });
+
+  it('comes back to the line through lineWithin', () => {
+    for (let line = 10; line <= 13; line += 1) {
+      expect(lineWithin(block, within(block, line))).toBe(line);
+    }
+  });
+});
+
+describe('lineWithin', () => {
+  it('keeps a share past the bottom on the last line', () => {
+    expect(lineWithin({ from: 10, to: 13 }, 1)).toBe(13);
+    expect(lineWithin({ from: 10, to: 13 }, -0.2)).toBe(10);
   });
 });

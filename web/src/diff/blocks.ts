@@ -30,3 +30,21 @@ export function blockOf(blocks: Block[], line: number): number | null {
   const next = blocks.findIndex((block) => block.from > line);
   return next === -1 ? null : next;
 }
+
+/// How far down its block a line stands: 0 at the top, under 1 at the
+/// bottom.
+///
+/// The text of a block wraps to the width of the pane, so a line of the
+/// source has no place of its own on the page. Its share of the lines of the
+/// block is the best guess, and it keeps the two sides moving together.
+export function within(block: Block, line: number): number {
+  const span = block.to - block.from + 1;
+  return Math.min(Math.max(line - block.from, 0), span - 1) / span;
+}
+
+/// The line at a share of the height of a block. The inverse of `within`.
+export function lineWithin(block: Block, share: number): number {
+  const span = block.to - block.from + 1;
+  const row = Math.floor(Math.min(Math.max(share, 0), 1) * span);
+  return Math.min(block.from + row, block.to);
+}
