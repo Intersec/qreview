@@ -94,13 +94,29 @@ enum Place {
     Leaf {
         first: usize,
         last: usize,
-        code: bool,
+        code: Option<Code>,
     },
     /// A section: its title is the block, and it stands on the heading.
     Title { first: usize, last: usize },
     /// A container, whose children carry the lines, or a block inside a
     /// list, which is one block for the pane.
     None,
+}
+
+/// A code block: a listing or a literal.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Code {
+    /// The block has the style `mermaid`: the page draws it.
+    mermaid: bool,
+}
+
+/// The `<pre>` of a code block, written but not closed yet.
+struct Pre {
+    /// Where its tag stands in `out`.
+    tag: std::ops::Range<usize>,
+    attrs: Vec<(String, String)>,
+    /// Where its text starts in the HTML.
+    text: usize,
 }
 
 /// The kind of element that an anchor stands on.
@@ -149,7 +165,7 @@ fn walk<'a>(
                 Place::Leaf {
                     first,
                     last,
-                    code: false,
+                    code: None,
                 },
             ),
             _ if !children.is_empty() => (Kind::Other, Place::None),
@@ -158,7 +174,9 @@ fn walk<'a>(
                 Place::Leaf {
                     first,
                     last,
-                    code: true,
+                    code: Some(Code {
+                        mermaid: block.declared_style() == Some("mermaid"),
+                    }),
                 },
             ),
             _ => (
@@ -166,7 +184,7 @@ fn walk<'a>(
                 Place::Leaf {
                     first,
                     last,
-                    code: false,
+                    code: None,
                 },
             ),
         };
@@ -224,11 +242,9 @@ struct Rewriter<'a> {
     /// A title that waits for its heading: the one of the document, then the
     /// one of each section.
     title: Option<(usize, usize)>,
-    /// The code block being read: its last line.
-    leaf: Option<usize>,
-    /// A `<pre>` of a code block: where its tag ends in `out`, and where its
-    /// text starts.
-    pre: Option<(usize, usize)>,
+    /// The code block being read, and its last line.
+    leaf: Option<(Code, usize)>,
+    pre: Option<Pre>,
     /// How many `<a>` were written as a `<span>` and are still open.
     span_links: usize,
 }
@@ -264,7 +280,7 @@ impl Rewriter<'_> {
                 Some(Place::Leaf { first, last, code }) => {
                     self.markers(first);
                     self.mark(&mut attrs, first, last);
-                    self.leaf = code.then_some(last);
+                    self.leaf = code.map(|code| (code, last));
                 }
                 Some(Place::Title { first, last }) => self.title = Some((first, last)),
                 Some(Place::None) | None => {}
@@ -280,9 +296,17 @@ impl Rewriter<'_> {
         match name.as_str() {
             "pre" if self.leaf.is_some() => {
                 add_class(&mut attrs, "md-code");
+                if self.leaf.is_some_and(|(code, _)| code.mermaid) {
+                    add_class(&mut attrs, "md-mermaid");
+                }
+                // The tag is written again once the rows are counted.
+                let start = self.out.len();
                 self.out.push_str(&write(&name, &attrs));
-                // `data-code` goes in once the rows are counted.
-                self.pre = Some((self.out.len() - 1, at));
+                self.pre = Some(Pre {
+                    tag: start..self.out.len(),
+                    attrs,
+                    text: at,
+                });
             }
             "code" if self.pre.is_some() => {
                 let language = attrs
@@ -290,8 +314,16 @@ impl Rewriter<'_> {
                     .find(|(key, _)| key == "data-lang")
                     .map(|(_, value)| unescape(value));
                 self.out.push_str(&write(&name, &attrs));
-                if let Some(language) = language {
-                    return self.code(html, at, &language);
+                match language.as_deref() {
+                    // A `[source,mermaid]` block says so only here. The page
+                    // draws it in place of its code.
+                    Some("mermaid") => {
+                        if let Some(pre) = self.pre.as_mut() {
+                            add_class(&mut pre.attrs, "md-mermaid");
+                        }
+                    }
+                    Some(language) => return self.code(html, at, language),
+                    None => {}
                 }
             }
             "img" => self.image(&attrs),
@@ -308,11 +340,11 @@ impl Rewriter<'_> {
                 self.out.push_str("</span>");
             }
             "</pre>" => {
-                if let (Some((tag_end, text)), Some(last)) = (self.pre.take(), self.leaf.take()) {
-                    let rows = rows(&html[text..at - tag.len()]);
+                if let (Some(mut pre), Some((_, last))) = (self.pre.take(), self.leaf.take()) {
+                    let rows = rows(&html[pre.text..at - tag.len()]);
                     let first = self.first_row(last, rows);
-                    self.out
-                        .insert_str(tag_end, &format!(" data-code=\"{first}\""));
+                    pre.attrs.push(("data-code".to_owned(), first.to_string()));
+                    self.out.replace_range(pre.tag, &write("pre", &pre.attrs));
                 }
                 self.out.push_str(tag);
             }
@@ -637,6 +669,28 @@ mod tests {
             html.contains(
                 "<pre class=\"highlight md-code\" data-code=\"5\"><code class=\"language-c\" \
                  data-lang=\"c\"><span class=\"tok-storage\">int</span> a;\nint &lt;b&gt;;</code></pre>"
+            ),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn a_mermaid_block_is_left_for_the_page_to_draw() {
+        let paint = |_: &str, _: &str| -> Vec<Vec<Span>> { panic!("a diagram is not painted") };
+        let text = "[mermaid]\n....\ngraph LR\n  A --> B\n....\n\n\
+                    [source,mermaid]\n----\ngraph TD\n----\n";
+        let html = render(text, "", &Changes::default(), &paint);
+
+        assert!(
+            html.contains(
+                "<pre class=\"md-code md-mermaid\" data-code=\"3\">graph LR\n  A --&gt; B</pre>"
+            ),
+            "{html}"
+        );
+        assert!(
+            html.contains(
+                "<pre class=\"highlight md-code md-mermaid\" data-code=\"9\">\
+                 <code class=\"language-mermaid\" data-lang=\"mermaid\">graph TD</code></pre>"
             ),
             "{html}"
         );

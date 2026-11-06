@@ -205,6 +205,38 @@ test('an AsciiDoc file is rendered beside its diff', async ({ page }) => {
   expect(await page.evaluate(() => (window as { ran?: boolean }).ran)).toBeUndefined();
 });
 
+test('a Mermaid diagram is drawn in a sandboxed frame', async ({ page }) => {
+  await openChange(page, /docs: write a guide/);
+  await openFile(page, 'guide.md');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+  const pane = page.getByRole('complementary', { name: 'The file, rendered' });
+
+  const diagram = pane.locator('.md-diagram');
+  const frame = diagram.locator('iframe');
+  await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+  await expect
+    .poll(async () => (await frame.boundingBox())?.height ?? 0, { timeout: 15_000 })
+    .toBeGreaterThan(20);
+  // The code gives its place to the diagram, which keeps its lines.
+  await expect(diagram.locator('pre')).toBeHidden();
+  await expect(diagram).toHaveAttribute('data-lines', /^\d+-\d+$/);
+  await expect(frame.contentFrame().locator('svg')).toContainText('review');
+});
+
+test('a diagram that Mermaid cannot read leaves its code', async ({ page }) => {
+  await openChange(page, /docs: write a manual/);
+  await openFile(page, 'manual.adoc');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+  const pane = page.getByRole('complementary', { name: 'The file, rendered' });
+
+  const diagram = pane.locator('.md-diagram');
+  await expect(diagram.locator('.md-diagram-error')).toContainText('cannot be drawn', {
+    timeout: 15_000,
+  });
+  await expect(diagram.locator('pre')).toHaveText('not a diagram');
+  await expect(diagram.locator('iframe')).toHaveCount(0);
+});
+
 test('the pane is read only', async ({ page }) => {
   await openChange(page, /docs: write a guide/);
   await openFile(page, 'guide.md');

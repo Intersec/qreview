@@ -559,12 +559,19 @@ impl<'p> Writer<'p> {
         let Some((language, code, lines)) = self.code.take() else {
             return;
         };
-        let spans = match language.is_empty() {
+        // The page draws a diagram in place of its code. See `mermaid.ts`.
+        let diagram = language == "mermaid";
+        let spans = match language.is_empty() || diagram {
             true => Vec::new(),
             false => (self.paint)(&language, &code),
         };
 
-        let mut html = format!("<pre class=\"md-code\" {lines}><code>");
+        let class = if diagram {
+            "md-code md-mermaid"
+        } else {
+            "md-code"
+        };
+        let mut html = format!("<pre class=\"{class}\" {lines}><code>");
         for (number, line) in code.lines().enumerate() {
             if number > 0 {
                 html.push('\n');
@@ -885,6 +892,22 @@ mod tests {
             "<pre class=\"md-code\" data-lines=\"3-6\"><code>\
              <span class=\"tok-storage\">int</span> a;\nint &lt;b&gt;;</code></pre>"
         ));
+    }
+
+    #[test]
+    fn a_mermaid_block_is_left_for_the_page_to_draw() {
+        let paint = |_: &str, _: &str| -> Vec<Vec<Span>> { panic!("a diagram is not painted") };
+        let html = render(
+            "```mermaid\ngraph LR\n  A --> B\n```\n",
+            "",
+            &Changes::default(),
+            &paint,
+        );
+
+        assert_eq!(
+            html,
+            "<pre class=\"md-code md-mermaid\" data-lines=\"1-4\"><code>graph LR\n  A --&gt; B</code></pre>"
+        );
     }
 
     #[test]

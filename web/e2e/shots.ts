@@ -112,6 +112,19 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.screenshot({ path: join(OUT, `${scheme}-asciidoc.png`) });
   await page.getByRole('button', { name: 'Hide rendered' }).click();
 
+  // A Mermaid diagram, drawn in its frame, near the end of the guide.
+  await openChange(page, /docs: write a guide/);
+  await openFile(page, 'guide.md');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+  const frame = page.locator('.md-diagram iframe');
+  await frame.waitFor();
+  await page.waitForFunction(
+    () => (document.querySelector('.md-diagram iframe')?.getBoundingClientRect().height ?? 0) > 20,
+  );
+  await frame.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await page.screenshot({ path: join(OUT, `${scheme}-mermaid.png`) });
+  await page.getByRole('button', { name: 'Hide rendered' }).click();
+
   // The panel, which is where the settings live now.
   await page.getByRole('button', { name: '⚙' }).click();
   await page.screenshot({ path: join(OUT, `${scheme}-preferences.png`) });
