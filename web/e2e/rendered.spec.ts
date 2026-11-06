@@ -64,6 +64,35 @@ test('the pane follows the diff as it scrolls', async ({ page }) => {
     .toBeLessThan(40);
 });
 
+test('the diff follows the pane as the reader scrolls it', async ({ page }) => {
+  await openChange(page, /docs: write a guide/);
+  await openFile(page, 'guide.md');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+  const pane = page.getByRole('complementary', { name: 'The file, rendered' });
+  await expect(pane.locator('h1')).toHaveText('The guide');
+
+  // The reader brings a section near the end to the top of the pane.
+  await pane.locator('h2', { hasText: /^Section 25$/ }).evaluate((heading) => {
+    const aside = heading.closest<HTMLElement>('aside');
+    if (aside) {
+      aside.scrollTop += heading.getBoundingClientRect().top - aside.getBoundingClientRect().top;
+    }
+  });
+
+  const row = page.locator('td.code-cell[data-side="new"]', { hasText: /^## Section 25$/ });
+  const bar = page.locator('.file-bar');
+  await expect
+    .poll(async () => {
+      const [box, under] = await Promise.all([row.boundingBox(), bar.boundingBox()]);
+      return box && under ? Math.abs(box.y - (under.y + under.height)) : Infinity;
+    })
+    .toBeLessThan(40);
+  // The diff moved for the pane: the pane must not move back for the diff.
+  const top = await pane.evaluate((aside) => aside.scrollTop);
+  await page.waitForTimeout(300);
+  expect(await pane.evaluate((aside) => aside.scrollTop)).toBe(top);
+});
+
 test('the pane follows a line inside a long code block', async ({ page }) => {
   await openChange(page, /docs: write a guide/);
   await openFile(page, 'guide.md');

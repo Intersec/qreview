@@ -272,8 +272,44 @@ function follow() {
   }
 }
 
+/// Where the diff scrolled to follow the pane. That scroll is not the
+/// reader's, and the pane must not follow it back.
+let led: number | null = null;
+
+/// Bring a line of the new side under the file bar: the reader scrolled the
+/// rendered pane.
+function lead(line: number) {
+  const scroller = pane.value;
+  const cells = scroller?.querySelectorAll<HTMLElement>('td.code-cell[data-side="new"]');
+  const under = bar.value?.getBoundingClientRect().bottom;
+  if (!scroller || !cells || cells.length === 0 || under === undefined) {
+    return;
+  }
+  // The lines of the new side grow down the page. A line in a folded gap
+  // has no cell, and the first line below it stands in.
+  let low = 0;
+  let high = cells.length - 1;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (Number(cells[middle].dataset.line) >= line) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+  scroller.scrollTop += cells[low].getBoundingClientRect().top - under;
+  led = scroller.scrollTop;
+}
+
 function onScroll() {
-  if (!beside.value || following) {
+  if (!beside.value) {
+    return;
+  }
+  if (led !== null && Math.abs((pane.value?.scrollTop ?? 0) - led) < 1) {
+    led = null;
+    return;
+  }
+  if (following) {
     return;
   }
   following = true;
@@ -1958,6 +1994,7 @@ function toggle(row: Row | null, column: Side) {
         :image-url="imageUrl"
         :style="{ top: `${paneTop}px`, height: `${paneHeight}px` }"
         @ready="follow"
+        @lead="lead"
         @reveal="(side, line) => revealLines(side, line, line)"
       />
     </div>
