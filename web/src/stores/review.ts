@@ -448,6 +448,21 @@ export const useReview = defineStore('review', () => {
   /// A failure is said, never swallowed. This was the one call of the store
   /// that let its error fall on the floor, so a run the server refused left
   /// the reader with a button that seemed to do nothing.
+  /// The file on the screen, rendered. Asked for by the reader, never ahead.
+  /// Where an image of the version read is fetched, for the rendered file.
+  function imageUrl(path: string): string {
+    return api.blobUrl(changeKey.value ?? '', path, patchSet.value);
+  }
+
+  async function loadRendered(): Promise<string> {
+    const key = changeKey.value;
+    const file = filePath.value;
+    if (!key || !file) {
+      return '';
+    }
+    return (await api.rendered(key, file, patchSet.value, against.value, ignoreWs.value)).html;
+  }
+
   async function loadLines(from: number, to: number) {
     const key = changeKey.value;
     const file = filePath.value;
@@ -1011,6 +1026,8 @@ export const useReview = defineStore('review', () => {
     copyExport,
     markChange,
     loadLines,
+    loadRendered,
+    imageUrl,
     patchSet,
     against,
     openPatchSet,

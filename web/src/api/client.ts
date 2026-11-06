@@ -19,6 +19,7 @@ import type {
   Posted,
   Release,
   Review,
+  Rendered,
   Row,
   Series,
   SessionBody,
@@ -134,6 +135,21 @@ export const api = {
         ps: num(ps),
       })}`,
     ),
+
+  rendered: (key: string, file: string, ps?: number, base?: string, ignoreWs = false) =>
+    call<Rendered>(
+      `/api/changes/${encodeURIComponent(key)}/rendered${query({
+        file,
+        ps: num(ps),
+        base,
+        ws: ignoreWs ? 'ignore' : undefined,
+      })}`,
+    ),
+
+  /// Where an image of the tree is read. An address, not a call: the
+  /// browser fetches it for an `<img>`, with the cookie of the session.
+  blobUrl: (key: string, path: string, ps?: number) =>
+    `/api/changes/${encodeURIComponent(key)}/blob${query({ path, ps: num(ps) })}`,
 
   patchSets: (key: string) => call<PatchSets>(`/api/changes/${encodeURIComponent(key)}/patchsets`),
 

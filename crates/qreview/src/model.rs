@@ -184,6 +184,9 @@ pub struct FileDiff {
     /// context sits between the hunks and after the last one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line_count: Option<usize>,
+    /// The file is Markdown, so the page offers its rendered view.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub markdown: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

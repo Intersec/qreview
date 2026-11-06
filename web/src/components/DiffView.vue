@@ -8,6 +8,7 @@ import ContextBar from './ContextBar.vue';
 import CommentCell from './CommentCell.vue';
 import DiffRow from './DiffRow.vue';
 import PostedCard from './PostedCard.vue';
+import RenderedView from './RenderedView.vue';
 import { commitsOn, type BlameLine, type BlameTarget } from '@/diff/blame';
 import { gaps, type Gap } from '@/diff/gaps';
 import { HOVERED, wordAt } from '@/diff/hover';
@@ -40,6 +41,10 @@ const props = defineProps<{
   placement: (id: string) => Placed | undefined;
   /// Read a run of lines the diff does not carry.
   loadLines: (from: number, to: number) => Promise<Row[]>;
+  /// Read the file rendered, when it is Markdown.
+  loadRendered: () => Promise<string>;
+  /// Where an image of the version read is fetched.
+  imageUrl: (path: string) => string;
   /// The comments whose line this version does not have any more.
   stranded: Comment[];
   /// The files of the change, so a remark about one it no longer touches
@@ -200,6 +205,83 @@ function foldThreads(folded: boolean) {
 
 /// True while a remark about the file as a whole is being written.
 const aboutFile = ref(false);
+
+/// True while the reader wants a Markdown file rendered beside its diff.
+/// Nothing renders before they ask, and the pane stays open from one
+/// Markdown file to the next until they hide it.
+const rendered = ref(false);
+const beside = computed(() => rendered.value && props.diff.markdown === true);
+/// Beside the pane, the diff has half the width. A table as wide as its
+/// longest line would push the bar of a gap under the pane.
+const wraps = computed(() => props.wrap || beside.value);
+
+const pane = ref<HTMLElement | null>(null);
+const bar = ref<HTMLElement | null>(null);
+const renderedView = ref<InstanceType<typeof RenderedView> | null>(null);
+/// The pane sits under the file bar and fills the rest of the height, so it
+/// scrolls on its own while the diff scrolls past it.
+const paneTop = ref(0);
+const paneHeight = ref(0);
+let sizes: ResizeObserver | null = null;
+
+onMounted(() => {
+  sizes = new ResizeObserver(() => {
+    paneTop.value = bar.value?.offsetHeight ?? 0;
+    paneHeight.value = (pane.value?.clientHeight ?? 0) - paneTop.value;
+  });
+  for (const el of [pane.value, bar.value]) {
+    if (el) {
+      sizes.observe(el);
+    }
+  }
+});
+onBeforeUnmount(() => sizes?.disconnect());
+
+/// The first line of the new side that the diff shows under the file bar.
+function topLine(): number | null {
+  const cells = pane.value?.querySelectorAll<HTMLElement>('td.code-cell[data-side="new"]');
+  const under = bar.value?.getBoundingClientRect().bottom;
+  if (!cells || cells.length === 0 || under === undefined) {
+    return null;
+  }
+  // The cells stand in the order of the page, so the first one below the
+  // bar is found by halves: a large diff has thousands.
+  let low = 0;
+  let high = cells.length - 1;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (cells[middle].getBoundingClientRect().bottom > under) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return Number(cells[low].dataset.line);
+}
+
+let following = false;
+
+/// Bring the rendered pane to the part of the file the diff shows.
+///
+/// On a scroll, and when a page arrives: a diff that fits on the screen
+/// never scrolls, and the pane must still open on its hunk.
+function follow() {
+  const line = topLine();
+  if (line !== null) {
+    renderedView.value?.follow(line);
+  }
+}
+
+function onScroll() {
+  if (!beside.value || following) {
+    return;
+  }
+  following = true;
+  requestAnimationFrame(() => {
+    following = false;
+    follow();
+  });
+}
 
 /// The file that carries what belongs to no file of the change.
 ///
@@ -1279,8 +1361,8 @@ function toggle(row: Row | null, column: Side) {
 </script>
 
 <template>
-  <div class="diff-pane">
-    <header class="file-bar">
+  <div ref="pane" class="diff-pane" @scroll="onScroll">
+    <header ref="bar" class="file-bar">
       <div class="file-name">
         <h2>
           <span v-if="diff.oldPath" class="from">{{ diff.oldPath }} →</span>
@@ -1311,6 +1393,15 @@ function toggle(row: Row | null, column: Side) {
         <button v-if="!readOnly" type="button" class="chip" @click="aboutFile = !aboutFile">
           {{ isHome ? 'Comment on the change' : 'Comment on the file' }}
         </button>
+        <button
+          v-if="diff.markdown"
+          type="button"
+          class="chip"
+          :aria-pressed="rendered"
+          @click="rendered = !rendered"
+        >
+          {{ rendered ? 'Hide rendered' : 'Show rendered' }}
+        </button>
         <!-- Who wrote the code the change works on, the way Gerrit shows
            it. The message has no history to read. -->
         <button
@@ -1335,522 +1426,540 @@ function toggle(row: Row | null, column: Side) {
       </span>
     </header>
 
-    <!-- A file with no diff still carries its remarks. -->
-    <section v-if="(diff.binary || diff.hunks.length === 0) && opensWithRemarks" class="no-diff">
-      <PostedCard
-        v-for="remark in postedBeforeFirstLine"
-        :key="remark.id"
-        :comment="remark"
-        :stranded="remark.line !== null"
-      />
-      <CommentCard
-        v-for="comment in beforeFirstLine"
-        :key="comment.id"
-        :comment="comment"
-        :at="currentSha"
-        :sets="sets"
-        :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
-        :read-only="readOnly"
-        @edit="(id, body) => emit('edit', id, body)"
-        @remove="(id) => emit('remove', id)"
-      />
-      <CommentBox
-        v-if="aboutFile"
-        :label="isHome ? 'A remark about the change' : 'A remark about the file'"
-        askable
-        @save="(body, ask) => writeAboutFile(body, ask)"
-        @cancel="aboutFile = false"
-      />
-    </section>
+    <div class="diff-body" :class="{ beside }">
+      <div class="diff-main">
+        <!-- A file with no diff still carries its remarks. -->
+        <section
+          v-if="(diff.binary || diff.hunks.length === 0) && opensWithRemarks"
+          class="no-diff"
+        >
+          <PostedCard
+            v-for="remark in postedBeforeFirstLine"
+            :key="remark.id"
+            :comment="remark"
+            :stranded="remark.line !== null"
+          />
+          <CommentCard
+            v-for="comment in beforeFirstLine"
+            :key="comment.id"
+            :comment="comment"
+            :at="currentSha"
+            :sets="sets"
+            :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
+            :read-only="readOnly"
+            @edit="(id, body) => emit('edit', id, body)"
+            @remove="(id) => emit('remove', id)"
+          />
+          <CommentBox
+            v-if="aboutFile"
+            :label="isHome ? 'A remark about the change' : 'A remark about the file'"
+            askable
+            @save="(body, ask) => writeAboutFile(body, ask)"
+            @cancel="aboutFile = false"
+          />
+        </section>
 
-    <p v-if="diff.binary" class="note">A binary file has no diff to read.</p>
+        <p v-if="diff.binary" class="note">A binary file has no diff to read.</p>
 
-    <p v-else-if="diff.hunks.length === 0" class="note">Nothing changed inside this file.</p>
+        <p v-else-if="diff.hunks.length === 0" class="note">Nothing changed inside this file.</p>
 
-    <div
-      v-else
-      ref="scroller"
-      class="diff-scroll"
-      @mousedown="onDown"
-      @mouseup="onSelect"
-      @mousemove="onMove"
-      @mouseleave="hovered = null"
-    >
-      <table v-if="split" class="code" :class="[wrap ? '' : 'nowrap', only]">
-        <colgroup>
-          <col v-if="blame" class="blame-col" />
-          <col class="gut" />
-          <col />
-          <col class="gut" />
-          <col />
-        </colgroup>
-        <!-- Before the first line, the way Gerrit puts a remark about a
+        <div
+          v-else
+          ref="scroller"
+          class="diff-scroll"
+          @mousedown="onDown"
+          @mouseup="onSelect"
+          @mousemove="onMove"
+          @mouseleave="hovered = null"
+        >
+          <table v-if="split" class="code" :class="[wraps ? '' : 'nowrap', only]">
+            <colgroup>
+              <col v-if="blame" class="blame-col" />
+              <col class="gut" />
+              <col />
+              <col class="gut" />
+              <col />
+            </colgroup>
+            <!-- Before the first line, the way Gerrit puts a remark about a
            file above line 1: a band of its own took the top of every
            screen, on every file, whether it held anything or not. -->
-        <tbody v-if="opensWithRemarks">
-          <tr class="talk">
-            <td :colspan="4 + extra">
-              <PostedCard
-                v-for="remark in postedBeforeFirstLine"
-                :key="remark.id"
-                :comment="remark"
-                :stranded="remark.line !== null"
-              />
-              <CommentCard
-                v-for="comment in beforeFirstLine"
-                :key="comment.id"
-                :comment="comment"
-                :at="currentSha"
-                :sets="sets"
-                :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
-                :read-only="readOnly"
-                @edit="(id, body) => emit('edit', id, body)"
-                @remove="(id) => emit('remove', id)"
-              />
-              <CommentBox
-                v-if="aboutFile"
-                :label="isHome ? 'A remark about the change' : 'A remark about the file'"
-                askable
-                @save="(body, ask) => writeAboutFile(body, ask)"
-                @cancel="aboutFile = false"
-              />
-            </td>
-          </tr>
-        </tbody>
-        <tbody v-for="(block, b) in blocks" :key="b">
-          <template v-if="block.kind === 'gap'">
-            <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
-              <tr :class="onCursor(row) ? 'row-cursor' : ''">
-                <BlameCell
-                  v-if="blame"
-                  :line="row.oldLine"
-                  :lines="blame"
-                  :target="blameTarget"
-                  :waiting="blameBusy"
-                  @open="(at) => emit('open-blame', at)"
-                  @peek="peek"
-                  @leave="peeking = null"
-                />
-                <DiffRow
-                  :row="row"
-                  side="old"
-                  :mark="markOf(row, 'old')"
-                  :commentable="!readOnly"
-                  @comment="toggle(row, 'old')"
-                />
-                <DiffRow
-                  :row="row"
-                  side="new"
-                  :mark="markOf(row, 'new')"
-                  :commentable="!readOnly"
-                  @comment="toggle(row, 'new')"
-                />
-              </tr>
-              <tr v-if="talkative(row, 'old') || talkative(row, 'new')" class="talk">
-                <td v-if="blame" class="blame" />
-                <td colspan="2">
-                  <CommentCell
-                    :comments="at(row, 'old')"
-                    :posted="atPosted(row, 'old')"
-                    :writing="opening(row, 'old')"
+            <tbody v-if="opensWithRemarks">
+              <tr class="talk">
+                <td :colspan="4 + extra">
+                  <PostedCard
+                    v-for="remark in postedBeforeFirstLine"
+                    :key="remark.id"
+                    :comment="remark"
+                    :stranded="remark.line !== null"
+                  />
+                  <CommentCard
+                    v-for="comment in beforeFirstLine"
+                    :key="comment.id"
+                    :comment="comment"
                     :at="currentSha"
                     :sets="sets"
+                    :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
                     :read-only="readOnly"
-                    :draft="draftAt(row, 'old')"
-                    :label="boxLabel(row, 'old')"
-                    @save="(body, ask) => write(row, 'old', body, ask)"
-                    @cancel="closeBox(keyIn(row, 'old'))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
                   />
-                </td>
-                <td colspan="2">
-                  <CommentCell
-                    :comments="at(row, 'new')"
-                    :posted="atPosted(row, 'new')"
-                    :writing="opening(row, 'new')"
-                    :at="currentSha"
-                    :sets="sets"
-                    :read-only="readOnly"
-                    :draft="draftAt(row, 'new')"
-                    :label="boxLabel(row, 'new')"
-                    @save="(body, ask) => write(row, 'new', body, ask)"
-                    @cancel="closeBox(keyIn(row, 'new'))"
-                    @edit="(id, body) => emit('edit', id, body)"
-                    @remove="(id) => emit('remove', id)"
+                  <CommentBox
+                    v-if="aboutFile"
+                    :label="isHome ? 'A remark about the change' : 'A remark about the file'"
+                    askable
+                    @save="(body, ask) => writeAboutFile(body, ask)"
+                    @cancel="aboutFile = false"
                   />
                 </td>
               </tr>
-            </template>
-            <ContextBar
-              v-if="!isOpen(block.gap)"
-              :from="rest(block.gap).from"
-              :to="rest(block.gap).to"
-              :columns="4 + extra"
-              :busy="loading"
-              @open="(from, to) => open(block.gap, from, to)"
-            />
-            <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
-              <tr :class="onCursor(row) ? 'row-cursor' : ''">
-                <BlameCell
-                  v-if="blame"
-                  :line="row.oldLine"
-                  :lines="blame"
-                  :target="blameTarget"
-                  :waiting="blameBusy"
-                  @open="(at) => emit('open-blame', at)"
-                  @peek="peek"
-                  @leave="peeking = null"
+            </tbody>
+            <tbody v-for="(block, b) in blocks" :key="b">
+              <template v-if="block.kind === 'gap'">
+                <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
+                  <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                    <BlameCell
+                      v-if="blame"
+                      :line="row.oldLine"
+                      :lines="blame"
+                      :target="blameTarget"
+                      :waiting="blameBusy"
+                      @open="(at) => emit('open-blame', at)"
+                      @peek="peek"
+                      @leave="peeking = null"
+                    />
+                    <DiffRow
+                      :row="row"
+                      side="old"
+                      :mark="markOf(row, 'old')"
+                      :commentable="!readOnly"
+                      @comment="toggle(row, 'old')"
+                    />
+                    <DiffRow
+                      :row="row"
+                      side="new"
+                      :mark="markOf(row, 'new')"
+                      :commentable="!readOnly"
+                      @comment="toggle(row, 'new')"
+                    />
+                  </tr>
+                  <tr v-if="talkative(row, 'old') || talkative(row, 'new')" class="talk">
+                    <td v-if="blame" class="blame" />
+                    <td colspan="2">
+                      <CommentCell
+                        :comments="at(row, 'old')"
+                        :posted="atPosted(row, 'old')"
+                        :writing="opening(row, 'old')"
+                        :at="currentSha"
+                        :sets="sets"
+                        :read-only="readOnly"
+                        :draft="draftAt(row, 'old')"
+                        :label="boxLabel(row, 'old')"
+                        @save="(body, ask) => write(row, 'old', body, ask)"
+                        @cancel="closeBox(keyIn(row, 'old'))"
+                        @edit="(id, body) => emit('edit', id, body)"
+                        @remove="(id) => emit('remove', id)"
+                      />
+                    </td>
+                    <td colspan="2">
+                      <CommentCell
+                        :comments="at(row, 'new')"
+                        :posted="atPosted(row, 'new')"
+                        :writing="opening(row, 'new')"
+                        :at="currentSha"
+                        :sets="sets"
+                        :read-only="readOnly"
+                        :draft="draftAt(row, 'new')"
+                        :label="boxLabel(row, 'new')"
+                        @save="(body, ask) => write(row, 'new', body, ask)"
+                        @cancel="closeBox(keyIn(row, 'new'))"
+                        @edit="(id, body) => emit('edit', id, body)"
+                        @remove="(id) => emit('remove', id)"
+                      />
+                    </td>
+                  </tr>
+                </template>
+                <ContextBar
+                  v-if="!isOpen(block.gap)"
+                  :from="rest(block.gap).from"
+                  :to="rest(block.gap).to"
+                  :columns="4 + extra"
+                  :busy="loading"
+                  @open="(from, to) => open(block.gap, from, to)"
                 />
-                <DiffRow
-                  :row="row"
-                  side="old"
-                  :mark="markOf(row, 'old')"
-                  :commentable="!readOnly"
-                  @comment="toggle(row, 'old')"
-                />
-                <DiffRow
-                  :row="row"
-                  side="new"
-                  :mark="markOf(row, 'new')"
-                  :commentable="!readOnly"
-                  @comment="toggle(row, 'new')"
-                />
-              </tr>
-              <tr v-if="talkative(row, 'old') || talkative(row, 'new')" class="talk">
-                <td v-if="blame" class="blame" />
-                <td colspan="2">
-                  <CommentCell
-                    :comments="at(row, 'old')"
-                    :posted="atPosted(row, 'old')"
-                    :writing="opening(row, 'old')"
-                    :at="currentSha"
-                    :sets="sets"
-                    :read-only="readOnly"
-                    :draft="draftAt(row, 'old')"
-                    :label="boxLabel(row, 'old')"
-                    @save="(body, ask) => write(row, 'old', body, ask)"
-                    @cancel="closeBox(keyIn(row, 'old'))"
-                    @edit="(id, body) => emit('edit', id, body)"
-                    @remove="(id) => emit('remove', id)"
-                  />
-                </td>
-                <td colspan="2">
-                  <CommentCell
-                    :comments="at(row, 'new')"
-                    :posted="atPosted(row, 'new')"
-                    :writing="opening(row, 'new')"
-                    :at="currentSha"
-                    :sets="sets"
-                    :read-only="readOnly"
-                    :draft="draftAt(row, 'new')"
-                    :label="boxLabel(row, 'new')"
-                    @save="(body, ask) => write(row, 'new', body, ask)"
-                    @cancel="closeBox(keyIn(row, 'new'))"
-                    @edit="(id, body) => emit('edit', id, body)"
-                    @remove="(id) => emit('remove', id)"
-                  />
-                </td>
-              </tr>
-            </template>
-          </template>
+                <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
+                  <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                    <BlameCell
+                      v-if="blame"
+                      :line="row.oldLine"
+                      :lines="blame"
+                      :target="blameTarget"
+                      :waiting="blameBusy"
+                      @open="(at) => emit('open-blame', at)"
+                      @peek="peek"
+                      @leave="peeking = null"
+                    />
+                    <DiffRow
+                      :row="row"
+                      side="old"
+                      :mark="markOf(row, 'old')"
+                      :commentable="!readOnly"
+                      @comment="toggle(row, 'old')"
+                    />
+                    <DiffRow
+                      :row="row"
+                      side="new"
+                      :mark="markOf(row, 'new')"
+                      :commentable="!readOnly"
+                      @comment="toggle(row, 'new')"
+                    />
+                  </tr>
+                  <tr v-if="talkative(row, 'old') || talkative(row, 'new')" class="talk">
+                    <td v-if="blame" class="blame" />
+                    <td colspan="2">
+                      <CommentCell
+                        :comments="at(row, 'old')"
+                        :posted="atPosted(row, 'old')"
+                        :writing="opening(row, 'old')"
+                        :at="currentSha"
+                        :sets="sets"
+                        :read-only="readOnly"
+                        :draft="draftAt(row, 'old')"
+                        :label="boxLabel(row, 'old')"
+                        @save="(body, ask) => write(row, 'old', body, ask)"
+                        @cancel="closeBox(keyIn(row, 'old'))"
+                        @edit="(id, body) => emit('edit', id, body)"
+                        @remove="(id) => emit('remove', id)"
+                      />
+                    </td>
+                    <td colspan="2">
+                      <CommentCell
+                        :comments="at(row, 'new')"
+                        :posted="atPosted(row, 'new')"
+                        :writing="opening(row, 'new')"
+                        :at="currentSha"
+                        :sets="sets"
+                        :read-only="readOnly"
+                        :draft="draftAt(row, 'new')"
+                        :label="boxLabel(row, 'new')"
+                        @save="(body, ask) => write(row, 'new', body, ask)"
+                        @cancel="closeBox(keyIn(row, 'new'))"
+                        @edit="(id, body) => emit('edit', id, body)"
+                        @remove="(id) => emit('remove', id)"
+                      />
+                    </td>
+                  </tr>
+                </template>
+              </template>
 
-          <template v-for="(pair, p) in pairs(block.hunk?.rows ?? [])" v-else :key="p">
-            <!-- A comment sits under the side it was written on, not across
+              <template v-for="(pair, p) in pairs(block.hunk?.rows ?? [])" v-else :key="p">
+                <!-- A comment sits under the side it was written on, not across
                both, so the two columns keep meaning what they mean. -->
-            <tr :class="onCursor(pair.left) || onCursor(pair.right) ? 'row-cursor' : ''">
-              <BlameCell
-                v-if="blame"
-                :line="pair.left?.oldLine ?? null"
-                :lines="blame"
-                :target="blameTarget"
-                :waiting="blameBusy"
-                @open="(at) => emit('open-blame', at)"
-                @peek="peek"
-                @leave="peeking = null"
-              />
-              <DiffRow
-                :row="pair.left"
-                side="old"
-                :mark="markOf(pair.left, 'old')"
-                :commentable="!readOnly"
-                @comment="toggle(pair.left, 'old')"
-              />
-              <DiffRow
-                :row="pair.right"
-                side="new"
-                :mark="markOf(pair.right, 'new')"
-                :commentable="!readOnly"
-                @comment="toggle(pair.right, 'new')"
-              />
-            </tr>
-            <tr v-if="talkative(pair.left, 'old') || talkative(pair.right, 'new')" class="talk">
-              <td v-if="blame" class="blame" />
-              <td colspan="2">
-                <CommentCell
-                  :comments="at(pair.left, 'old')"
-                  :posted="atPosted(pair.left, 'old')"
-                  :writing="opening(pair.left, 'old')"
-                  :at="currentSha"
-                  :sets="sets"
-                  :read-only="readOnly"
-                  :draft="draftAt(pair.left, 'old')"
-                  :label="boxLabel(pair.left, 'old')"
-                  @save="(body, ask) => write(pair.left, 'old', body, ask)"
-                  @cancel="closeBox(keyIn(pair.left, 'old'))"
-                  @edit="(id, body) => emit('edit', id, body)"
-                  @remove="(id) => emit('remove', id)"
-                />
-              </td>
-              <td colspan="2">
-                <CommentCell
-                  :comments="at(pair.right, 'new')"
-                  :posted="atPosted(pair.right, 'new')"
-                  :writing="opening(pair.right, 'new')"
-                  :at="currentSha"
-                  :sets="sets"
-                  :read-only="readOnly"
-                  :draft="draftAt(pair.right, 'new')"
-                  :label="boxLabel(pair.right, 'new')"
-                  @save="(body, ask) => write(pair.right, 'new', body, ask)"
-                  @cancel="closeBox(keyIn(pair.right, 'new'))"
-                  @edit="(id, body) => emit('edit', id, body)"
-                  @remove="(id) => emit('remove', id)"
-                />
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
+                <tr :class="onCursor(pair.left) || onCursor(pair.right) ? 'row-cursor' : ''">
+                  <BlameCell
+                    v-if="blame"
+                    :line="pair.left?.oldLine ?? null"
+                    :lines="blame"
+                    :target="blameTarget"
+                    :waiting="blameBusy"
+                    @open="(at) => emit('open-blame', at)"
+                    @peek="peek"
+                    @leave="peeking = null"
+                  />
+                  <DiffRow
+                    :row="pair.left"
+                    side="old"
+                    :mark="markOf(pair.left, 'old')"
+                    :commentable="!readOnly"
+                    @comment="toggle(pair.left, 'old')"
+                  />
+                  <DiffRow
+                    :row="pair.right"
+                    side="new"
+                    :mark="markOf(pair.right, 'new')"
+                    :commentable="!readOnly"
+                    @comment="toggle(pair.right, 'new')"
+                  />
+                </tr>
+                <tr v-if="talkative(pair.left, 'old') || talkative(pair.right, 'new')" class="talk">
+                  <td v-if="blame" class="blame" />
+                  <td colspan="2">
+                    <CommentCell
+                      :comments="at(pair.left, 'old')"
+                      :posted="atPosted(pair.left, 'old')"
+                      :writing="opening(pair.left, 'old')"
+                      :at="currentSha"
+                      :sets="sets"
+                      :read-only="readOnly"
+                      :draft="draftAt(pair.left, 'old')"
+                      :label="boxLabel(pair.left, 'old')"
+                      @save="(body, ask) => write(pair.left, 'old', body, ask)"
+                      @cancel="closeBox(keyIn(pair.left, 'old'))"
+                      @edit="(id, body) => emit('edit', id, body)"
+                      @remove="(id) => emit('remove', id)"
+                    />
+                  </td>
+                  <td colspan="2">
+                    <CommentCell
+                      :comments="at(pair.right, 'new')"
+                      :posted="atPosted(pair.right, 'new')"
+                      :writing="opening(pair.right, 'new')"
+                      :at="currentSha"
+                      :sets="sets"
+                      :read-only="readOnly"
+                      :draft="draftAt(pair.right, 'new')"
+                      :label="boxLabel(pair.right, 'new')"
+                      @save="(body, ask) => write(pair.right, 'new', body, ask)"
+                      @cancel="closeBox(keyIn(pair.right, 'new'))"
+                      @edit="(id, body) => emit('edit', id, body)"
+                      @remove="(id) => emit('remove', id)"
+                    />
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
 
-      <table v-else class="code" :class="[wrap ? '' : 'nowrap', only]">
-        <colgroup>
-          <col v-if="blame" class="blame-col" />
-          <col class="gut" />
-          <col class="gut" />
-          <col />
-        </colgroup>
-        <!-- Before the first line, the way Gerrit puts a remark about a
+          <table v-else class="code" :class="[wraps ? '' : 'nowrap', only]">
+            <colgroup>
+              <col v-if="blame" class="blame-col" />
+              <col class="gut" />
+              <col class="gut" />
+              <col />
+            </colgroup>
+            <!-- Before the first line, the way Gerrit puts a remark about a
            file above line 1: a band of its own took the top of every
            screen, on every file, whether it held anything or not. -->
-        <tbody v-if="opensWithRemarks">
-          <tr class="talk">
-            <td :colspan="3 + extra">
-              <PostedCard
-                v-for="remark in postedBeforeFirstLine"
-                :key="remark.id"
-                :comment="remark"
-                :stranded="remark.line !== null"
-              />
-              <CommentCard
-                v-for="comment in beforeFirstLine"
-                :key="comment.id"
-                :comment="comment"
-                :at="currentSha"
-                :sets="sets"
-                :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
-                :read-only="readOnly"
-                @edit="(id, body) => emit('edit', id, body)"
-                @remove="(id) => emit('remove', id)"
-              />
-              <CommentBox
-                v-if="aboutFile"
-                :label="isHome ? 'A remark about the change' : 'A remark about the file'"
-                askable
-                @save="(body, ask) => writeAboutFile(body, ask)"
-                @cancel="aboutFile = false"
-              />
-            </td>
-          </tr>
-        </tbody>
-        <tbody v-for="(block, b) in blocks" :key="b">
-          <template v-if="block.kind === 'gap'">
-            <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
-              <tr :class="onCursor(row) ? 'row-cursor' : ''">
-                <BlameCell
-                  v-if="blame"
-                  :line="row.oldLine"
-                  :lines="blame"
-                  :target="blameTarget"
-                  :waiting="blameBusy"
-                  @open="(at) => emit('open-blame', at)"
-                  @peek="peek"
-                  @leave="peeking = null"
-                />
-                <td
-                  class="gutter"
-                  :class="[
-                    `gutter-${row.kind}`,
-                    row.oldLine !== null && !readOnly ? 'gutter-comment' : '',
-                  ]"
-                  :title="
-                    row.oldLine !== null && !readOnly
-                      ? 'Comment on this line, before the change'
-                      : undefined
-                  "
-                  data-column="old"
-                  @click="toggle(row, 'old')"
-                >
-                  {{ row.oldLine ?? '' }}
-                </td>
-                <DiffRow
-                  :row="row"
-                  side="new"
-                  :mark="markRow(row)"
-                  :commentable="!readOnly"
-                  @comment="toggle(row, 'new')"
-                />
-              </tr>
-              <tr v-if="speaks(row)" class="talk">
-                <td v-if="blame" class="blame" />
-                <td colspan="3">
-                  <CommentCell
-                    v-for="column in columnsOf(row)"
-                    :key="column"
-                    :comments="at(row, column)"
-                    :posted="atPosted(row, column)"
-                    :writing="opening(row, column)"
+            <tbody v-if="opensWithRemarks">
+              <tr class="talk">
+                <td :colspan="3 + extra">
+                  <PostedCard
+                    v-for="remark in postedBeforeFirstLine"
+                    :key="remark.id"
+                    :comment="remark"
+                    :stranded="remark.line !== null"
+                  />
+                  <CommentCard
+                    v-for="comment in beforeFirstLine"
+                    :key="comment.id"
+                    :comment="comment"
                     :at="currentSha"
                     :sets="sets"
+                    :stranded="comment.scope !== 'file' && comment.scope !== 'change'"
                     :read-only="readOnly"
-                    :draft="draftAt(row, column)"
-                    :label="boxLabel(row, column)"
-                    @save="(body, ask) => write(row, column, body, ask)"
-                    @cancel="closeBox(keyIn(row, column))"
                     @edit="(id, body) => emit('edit', id, body)"
                     @remove="(id) => emit('remove', id)"
                   />
-                </td>
-              </tr>
-            </template>
-            <ContextBar
-              v-if="!isOpen(block.gap)"
-              :from="rest(block.gap).from"
-              :to="rest(block.gap).to"
-              :columns="3 + extra"
-              :busy="loading"
-              @open="(from, to) => open(block.gap, from, to)"
-            />
-            <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
-              <tr :class="onCursor(row) ? 'row-cursor' : ''">
-                <BlameCell
-                  v-if="blame"
-                  :line="row.oldLine"
-                  :lines="blame"
-                  :target="blameTarget"
-                  :waiting="blameBusy"
-                  @open="(at) => emit('open-blame', at)"
-                  @peek="peek"
-                  @leave="peeking = null"
-                />
-                <td
-                  class="gutter"
-                  :class="[
-                    `gutter-${row.kind}`,
-                    row.oldLine !== null && !readOnly ? 'gutter-comment' : '',
-                  ]"
-                  :title="
-                    row.oldLine !== null && !readOnly
-                      ? 'Comment on this line, before the change'
-                      : undefined
-                  "
-                  data-column="old"
-                  @click="toggle(row, 'old')"
-                >
-                  {{ row.oldLine ?? '' }}
-                </td>
-                <DiffRow
-                  :row="row"
-                  side="new"
-                  :mark="markRow(row)"
-                  :commentable="!readOnly"
-                  @comment="toggle(row, 'new')"
-                />
-              </tr>
-              <tr v-if="speaks(row)" class="talk">
-                <td v-if="blame" class="blame" />
-                <td colspan="3">
-                  <CommentCell
-                    v-for="column in columnsOf(row)"
-                    :key="column"
-                    :comments="at(row, column)"
-                    :posted="atPosted(row, column)"
-                    :writing="opening(row, column)"
-                    :at="currentSha"
-                    :sets="sets"
-                    :read-only="readOnly"
-                    :draft="draftAt(row, column)"
-                    :label="boxLabel(row, column)"
-                    @save="(body, ask) => write(row, column, body, ask)"
-                    @cancel="closeBox(keyIn(row, column))"
-                    @edit="(id, body) => emit('edit', id, body)"
-                    @remove="(id) => emit('remove', id)"
+                  <CommentBox
+                    v-if="aboutFile"
+                    :label="isHome ? 'A remark about the change' : 'A remark about the file'"
+                    askable
+                    @save="(body, ask) => writeAboutFile(body, ask)"
+                    @cancel="aboutFile = false"
                   />
                 </td>
               </tr>
-            </template>
-          </template>
+            </tbody>
+            <tbody v-for="(block, b) in blocks" :key="b">
+              <template v-if="block.kind === 'gap'">
+                <template v-for="row in rowsBefore(block.gap)" :key="`ga${row.newLine}`">
+                  <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                    <BlameCell
+                      v-if="blame"
+                      :line="row.oldLine"
+                      :lines="blame"
+                      :target="blameTarget"
+                      :waiting="blameBusy"
+                      @open="(at) => emit('open-blame', at)"
+                      @peek="peek"
+                      @leave="peeking = null"
+                    />
+                    <td
+                      class="gutter"
+                      :class="[
+                        `gutter-${row.kind}`,
+                        row.oldLine !== null && !readOnly ? 'gutter-comment' : '',
+                      ]"
+                      :title="
+                        row.oldLine !== null && !readOnly
+                          ? 'Comment on this line, before the change'
+                          : undefined
+                      "
+                      data-column="old"
+                      @click="toggle(row, 'old')"
+                    >
+                      {{ row.oldLine ?? '' }}
+                    </td>
+                    <DiffRow
+                      :row="row"
+                      side="new"
+                      :mark="markRow(row)"
+                      :commentable="!readOnly"
+                      @comment="toggle(row, 'new')"
+                    />
+                  </tr>
+                  <tr v-if="speaks(row)" class="talk">
+                    <td v-if="blame" class="blame" />
+                    <td colspan="3">
+                      <CommentCell
+                        v-for="column in columnsOf(row)"
+                        :key="column"
+                        :comments="at(row, column)"
+                        :posted="atPosted(row, column)"
+                        :writing="opening(row, column)"
+                        :at="currentSha"
+                        :sets="sets"
+                        :read-only="readOnly"
+                        :draft="draftAt(row, column)"
+                        :label="boxLabel(row, column)"
+                        @save="(body, ask) => write(row, column, body, ask)"
+                        @cancel="closeBox(keyIn(row, column))"
+                        @edit="(id, body) => emit('edit', id, body)"
+                        @remove="(id) => emit('remove', id)"
+                      />
+                    </td>
+                  </tr>
+                </template>
+                <ContextBar
+                  v-if="!isOpen(block.gap)"
+                  :from="rest(block.gap).from"
+                  :to="rest(block.gap).to"
+                  :columns="3 + extra"
+                  :busy="loading"
+                  @open="(from, to) => open(block.gap, from, to)"
+                />
+                <template v-for="row in rowsAfter(block.gap)" :key="`gb${row.newLine}`">
+                  <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                    <BlameCell
+                      v-if="blame"
+                      :line="row.oldLine"
+                      :lines="blame"
+                      :target="blameTarget"
+                      :waiting="blameBusy"
+                      @open="(at) => emit('open-blame', at)"
+                      @peek="peek"
+                      @leave="peeking = null"
+                    />
+                    <td
+                      class="gutter"
+                      :class="[
+                        `gutter-${row.kind}`,
+                        row.oldLine !== null && !readOnly ? 'gutter-comment' : '',
+                      ]"
+                      :title="
+                        row.oldLine !== null && !readOnly
+                          ? 'Comment on this line, before the change'
+                          : undefined
+                      "
+                      data-column="old"
+                      @click="toggle(row, 'old')"
+                    >
+                      {{ row.oldLine ?? '' }}
+                    </td>
+                    <DiffRow
+                      :row="row"
+                      side="new"
+                      :mark="markRow(row)"
+                      :commentable="!readOnly"
+                      @comment="toggle(row, 'new')"
+                    />
+                  </tr>
+                  <tr v-if="speaks(row)" class="talk">
+                    <td v-if="blame" class="blame" />
+                    <td colspan="3">
+                      <CommentCell
+                        v-for="column in columnsOf(row)"
+                        :key="column"
+                        :comments="at(row, column)"
+                        :posted="atPosted(row, column)"
+                        :writing="opening(row, column)"
+                        :at="currentSha"
+                        :sets="sets"
+                        :read-only="readOnly"
+                        :draft="draftAt(row, column)"
+                        :label="boxLabel(row, column)"
+                        @save="(body, ask) => write(row, column, body, ask)"
+                        @cancel="closeBox(keyIn(row, column))"
+                        @edit="(id, body) => emit('edit', id, body)"
+                        @remove="(id) => emit('remove', id)"
+                      />
+                    </td>
+                  </tr>
+                </template>
+              </template>
 
-          <template v-for="(row, r) in block.hunk?.rows ?? []" v-else :key="r">
-            <tr :class="onCursor(row) ? 'row-cursor' : ''">
-              <BlameCell
-                v-if="blame"
-                :line="row.oldLine"
-                :lines="blame"
-                :target="blameTarget"
-                :waiting="blameBusy"
-                @open="(at) => emit('open-blame', at)"
-                @peek="peek"
-                @leave="peeking = null"
-              />
-              <td
-                class="gutter"
-                :class="[
-                  `gutter-${row.kind}`,
-                  row.oldLine !== null && !readOnly ? 'gutter-comment' : '',
-                ]"
-                :title="
-                  row.oldLine !== null && !readOnly
-                    ? 'Comment on this line, before the change'
-                    : undefined
-                "
-                data-column="old"
-                @click="toggle(row, 'old')"
-              >
-                {{ row.oldLine ?? '' }}
-              </td>
-              <DiffRow
-                :row="row"
-                side="new"
-                :mark="markRow(row)"
-                :commentable="!readOnly"
-                @comment="toggle(row, 'new')"
-              />
-            </tr>
-            <tr v-if="speaks(row)" class="talk">
-              <td v-if="blame" class="blame" />
-              <td colspan="3">
-                <CommentCell
-                  v-for="column in columnsOf(row)"
-                  :key="column"
-                  :comments="at(row, column)"
-                  :posted="atPosted(row, column)"
-                  :writing="opening(row, column)"
-                  :at="currentSha"
-                  :sets="sets"
-                  :read-only="readOnly"
-                  :draft="draftAt(row, column)"
-                  :label="boxLabel(row, column)"
-                  @save="(body, ask) => write(row, column, body, ask)"
-                  @cancel="closeBox(keyIn(row, column))"
-                  @edit="(id, body) => emit('edit', id, body)"
-                  @remove="(id) => emit('remove', id)"
-                />
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
+              <template v-for="(row, r) in block.hunk?.rows ?? []" v-else :key="r">
+                <tr :class="onCursor(row) ? 'row-cursor' : ''">
+                  <BlameCell
+                    v-if="blame"
+                    :line="row.oldLine"
+                    :lines="blame"
+                    :target="blameTarget"
+                    :waiting="blameBusy"
+                    @open="(at) => emit('open-blame', at)"
+                    @peek="peek"
+                    @leave="peeking = null"
+                  />
+                  <td
+                    class="gutter"
+                    :class="[
+                      `gutter-${row.kind}`,
+                      row.oldLine !== null && !readOnly ? 'gutter-comment' : '',
+                    ]"
+                    :title="
+                      row.oldLine !== null && !readOnly
+                        ? 'Comment on this line, before the change'
+                        : undefined
+                    "
+                    data-column="old"
+                    @click="toggle(row, 'old')"
+                  >
+                    {{ row.oldLine ?? '' }}
+                  </td>
+                  <DiffRow
+                    :row="row"
+                    side="new"
+                    :mark="markRow(row)"
+                    :commentable="!readOnly"
+                    @comment="toggle(row, 'new')"
+                  />
+                </tr>
+                <tr v-if="speaks(row)" class="talk">
+                  <td v-if="blame" class="blame" />
+                  <td colspan="3">
+                    <CommentCell
+                      v-for="column in columnsOf(row)"
+                      :key="column"
+                      :comments="at(row, column)"
+                      :posted="atPosted(row, column)"
+                      :writing="opening(row, column)"
+                      :at="currentSha"
+                      :sets="sets"
+                      :read-only="readOnly"
+                      :draft="draftAt(row, column)"
+                      :label="boxLabel(row, column)"
+                      @save="(body, ask) => write(row, column, body, ask)"
+                      @cancel="closeBox(keyIn(row, column))"
+                      @edit="(id, body) => emit('edit', id, body)"
+                      @remove="(id) => emit('remove', id)"
+                    />
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <RenderedView
+        v-if="beside"
+        ref="renderedView"
+        :diff="diff"
+        :load="loadRendered"
+        :image-url="imageUrl"
+        :style="{ top: `${paneTop}px`, height: `${paneHeight}px` }"
+        @ready="follow"
+        @reveal="(side, line) => revealLines(side, line, line)"
+      />
     </div>
 
     <button

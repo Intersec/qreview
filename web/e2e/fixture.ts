@@ -4,7 +4,7 @@
 // a fixed clock, and a temporary directory that goes away with the test run.
 
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -336,4 +336,87 @@ export function rebaseNewest(fixture: Fixture): string {
   git(repo, ['switch', '--quiet', '-C', 'main']);
 
   return first;
+}
+
+/// A Markdown file with one block of each kind, committed on top of the
+/// series, so its rendered view has something to show.
+export function addGuide(repo: string) {
+  write(
+    repo,
+    'docs/flow.svg',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="60">' +
+      '<rect x="2" y="2" width="236" height="56" rx="8" fill="#e8f0fe" stroke="#1a73e8"/>' +
+      '<text x="120" y="36" text-anchor="middle" font-family="sans-serif">read → review</text>' +
+      '</svg>\n',
+  );
+  write(
+    repo,
+    'docs/guide.md',
+    [
+      '# The guide',
+      '',
+      'A paragraph with **bold**, `code` and a [link](https://example.com).',
+      'It runs on a second line, to [the notes](notes.md).',
+      '',
+      '![The flow](flow.svg)',
+      '',
+      '- one item',
+      '  - a nested item',
+      '- another item',
+      '',
+      '| Name | Size |',
+      '|:-----|-----:|',
+      '| a.c  | 12   |',
+      '',
+      '```c',
+      'int main(void) { return 0; }',
+      '```',
+      '',
+      '> [!WARNING]',
+      '> Read this first.',
+      '',
+      'Raw <b>HTML</b> stays text.',
+      '',
+      // Longer than a screen, so the pane has to follow the diff.
+      ...Array.from(
+        { length: 40 },
+        (_, i) => `## Section ${i + 1}\n\nThe text of section ${i + 1}.\n`,
+      ),
+      // One block longer than a screen: the pane follows a line inside it.
+      '```',
+      ...Array.from({ length: 80 }, (_, i) => `step ${i + 1}.`),
+      '```',
+      '',
+    ].join('\n'),
+  );
+  commit(repo, 'docs: write a guide', 'Change-Id: Iguidedocaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+
+  // One line deep in the file: a diff that fits on the screen and never
+  // scrolls.
+  const guide = join(repo, 'docs', 'guide.md');
+  writeFileSync(
+    guide,
+    readFileSync(guide, 'utf8').replace(
+      'The text of section 30.',
+      'The text of section 30, said again.',
+    ),
+  );
+  commit(repo, 'docs: reword a section', 'Change-Id: Iguiderewordaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+
+  // Changes in several places: a paragraph, an item, a row, a line that
+  // goes away, and a section far below.
+  writeFileSync(
+    guide,
+    readFileSync(guide, 'utf8')
+      .replace('`code` and a [link]', '`code`, and a [link]')
+      .replace('  - a nested item\n', '  - a nested item\n  - a second nested item\n')
+      .replace('| a.c  | 12   |', '| a.c  | 14   |')
+      .replace('Raw <b>HTML</b> stays text.\n\n', '')
+      // Wider than the diff, so the table grows past what it shows.
+      .replace(
+        'The text of section 20.',
+        `The text of section 20, longer now: ${'and longer still, '.repeat(12)}to the end.`,
+      ),
+  );
+  commit(repo, 'docs: rework the guide', 'Change-Id: Iguidereworkaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 }

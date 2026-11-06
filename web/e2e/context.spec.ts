@@ -167,10 +167,12 @@ test('. puts the cursor on the code on the screen, and leaves one that is there'
   await page.keyboard.press('.');
   await expect(first).toHaveCount(1);
 
-  // The mouse scrolls away from the cursor.
-  await page.locator('.diff-scroll').evaluate((code) => {
-    code.scrollTop = code.scrollHeight;
-  });
+  // The mouse scrolls away from the cursor, in whichever box scrolls.
+  for (const box of ['.diff-scroll', '.diff-pane']) {
+    await page.locator(box).evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }
   await expect(page.locator('tr.row-cursor')).not.toBeInViewport();
 
   await page.keyboard.press('.');

@@ -18,7 +18,7 @@ async function openLongFile(page: Page) {
   await openFile(page, 'long.c');
 }
 
-const server = await start();
+const server = await start({ markdown: true });
 // A second repository, with work that is not committed and a Gerrit that
 // already holds remarks. Both put things on the screen the first one cannot.
 const other = await start({ dirty: true, gerrit: true });
@@ -93,6 +93,15 @@ for (const scheme of ['light', 'dark'] as const) {
   await left.fill('This line was doing something.');
   await page.screenshot({ path: join(OUT, `${scheme}-leftside.png`) });
   await page.getByRole('button', { name: 'Cancel' }).click();
+
+  // A Markdown file, with its rendered page beside the diff and the blocks
+  // the change touches marked in the margin.
+  await openChange(page, /docs: rework the guide/);
+  await openFile(page, 'guide.md');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+  await page.locator('.md-doc [data-lines]').first().waitFor();
+  await page.screenshot({ path: join(OUT, `${scheme}-rendered.png`) });
+  await page.getByRole('button', { name: 'Hide rendered' }).click();
 
   // The panel, which is where the settings live now.
   await page.getByRole('button', { name: '⚙' }).click();

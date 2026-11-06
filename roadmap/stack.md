@@ -859,6 +859,55 @@ Rejected: a dump of the joined set, written by the build script. It adds
 `syntect` and `two-face` to the build dependencies, and the build script runs
 again at every commit, because it watches `HEAD`.
 
+## 2026-10-26 — A Markdown file can be read rendered, beside its diff
+
+A Markdown file reads poorly as a diff. A paragraph is one long line, and a
+table is a grid of pipes. The page already rendered the body of a comment,
+with `marked`, but not a file.
+
+**Decision.** A Show rendered button on a Markdown file opens the rendered
+page in a pane beside the diff, the way Gerrit shows one. The server renders
+the new side with `pulldown-cmark`. Each block carries its lines in the
+source, and the pane follows the diff by them as it scrolls. The pane is
+read only. A bar in its margin marks the blocks that the change touches,
+and a tick marks where lines went away, so a long file with several
+changes shows where to look. See design section 3.8.
+
+The reader asks for it. A file always opens on its diff alone, so a review
+that never renders a file costs what it did before.
+
+Decided on 2026-11-04: while the pane is open, the diff wraps its long
+lines, whatever `diff.wrap` says. Beside the pane, the diff has about half
+the width. Without the wrap, a table as wide as its longest line put the
+buttons of a gap under the pane, out of reach. The setting does not change:
+a diff with no pane beside it still follows it.
+
+**Why on the server.** The rows leave the server finished, and this HTML
+does too. The server also holds `syntect` for the code blocks.
+`pulldown-cmark` gives the byte range of each block, which is what the pane
+follows the diff by. A `marked` token carries no line number.
+
+**Rejected: the rendered page in place of the diff, with the changed blocks
+painted and remarks written on its blocks.** It was built first. Read in
+use, the reader wants the diff and the page side by side, and does not
+expect the diff inside the page. The diff already says what changed, and it
+already takes remarks. A bar in the margin keeps the page a document.
+
+**Rejected: a pane with no mark at all.** Tried next. On a long file with
+several changes, the reader could not tell where the next one was.
+
+**Rejected: a pane that scrolls on its own.** On a long file the reader then
+looks for the place twice.
+
+**Rejected: `ammonia` to clean raw HTML.** It brings an HTML parser into the
+binary to keep tags that a design document seldom needs. Raw HTML is shown
+as text instead.
+
+**Cost.** One crate, `pulldown-cmark`, and two routes. The body of a comment
+keeps `marked`, so two engines render Markdown, and they can differ on an
+edge case. To render the body of a comment on the server is a separate
+decision.
+
 ## 2026-10-27 — Each change carries its line counts
 
 The reader wants the author and the lines added and removed of each change,

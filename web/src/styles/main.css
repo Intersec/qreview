@@ -495,29 +495,38 @@ tr.talk td {
  * and Tailwind's `display: block` broke every doc comment in two.
  */
 .code .tok-keyword,
-.code .tok-storage {
+.md-code .tok-keyword,
+.code .tok-storage,
+.md-code .tok-storage {
   color: var(--tok-keyword);
 }
-.code .tok-string {
+.code .tok-string,
+.md-code .tok-string {
   color: var(--tok-string);
 }
-.code .tok-comment {
+.code .tok-comment,
+.md-code .tok-comment {
   color: var(--tok-comment);
   font-style: italic;
 }
-.code .tok-constant {
+.code .tok-constant,
+.md-code .tok-constant {
   color: var(--tok-constant);
 }
-.code .tok-entity {
+.code .tok-entity,
+.md-code .tok-entity {
   color: var(--tok-entity);
 }
-.code .tok-support {
+.code .tok-support,
+.md-code .tok-support {
   color: var(--tok-support);
 }
-.code .tok-variable {
+.code .tok-variable,
+.md-code .tok-variable {
   color: var(--tok-variable);
 }
-.code .tok-invalid {
+.code .tok-invalid,
+.md-code .tok-invalid {
   color: #ffffff;
   background: #c5221f;
 }
@@ -550,6 +559,237 @@ tr.talk td {
 }
 .prose-comment a {
   text-decoration: underline;
+}
+
+/* ------------------------------------------------- the rendered file */
+
+/*
+ * The rendered file stands beside the diff. The diff pane scrolls as a
+ * whole, so the rendered pane is held under the file bar and scrolls on its
+ * own; the diff moves it to the part it shows.
+ */
+.diff-body.beside {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 44%);
+  align-items: start;
+}
+.diff-main {
+  min-width: 0;
+}
+.rendered-pane {
+  position: sticky;
+  overflow-y: auto;
+  border-left: 1px solid var(--edge);
+  background: var(--page);
+}
+
+/*
+ * A Markdown file read rendered. The reset of Tailwind takes every margin and
+ * every list mark away, so the document says its own.
+ */
+.md-doc {
+  max-width: 52rem;
+  padding: 12px 24px 48px;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.md-doc h1,
+.md-doc h2,
+.md-doc h3,
+.md-doc h4,
+.md-doc h5,
+.md-doc h6 {
+  margin: 1.2em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.md-doc h1 {
+  font-size: 1.7em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid var(--edge);
+}
+.md-doc h2 {
+  font-size: 1.35em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid var(--edge-soft);
+}
+.md-doc h3 {
+  font-size: 1.15em;
+}
+.md-doc p,
+.md-doc pre,
+.md-doc table,
+.md-doc blockquote,
+.md-doc ul,
+.md-doc ol {
+  margin: 0 0 0.9em;
+}
+.md-doc ul,
+.md-doc ol {
+  padding-left: 1.6em;
+  list-style: disc;
+}
+.md-doc ol {
+  list-style: decimal;
+}
+.md-doc li > ul,
+.md-doc li > ol {
+  margin-bottom: 0;
+}
+.md-doc a {
+  color: var(--action);
+  text-decoration: underline;
+}
+/*
+ * The marks of the diff: a bar beside a block that the change touches, and a
+ * tick where lines went away. A bar rather than a background, so the pane
+ * still reads as the document. The diff beside it says what changed. The
+ * marks stand in a gutter, so a nested block is marked in the same column.
+ */
+.md-page {
+  position: relative;
+}
+.md-gutter {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 20px;
+}
+.md-bar {
+  position: absolute;
+  left: 10px;
+  width: 3px;
+  background: var(--add-word);
+}
+.md-bar[data-change='modify'] {
+  background: var(--same-word);
+}
+.md-tick {
+  position: absolute;
+  left: 4px;
+  width: 16px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: var(--waiting-edge);
+  cursor: pointer;
+}
+/* Where lines went away, the page holds an empty place for the tick. */
+.md-doc .md-removed {
+  display: block;
+  height: 0;
+  list-style: none;
+}
+.md-doc tr.md-removed {
+  display: table-row;
+}
+.md-doc tr.md-removed > td {
+  height: 0;
+  padding: 0;
+  border: 0;
+}
+.md-doc img {
+  max-width: 100%;
+  height: auto;
+}
+.md-doc .md-link,
+.md-doc .md-image {
+  border-bottom: 1px dotted var(--ink-faint);
+}
+.md-doc .md-image::before {
+  content: '🖼 ';
+}
+.md-doc code {
+  border-radius: 3px;
+  background: var(--edge-soft);
+  padding: 0 0.25em;
+  font-family: var(--code-font);
+  font-size: 0.88em;
+}
+.md-doc pre {
+  overflow-x: auto;
+  border-radius: 4px;
+  background: var(--pane);
+  border: 1px solid var(--edge-soft);
+  padding: 8px 12px;
+  font-family: var(--code-font);
+  font-size: var(--code-size);
+  line-height: var(--code-line);
+  tab-size: var(--tab-width);
+}
+.md-doc pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+.md-doc .md-html {
+  color: var(--ink-quiet);
+}
+.md-doc blockquote {
+  padding: 0 1em;
+  border-left: 3px solid var(--edge);
+  color: var(--ink-quiet);
+}
+.md-doc .md-alert {
+  border-left-color: var(--action);
+}
+.md-doc .md-alert-warning,
+.md-doc .md-alert-caution {
+  border-left-color: var(--waiting-edge);
+}
+.md-doc .md-alert::before {
+  display: block;
+  font-weight: 600;
+  color: var(--action);
+}
+.md-doc .md-alert-warning::before,
+.md-doc .md-alert-caution::before {
+  color: var(--waiting-ink);
+}
+.md-doc .md-alert-note::before {
+  content: 'Note';
+}
+.md-doc .md-alert-tip::before {
+  content: 'Tip';
+}
+.md-doc .md-alert-important::before {
+  content: 'Important';
+}
+.md-doc .md-alert-warning::before {
+  content: 'Warning';
+}
+.md-doc .md-alert-caution::before {
+  content: 'Caution';
+}
+.md-doc table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.md-doc th,
+.md-doc td {
+  padding: 4px 10px;
+  border: 1px solid var(--edge);
+}
+.md-doc th {
+  background: var(--pane);
+  font-weight: 600;
+}
+.md-doc .md-center {
+  text-align: center;
+}
+.md-doc .md-right {
+  text-align: right;
+}
+.md-doc hr {
+  margin: 1.5em 0;
+  border: 0;
+  border-top: 2px solid var(--edge);
+}
+.md-doc .md-footnote {
+  font-size: 0.9em;
+  color: var(--ink-quiet);
 }
 
 /* ------------------------------------------------- a comment, Gerrit-like */

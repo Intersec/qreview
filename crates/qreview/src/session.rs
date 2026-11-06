@@ -74,6 +74,33 @@ pub struct Session {
     pub lists: Arc<diff::FileLists>,
 }
 
+/// Above this size, an image is not served. A Markdown file shows a figure,
+/// and a blob this large is something else that happens to be named `.png`.
+const MAX_IMAGE: u64 = 16 * 1024 * 1024;
+
+/// What asking for an image of a version gives.
+pub enum Image {
+    Found {
+        bytes: Vec<u8>,
+        mime: String,
+    },
+    /// The version has no such file.
+    Missing,
+    /// The path does not name an image type, or is not a plain path of the
+    /// tree.
+    NotImage,
+    TooLarge,
+}
+
+/// What asking for the rendered view of a file gives.
+pub enum Rendering {
+    Html(String),
+    /// The version has no such file.
+    Missing,
+    NotMarkdown,
+    TooLarge,
+}
+
 /// What a diff is read against.
 #[derive(Clone, Debug, Default)]
 pub enum Against {
@@ -774,6 +801,9 @@ impl Session {
         if let Some(file) = found.as_mut() {
             let language = self.langs.of(path).map(str::to_owned);
             file.file.language = language.clone().unwrap_or_default();
+            file.markdown = !file.file.binary
+                && file.file.status != crate::model::FileStatus::Deleted
+                && self.highlighter.is_markdown(language.as_deref(), path);
 
             if !file.file.binary && how.syntax {
                 self.paint(file, rev, &base, old.as_deref(), language.as_deref())
@@ -874,6 +904,84 @@ impl Session {
             rows.push(row);
         }
         Ok(rows)
+    }
+
+    /// A Markdown file of a version, rendered, with the marks of its diff
+    /// against `against`. See design section 3.8.
+    pub async fn rendered(
+        &self,
+        rev: &str,
+        path: &str,
+        against: &Against,
+        how: &diff::How,
+    ) -> Result<Rendering> {
+        let language = self.langs.of(path).map(str::to_owned);
+        if !self.highlighter.is_markdown(language.as_deref(), path) {
+            return Ok(Rendering::NotMarkdown);
+        }
+        let Some((_, text)) = self.blob_text(rev, path).await else {
+            return Ok(Rendering::Missing);
+        };
+        if text.len() > crate::markdown::MAX_BYTES {
+            return Ok(Rendering::TooLarge);
+        }
+        // Only where the lines changed matters, so the diff is not colored.
+        let plain = diff::How {
+            syntax: false,
+            ..*how
+        };
+        let changes = self
+            .diff(rev, path, against, &plain)
+            .await?
+            .map(|file| crate::markdown::Changes::of(&file.hunks))
+            .unwrap_or_default();
+
+        let highlighter = self.highlighter.clone();
+        let langs = self.langs.clone();
+        let dir = path.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
+        let html = tokio::task::spawn_blocking(move || {
+            // A fence names a language the way an extension does, so the
+            // map of the repository applies to it too.
+            let paint = |fence: &str, code: &str| {
+                let name = langs.of(&format!("fence.{fence}")).unwrap_or(fence);
+                highlighter.spans(code, name)
+            };
+            crate::markdown::render(&text, &dir, &changes, &paint)
+        })
+        .await?;
+
+        Ok(Rendering::Html(html))
+    }
+
+    /// An image of the tree of a version, for a rendered Markdown file.
+    ///
+    /// Read from the object database, like every other blob. The path must
+    /// be a plain path of the tree: no `.` or `..` part, no leading slash.
+    pub async fn image(&self, rev: &str, path: &str) -> Result<Image> {
+        let plain = !path.is_empty()
+            && path
+                .split('/')
+                .all(|part| !part.is_empty() && part != "." && part != "..");
+        let mime = mime_guess::from_path(path)
+            .first()
+            .filter(|mime| mime.type_() == mime_guess::mime::IMAGE);
+        let (true, Some(mime)) = (plain, mime) else {
+            return Ok(Image::NotImage);
+        };
+
+        let spec = format!("{rev}:{path}");
+        let Ok(size) = self.git.text(&["cat-file", "-s", &spec]).await else {
+            return Ok(Image::Missing);
+        };
+        if size.trim().parse::<u64>().unwrap_or(u64::MAX) > MAX_IMAGE {
+            return Ok(Image::TooLarge);
+        }
+        let bytes = self.git.bytes(&["cat-file", "blob", &spec]).await?;
+
+        Ok(Image::Found {
+            bytes,
+            mime: mime.to_string(),
+        })
     }
 
     /// Put the syntax spans on every row.
