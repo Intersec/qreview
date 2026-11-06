@@ -559,6 +559,17 @@ server reads it only to find a block of the tree by its first line and its
 kind: it can repeat the place of a block, and never remove a mark. Links
 and images then follow the rules below, as in Markdown.
 
+**The page draws a Mermaid diagram.** Mermaid draws in a browser only, so
+here the server does not finish the page. It leaves a Mermaid block as a
+code block with the class `md-mermaid`: a Markdown fence named `mermaid`,
+an AsciiDoc `[mermaid]` or `[source,mermaid]` block. The page draws each
+diagram in a frame of its own, with `sandbox="allow-scripts"` and a
+Content-Security-Policy that lets no request out, and Mermaid runs with
+`securityLevel: 'strict'`. The frame takes the place of the code and keeps
+its lines. If Mermaid cannot read the diagram, the code stays, with the
+error under it. The script of Mermaid is a chunk of its own, loaded only
+for a file that holds a diagram. See `roadmap/stack.md`, 2026-11-06.
+
 **An image comes from the object database.** The server resolves a relative
 path against the directory of the file, and a leading slash against the top
 of the tree. The page then reads the image from the tree of the version

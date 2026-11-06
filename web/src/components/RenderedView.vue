@@ -8,6 +8,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { blockOf, lineWithin, linesOf, within, type Block } from '@/diff/blocks';
 import { clean } from '@/diff/markdown';
+import { draw } from '@/diff/mermaid';
 import type { FileDiff } from '@/api/types';
 
 const props = defineProps<{
@@ -69,6 +70,14 @@ async function read() {
   for (const img of host.value?.querySelectorAll<HTMLImageElement>('img[data-path]') ?? []) {
     img.addEventListener('load', () => follow(line), { once: true });
     img.src = props.imageUrl(img.dataset.path ?? '');
+  }
+  // A diagram takes the place of its code before the blocks are counted,
+  // and moves the blocks under it once it has its height.
+  if (host.value) {
+    draw(host.value, () => {
+      place();
+      follow(line);
+    });
   }
   blocks = [];
   for (const el of host.value?.querySelectorAll<HTMLElement>('[data-lines]') ?? []) {

@@ -852,6 +852,27 @@ tr.talk td {
 .md-doc .admonitionblock.caution td.icon .title {
   color: var(--waiting-ink);
 }
+/*
+ * A Mermaid diagram, drawn in a frame of its own. The frame takes no click:
+ * a diagram has nothing to click, and a click is the way to load a page.
+ */
+.md-doc .md-diagram {
+  margin: 0 0 0.9em;
+}
+.md-doc .md-diagram > pre {
+  margin: 0;
+}
+.md-doc .md-diagram-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  pointer-events: none;
+}
+.md-doc .md-diagram-error {
+  margin: 0.3em 0 0;
+  font-size: 0.9em;
+  color: var(--waiting-ink);
+}
 .md-doc .toc {
   margin: 0 0 1.2em;
   padding: 8px 12px;

@@ -1104,6 +1104,48 @@ module catch a change in their output.
 
 Nothing in the storage format or the export moves.
 
+## 2026-11-06 — A Mermaid diagram is drawn in the page
+
+A Mermaid block in a design document is a diagram, and its source reads
+poorly. Mermaid draws in a browser only: it measures its text in the DOM.
+So the server cannot finish this part of the page, against the rule of
+section 3.8.
+
+**Decision.** The server leaves a Mermaid block as a code block with its
+lines and the class `md-mermaid`: a Markdown fence named `mermaid`, an
+AsciiDoc `[mermaid]` block, or an AsciiDoc `[source,mermaid]` block. The
+page draws the diagram in its place. If Mermaid cannot read the diagram,
+the code block stays, with the error under it.
+
+- `mermaid.min.js`, the build of Mermaid in one file, is a chunk of its
+  own in `web/dist`. The binary carries it, and the page loads it only
+  when a file holds a diagram. The page puts it inline in each frame: a
+  frame of an opaque origin cannot load a script, and makes no request.
+- Each diagram is drawn in a frame with `sandbox="allow-scripts"`: an
+  opaque origin, with no access to the page, its token or its cookies. A
+  Content-Security-Policy in the frame lets no request out. Mermaid runs
+  with `securityLevel: 'strict'`, and a diagram cannot change that.
+- The frame sends its height to the page, with a key that only the page
+  and that frame know.
+
+**Rejected: Mermaid in the page itself.** Mermaid lets HTML through in a
+label, and the page holds the session token.
+
+**Rejected: a diagram drawn on the server.** It needs a browser on the
+machine of the reader, and the binary needs no runtime.
+
+**Cost.** 5.5 MB of script in the binary, which grows from 11.4 MB to
+16.9 MB. The release is compressed with gzip, so its download grows by
+about 1.6 MB. A reader who opens no diagram never loads the script. Each
+frame parses its own copy, so a file with many diagrams is slow to draw.
+
+**Rejected: the files compressed in the binary.** The `compression` option
+of `rust-embed` keeps the binary at 11.7 MB, but it brings `zstd-sys`, the
+first library in C of the project, and the static build for musl would
+then need a C compiler for musl.
+
+Nothing in the storage format or the export moves.
+
 ## 2026-11-10 — `qreview wait` has no time limit by default
 
 `qreview wait` ran out after 600 seconds. The skill told the agent to wait again each time. A user away for an hour cost the agent six turns, and each turn spent tokens to learn nothing.

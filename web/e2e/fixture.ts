@@ -387,6 +387,11 @@ export function addGuide(repo: string) {
       ...Array.from({ length: 80 }, (_, i) => `step ${i + 1}.`),
       '```',
       '',
+      '```mermaid',
+      'graph LR',
+      '  A[read] --> B[review]',
+      '```',
+      '',
     ].join('\n'),
   );
   commit(repo, 'docs: write a guide', 'Change-Id: Iguidedocaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
@@ -453,6 +458,11 @@ export function addGuide(repo: string) {
       '++++',
       '<script>window.ran = true</script>',
       '++++',
+      '',
+      '[mermaid]',
+      '....',
+      'not a diagram',
+      '....',
       '',
     ].join('\n'),
   );
