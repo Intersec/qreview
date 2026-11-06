@@ -7,6 +7,7 @@
 pub mod agent;
 pub mod anchor;
 pub mod api;
+pub mod asciidoc;
 pub mod assets;
 pub mod comments;
 pub mod commitmsg;

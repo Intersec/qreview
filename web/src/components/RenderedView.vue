@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// A Markdown file, rendered by the server, beside its diff.
+// A Markdown or AsciiDoc file, rendered by the server, beside its diff.
 //
 // The pane is read only: a remark is written in the diff. Each block of the
 // page knows the lines it came from, which is how the pane and the diff
@@ -191,13 +191,16 @@ function lead() {
 /// The rows of a code block do not wrap, so each line of its source is one
 /// row of the same height, and the place of a line is exact.
 function rowsOf(block: Block & { el: HTMLElement }) {
-  const el = block.el;
-  if (el.tagName !== 'PRE') {
+  // A Markdown code block is the `<pre>`. An AsciiDoc one holds it, with
+  // `data-code`, the line of its first row.
+  const el = block.el.tagName === 'PRE' ? block.el : block.el.querySelector('pre[data-code]');
+  if (!(el instanceof HTMLElement)) {
     return null;
   }
   const rows = (el.textContent ?? '').split('\n').length;
   // The lines of a fenced block count its fences, and the text does not.
-  const first = block.to - block.from + 1 > rows ? block.from + 1 : block.from;
+  const fenced = block.to - block.from + 1 > rows ? block.from + 1 : block.from;
+  const first = el.dataset.code ? Number(el.dataset.code) : fenced;
   const style = getComputedStyle(el);
   const above = parseFloat(style.paddingTop);
   const height = (el.clientHeight - above - parseFloat(style.paddingBottom)) / rows;

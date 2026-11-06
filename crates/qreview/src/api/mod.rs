@@ -582,7 +582,8 @@ struct Rendered {
     html: String,
 }
 
-/// A Markdown file of the version read, as HTML. See design section 3.8.
+/// A Markdown or AsciiDoc file of the version read, as HTML. See design
+/// section 3.8.
 async fn rendered(
     State(state): State<AppState>,
     Path(key): Path<String>,
@@ -599,8 +600,8 @@ async fn rendered(
         Rendering::Missing => Err(ApiError::not_found(format!(
             "{file} is not in this version"
         ))),
-        Rendering::NotMarkdown => Err(ApiError::bad_request(format!(
-            "{file} is not a Markdown file"
+        Rendering::NotRendered => Err(ApiError::bad_request(format!(
+            "{file} is neither Markdown nor AsciiDoc, so it has no rendered view"
         ))),
         Rendering::TooLarge => Err(ApiError::bad_request(format!(
             "{file} is larger than 1 MiB, so it has no rendered view"
@@ -614,7 +615,7 @@ struct BlobQuery {
     ps: Option<usize>,
 }
 
-/// An image of the tree of the version read, for a rendered Markdown file.
+/// An image of the tree of the version read, for a rendered file.
 /// Raw bytes, not JSON. See design section 3.8.
 async fn blob(
     State(state): State<AppState>,
@@ -2888,7 +2889,7 @@ mod tests {
             get_with_cookie("/api/changes/Idoc/diff?file=docs/guide.md", TOKEN),
         )
         .await;
-        assert_eq!(diff["markdown"], true, "the page offers the button");
+        assert_eq!(diff["rendered"], true, "the page offers the button");
 
         let (status, body) = json(
             server.clone(),
@@ -2981,6 +2982,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_asciidoc_file_is_rendered_on_request() {
+        let repo = build_repo(&[
+            commit("base").file("docs/guide.adoc", "= Guide\n\nOld text.\n"),
+            commit("write the guide")
+                .file(
+                    "docs/guide.adoc",
+                    "= Guide\n\nNew text.\n\n++++\n<script>alert(1)</script>\n++++\n",
+                )
+                .change_id("Iadoc"),
+        ])
+        .await;
+        let server = server(&repo).await;
+
+        let (_, diff) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Iadoc/diff?file=docs/guide.adoc", TOKEN),
+        )
+        .await;
+        assert_eq!(diff["rendered"], true, "the page offers the button");
+
+        let (status, body) = json(
+            server.clone(),
+            get_with_cookie("/api/changes/Iadoc/rendered?file=docs/guide.adoc", TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let html = body["html"].as_str().unwrap();
+        assert!(
+            html.contains("data-lines=\"3-3\" data-change=\"modify\" data-old=\"3-3\">"),
+            "{html}"
+        );
+        assert!(!html.contains("<script"), "{html}");
+    }
+
+    #[tokio::test]
     async fn a_file_that_is_not_markdown_offers_no_rendered_view() {
         let repo = build_repo(&[
             commit("base").file("src/a.c", "int a;\n"),
@@ -2994,7 +3030,7 @@ mod tests {
         )
         .await;
 
-        assert!(diff["markdown"].is_null(), "the field is left out");
+        assert!(diff["rendered"].is_null(), "the field is left out");
     }
 
     #[tokio::test]

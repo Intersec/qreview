@@ -101,6 +101,15 @@ for (const scheme of ['light', 'dark'] as const) {
   await page.getByRole('button', { name: 'Show rendered' }).click();
   await page.locator('.md-doc [data-lines]').first().waitFor();
   await page.screenshot({ path: join(OUT, `${scheme}-rendered.png`) });
+
+  await page.getByRole('button', { name: 'Hide rendered' }).click();
+
+  // An AsciiDoc file, in the same pane.
+  await openChange(page, /docs: write a manual/);
+  await openFile(page, 'manual.adoc');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+  await page.locator('.md-doc [data-lines]').first().waitFor();
+  await page.screenshot({ path: join(OUT, `${scheme}-asciidoc.png`) });
   await page.getByRole('button', { name: 'Hide rendered' }).click();
 
   // The panel, which is where the settings live now.

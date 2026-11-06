@@ -41,7 +41,7 @@ const props = defineProps<{
   placement: (id: string) => Placed | undefined;
   /// Read a run of lines the diff does not carry.
   loadLines: (from: number, to: number) => Promise<Row[]>;
-  /// Read the file rendered, when it is Markdown.
+  /// Read the file rendered, when it is Markdown or AsciiDoc.
   loadRendered: () => Promise<string>;
   /// Where an image of the version read is fetched.
   imageUrl: (path: string) => string;
@@ -206,11 +206,11 @@ function foldThreads(folded: boolean) {
 /// True while a remark about the file as a whole is being written.
 const aboutFile = ref(false);
 
-/// True while the reader wants a Markdown file rendered beside its diff.
-/// Nothing renders before they ask, and the pane stays open from one
-/// Markdown file to the next until they hide it.
+/// True while the reader wants a file rendered beside its diff. Nothing
+/// renders before they ask, and the pane stays open from one rendered file
+/// to the next until they hide it.
 const rendered = ref(false);
-const beside = computed(() => rendered.value && props.diff.markdown === true);
+const beside = computed(() => rendered.value && props.diff.rendered === true);
 /// Beside the pane, the diff has half the width. A table as wide as its
 /// longest line would push the bar of a gap under the pane.
 const wraps = computed(() => props.wrap || beside.value);
@@ -1430,7 +1430,7 @@ function toggle(row: Row | null, column: Side) {
           {{ isHome ? 'Comment on the change' : 'Comment on the file' }}
         </button>
         <button
-          v-if="diff.markdown"
+          v-if="diff.rendered"
           type="button"
           class="chip"
           :aria-pressed="rendered"

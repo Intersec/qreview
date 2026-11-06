@@ -15,7 +15,7 @@ use crate::git::blame as git_blame;
 use crate::git::commit;
 use crate::git::exec::Git;
 use crate::git::merge::{self, Base};
-use crate::highlight::Highlighter;
+use crate::highlight::{Highlighter, Markup};
 use crate::lang::Languages;
 use crate::model::{
     Blame, BlameCommit, BlameRange, ChangeSummary, FileDiff, FileEntry, FileStatus, RepoInfo,
@@ -74,7 +74,7 @@ pub struct Session {
     pub lists: Arc<diff::FileLists>,
 }
 
-/// Above this size, an image is not served. A Markdown file shows a figure,
+/// Above this size, an image is not served. A rendered file shows a figure,
 /// and a blob this large is something else that happens to be named `.png`.
 const MAX_IMAGE: u64 = 16 * 1024 * 1024;
 
@@ -97,7 +97,8 @@ pub enum Rendering {
     Html(String),
     /// The version has no such file.
     Missing,
-    NotMarkdown,
+    /// The server renders no file of this language.
+    NotRendered,
     TooLarge,
 }
 
@@ -801,9 +802,9 @@ impl Session {
         if let Some(file) = found.as_mut() {
             let language = self.langs.of(path).map(str::to_owned);
             file.file.language = language.clone().unwrap_or_default();
-            file.markdown = !file.file.binary
+            file.rendered = !file.file.binary
                 && file.file.status != crate::model::FileStatus::Deleted
-                && self.highlighter.is_markdown(language.as_deref(), path);
+                && self.highlighter.markup(language.as_deref(), path).is_some();
 
             if !file.file.binary && how.syntax {
                 self.paint(file, rev, &base, old.as_deref(), language.as_deref())
@@ -906,8 +907,8 @@ impl Session {
         Ok(rows)
     }
 
-    /// A Markdown file of a version, rendered, with the marks of its diff
-    /// against `against`. See design section 3.8.
+    /// A Markdown or AsciiDoc file of a version, rendered, with the marks of
+    /// its diff against `against`. See design section 3.8.
     pub async fn rendered(
         &self,
         rev: &str,
@@ -916,9 +917,9 @@ impl Session {
         how: &diff::How,
     ) -> Result<Rendering> {
         let language = self.langs.of(path).map(str::to_owned);
-        if !self.highlighter.is_markdown(language.as_deref(), path) {
-            return Ok(Rendering::NotMarkdown);
-        }
+        let Some(markup) = self.highlighter.markup(language.as_deref(), path) else {
+            return Ok(Rendering::NotRendered);
+        };
         let Some((_, text)) = self.blob_text(rev, path).await else {
             return Ok(Rendering::Missing);
         };
@@ -940,20 +941,23 @@ impl Session {
         let langs = self.langs.clone();
         let dir = path.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
         let html = tokio::task::spawn_blocking(move || {
-            // A fence names a language the way an extension does, so the
-            // map of the repository applies to it too.
+            // A fence or a source block names a language the way an
+            // extension does, so the map of the repository applies to it too.
             let paint = |fence: &str, code: &str| {
                 let name = langs.of(&format!("fence.{fence}")).unwrap_or(fence);
                 highlighter.spans(code, name)
             };
-            crate::markdown::render(&text, &dir, &changes, &paint)
+            match markup {
+                Markup::Markdown => crate::markdown::render(&text, &dir, &changes, &paint),
+                Markup::AsciiDoc => crate::asciidoc::render(&text, &dir, &changes, &paint),
+            }
         })
         .await?;
 
         Ok(Rendering::Html(html))
     }
 
-    /// An image of the tree of a version, for a rendered Markdown file.
+    /// An image of the tree of a version, for a rendered file.
     ///
     /// Read from the object database, like every other blob. The path must
     /// be a plain path of the tree: no `.` or `..` part, no leading slash.

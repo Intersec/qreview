@@ -447,13 +447,14 @@ A line that opens something is a link, so the menu of the browser opens it
 in a new tab. A change of the series has the address of section 8.2, which
 names no line, so its new tab lands on the file.
 
-### 3.8 A Markdown file, rendered
+### 3.8 A Markdown or AsciiDoc file, rendered
 
-A Markdown file can be read rendered, in a pane beside its diff. A file
+A Markdown or AsciiDoc file can be read rendered, in a pane beside its diff.
+A file
 always opens on its diff alone. A Show rendered button on the file asks the
 server for the rendered page, and nothing else asks for it. A reader who
-never presses it pays nothing. The pane stays open from one Markdown file to
-the next, until the reader hides it.
+never presses it pays nothing. The pane stays open from one rendered file to
+the next of the same change, until the reader hides it.
 
 **The pane is for reading.** It shows the document, not the diff: the diff
 beside it says what changed. No remark is written or shown in the pane. A
@@ -506,7 +507,8 @@ there. A table as wide as its longest line put the buttons of a gap under the
 pane. When the pane closes, the diff follows `diff.wrap` again.
 
 **Which files.** The language of the file decides, not its extension, so the
-map of section 7 can make a house extension Markdown. A deleted file has no
+map of section 7 can make a house extension Markdown or AsciiDoc. The file
+then carries `rendered: true`. A deleted file has no
 new side, so it has no rendered page. A file of more than 1 MiB has none
 either. The route then answers an error, and the pane says why.
 
@@ -520,6 +522,12 @@ so the classes are the ones of the diff. The page paints the HTML that comes
 back. Nothing is cached: a Markdown file is small, and the marks depend on
 the base.
 
+An AsciiDoc file goes through `asciidoc-parser` and `asciidoc-html5`, in the
+`secure` safe mode: an `include::` becomes a link, and nothing is read
+beside the blob. `syntect` colors a source block in the language that it
+names. The rest of this section holds for both languages, except where it
+says otherwise.
+
 **Each block knows its lines.** A leaf block carries `data-lines="12-18"`,
 the lines of the source that it came from. A leaf block is a paragraph, a
 heading, a code block, a table row, a thematic break, or the text of an item
@@ -528,11 +536,28 @@ their children carry them. `pulldown-cmark` gives the byte range of each
 block, and the server turns it into lines. This is what the pane follows the
 diff by.
 
-**Raw HTML is shown as text.** The server writes every tag of the page
-itself. HTML in the source comes out escaped, so a `<details>` shows as the
-text `<details>`. A link to an `http`, `https` or `mailto` target opens in a
+In AsciiDoc, the converter writes `data-source-line`, the first line of
+each block, on its outer element, and the tree of the parser gives the last
+line. A list or a table is one block: the converter anchors no item and no
+row. A section gives its lines to its heading, and the header of the
+document gives its lines to the title. A code block also carries
+`data-code` on its `<pre>`, the line of its first row.
+
+**Raw HTML is shown as text in Markdown.** The server writes every tag of
+the page itself. HTML in the source comes out escaped, so a `<details>`
+shows as the text `<details>`. A link to an `http`, `https` or `mailto` target opens in a
 tab of its own. Any other link shows its target and opens nothing. The page
 still passes the HTML through `DOMPurify`, as it does for a comment body.
+
+**AsciiDoc HTML is cleaned on the server.** In AsciiDoc, raw HTML is part of
+the language: a `++++` block, a `pass:[]` macro, an attribute value. The
+server cleans the output of the converter with `ammonia`, from an allowlist:
+no script, no style, no form, no media, no event handler. `data-lines`,
+`data-change`, `data-old` and `data-code` are not on the list, so a file
+cannot write them. A file can still write `data-source-line`, but the
+server reads it only to find a block of the tree by its first line and its
+kind: it can repeat the place of a block, and never remove a mark. Links
+and images then follow the rules below, as in Markdown.
 
 **An image comes from the object database.** The server resolves a relative
 path against the directory of the file, and a leading slash against the top
@@ -612,7 +637,7 @@ type FileDiff = {
   added: number;
   removed: number;
   hunks: Hunk[];
-  markdown?: true;         // the file can be read rendered. See section 3.8
+  rendered?: true;         // the file can be read rendered. See section 3.8
 };
 
 type Hunk = {
@@ -1288,7 +1313,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `GET /api/changes/:key/blame?ps=2&base=parent&file=...&part=recent` | Who wrote each line of the left side of the diff. With `part=recent`, only the lines that the series wrote. See section 3.7 |
 | `POST /api/gerrit/commits` | The page on Gerrit of each commit that the server holds. Body: `{ "commits": [sha] }`. Answers `{ "urls": { sha: url } }`. See section 6.5 |
 | `GET /api/changes/:key/lines?file=...&from=1&to=400` | A run of lines the diff left out, so the reader can open the context. A run of more than 2000 lines carries no syntax spans |
-| `GET /api/changes/:key/rendered?ps=2&base=parent&file=...` | A Markdown file of the version read, as HTML, with the marks of its diff against the base. See section 3.8 |
+| `GET /api/changes/:key/rendered?ps=2&base=parent&file=...` | A Markdown or AsciiDoc file of the version read, as HTML, with the marks of its diff against the base. See section 3.8 |
 | `GET /api/changes/:key/blob?ps=2&path=...` | An image in the tree of the version read, for a rendered file. Raw bytes, not JSON. See section 3.8 |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
 | `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column |

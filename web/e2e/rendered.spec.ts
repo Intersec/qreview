@@ -187,6 +187,24 @@ test('an image of the tree is read from the version', async ({ page }) => {
     .toBeGreaterThan(0);
 });
 
+test('an AsciiDoc file is rendered beside its diff', async ({ page }) => {
+  await openChange(page, /docs: write a manual/);
+  await openFile(page, 'manual.adoc');
+  await page.getByRole('button', { name: 'Show rendered' }).click();
+  const pane = page.getByRole('complementary', { name: 'The file, rendered' });
+
+  await expect(pane.locator('h2')).toHaveText('Install');
+  await expect(pane.locator('.ulist[data-lines="7-8"]')).toContainText('a nested item');
+  await expect(pane.locator('pre.md-code span[class*="tok-"]').first()).toBeVisible();
+  await expect(pane.getByRole('img', { name: 'The flow' })).toHaveAttribute(
+    'src',
+    /\/blob\?path=docs%2Fflow\.svg/,
+  );
+  // The raw HTML of a `++++` block never reaches the page.
+  await expect(pane.locator('script')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as { ran?: boolean }).ran)).toBeUndefined();
+});
+
 test('the pane is read only', async ({ page }) => {
   await openChange(page, /docs: write a guide/);
   await openFile(page, 'guide.md');

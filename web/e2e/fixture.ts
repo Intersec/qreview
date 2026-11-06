@@ -419,4 +419,42 @@ export function addGuide(repo: string) {
       ),
   );
   commit(repo, 'docs: rework the guide', 'Change-Id: Iguidereworkaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+
+  // The same kinds of block in AsciiDoc, and raw HTML that must not run.
+  write(
+    repo,
+    'docs/manual.adoc',
+    [
+      '= The manual',
+      '',
+      'A paragraph with *bold* and `code`.',
+      '',
+      '== Install',
+      '',
+      '* one item',
+      '** a nested item',
+      '',
+      '[source,c]',
+      '----',
+      'int main(void) { return 0; }',
+      '----',
+      '',
+      'image::flow.svg[The flow]',
+      '',
+      'WARNING: Read this first.',
+      '',
+      '.Sizes',
+      '|===',
+      '| Name | Size',
+      '',
+      '| a.c | 12',
+      '|===',
+      '',
+      '++++',
+      '<script>window.ran = true</script>',
+      '++++',
+      '',
+    ].join('\n'),
+  );
+  commit(repo, 'docs: write a manual', 'Change-Id: Imanualaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 }
