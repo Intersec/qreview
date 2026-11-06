@@ -33,11 +33,26 @@ pub struct Changes {
 
 /// A run of lines that the diff removes.
 #[derive(Clone, Debug)]
-struct Removed {
+pub(crate) struct Removed {
     /// The line of the new side that the run follows. 0 is the top.
-    after: usize,
+    pub(crate) after: usize,
     /// The first and the last line of the run, on the old side.
-    old: (usize, usize),
+    pub(crate) old: (usize, usize),
+}
+
+impl Removed {
+    /// The attributes of the marker of a run that no block owns.
+    ///
+    /// An empty mark in the margin: the pane is a document to read, and the
+    /// diff beside it holds the lines.
+    pub(crate) fn attrs(&self) -> String {
+        let (first, last) = self.old;
+        let words = match last - first + 1 {
+            1 => "1 line removed".to_owned(),
+            n => format!("{n} lines removed"),
+        };
+        format!("class=\"md-removed\" data-old=\"{first}-{last}\" title=\"{words}\"")
+    }
 }
 
 impl Changes {
@@ -75,6 +90,22 @@ impl Changes {
         changes
     }
 
+    /// The changes of a test: the added lines, and each removed run as the
+    /// line it follows and its old lines.
+    #[cfg(test)]
+    pub(crate) fn listed(added: &[usize], removed: &[(usize, usize, usize)]) -> Self {
+        Self {
+            added: added.iter().copied().collect(),
+            removed: removed
+                .iter()
+                .map(|&(after, from, to)| Removed {
+                    after,
+                    old: (from, to),
+                })
+                .collect(),
+        }
+    }
+
     /// Whether a block owns a run: the block took the place of the run, or
     /// the run sat between two lines of the block.
     fn owns(&self, (first, last): (usize, usize), run: &Removed) -> bool {
@@ -87,20 +118,20 @@ impl Changes {
 
 /// What the diff did to one block: `add` or `modify`, and the old lines it
 /// owns.
-type Mark = (&'static str, Option<(usize, usize)>);
+pub(crate) type Mark = (&'static str, Option<(usize, usize)>);
 
 /// What the second pass writes on each block, from the blocks that the
 /// first pass found.
 #[derive(Default)]
-struct Plan {
+pub(crate) struct Plan {
     /// By the lines of a block.
-    marks: HashMap<(usize, usize), Mark>,
+    pub(crate) marks: HashMap<(usize, usize), Mark>,
     /// The runs that no block owns, in the order of the file.
-    loose: Vec<Removed>,
+    pub(crate) loose: Vec<Removed>,
 }
 
 impl Plan {
-    fn new(changes: &Changes, leaves: &[(usize, usize)]) -> Self {
+    pub(crate) fn new(changes: &Changes, leaves: &[(usize, usize)]) -> Self {
         let mut plan = Self::default();
 
         for run in &changes.removed {
@@ -485,16 +516,7 @@ impl<'p> Writer<'p> {
             let Some(run) = self.loose.pop_front() else {
                 break;
             };
-            let (first, last) = run.old;
-            let count = last - first + 1;
-            let words = match count {
-                1 => "1 line removed".to_owned(),
-                n => format!("{n} lines removed"),
-            };
-            // An empty mark in the margin: the pane is a document to read,
-            // and the diff beside it holds the lines.
-            let attrs =
-                format!("class=\"md-removed\" data-old=\"{first}-{last}\" title=\"{words}\"");
+            let attrs = run.attrs();
             let html = match self.blocks.last() {
                 Some(Open::List) => format!("<li {attrs}></li>"),
                 Some(Open::Table) => format!(
@@ -586,7 +608,7 @@ fn line_starts(text: &str) -> Vec<usize> {
 }
 
 /// One line of code, with its syntax classes.
-fn painted(line: &str, spans: &[Span]) -> String {
+pub(crate) fn painted(line: &str, spans: &[Span]) -> String {
     let mut html = String::new();
     let mut last = 0;
 
@@ -611,7 +633,7 @@ fn painted(line: &str, spans: &[Span]) -> String {
 /// The path in the tree of an image that a file in `dir` names, or `None`
 /// when the image is not in the tree: on another host, in a `data:` address,
 /// or above the top of the tree.
-fn resolve(dir: &str, dest: &str) -> Option<String> {
+pub(crate) fn resolve(dir: &str, dest: &str) -> Option<String> {
     let dest = dest.split(['#', '?']).next()?;
     // A scheme is a word and a colon before any slash: `https:`, `data:`.
     let scheme = dest
@@ -665,7 +687,7 @@ fn unescape(text: &str) -> String {
 }
 
 /// Only a link that leaves the page for another host opens.
-fn opens(url: &str) -> bool {
+pub(crate) fn opens(url: &str) -> bool {
     let lower = url.trim_start().to_ascii_lowercase();
     ["http://", "https://", "mailto:"]
         .iter()
@@ -693,7 +715,7 @@ fn alert(kind: BlockQuoteKind) -> &'static str {
     }
 }
 
-fn escape(text: &str) -> String {
+pub(crate) fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         match c {
@@ -882,16 +904,7 @@ mod tests {
     }
 
     fn changes(added: &[usize], removed: &[(usize, usize, usize)]) -> Changes {
-        Changes {
-            added: added.iter().copied().collect(),
-            removed: removed
-                .iter()
-                .map(|&(after, from, to)| Removed {
-                    after,
-                    old: (from, to),
-                })
-                .collect(),
-        }
+        Changes::listed(added, removed)
     }
 
     fn marked(text: &str, changes: &Changes) -> String {

@@ -791,6 +791,76 @@ tr.talk td {
   font-size: 0.9em;
   color: var(--ink-quiet);
 }
+/*
+ * AsciiDoc: `asciidoc-html5` writes the classes of Asciidoctor. Its blocks
+ * wear the same clothes as the Markdown ones.
+ */
+.md-doc .title,
+.md-doc caption.title {
+  margin: 0 0 0.3em;
+  font-style: italic;
+  text-align: left;
+  color: var(--ink-quiet);
+}
+.md-doc .paragraph,
+.md-doc .ulist,
+.md-doc .olist,
+.md-doc .dlist,
+.md-doc .listingblock,
+.md-doc .literalblock,
+.md-doc .imageblock,
+.md-doc .exampleblock,
+.md-doc .sidebarblock,
+.md-doc .quoteblock,
+.md-doc .admonitionblock {
+  margin: 0 0 0.9em;
+}
+.md-doc .paragraph > p,
+.md-doc td > p.tableblock,
+.md-doc li > p {
+  margin: 0;
+}
+.md-doc .exampleblock > .content,
+.md-doc .sidebarblock > .content {
+  padding: 8px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+}
+.md-doc .quoteblock blockquote {
+  margin: 0;
+}
+.md-doc .admonitionblock > table {
+  display: block;
+  padding: 0 1em;
+  border-left: 3px solid var(--action);
+}
+.md-doc .admonitionblock.warning > table,
+.md-doc .admonitionblock.caution > table {
+  border-left-color: var(--waiting-edge);
+}
+.md-doc .admonitionblock td {
+  display: block;
+  padding: 0;
+  border: 0;
+}
+.md-doc .admonitionblock td.icon .title {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--action);
+}
+.md-doc .admonitionblock.warning td.icon .title,
+.md-doc .admonitionblock.caution td.icon .title {
+  color: var(--waiting-ink);
+}
+.md-doc .toc {
+  margin: 0 0 1.2em;
+  padding: 8px 12px;
+  border: 1px solid var(--edge-soft);
+  border-radius: 4px;
+}
+.md-doc #toctitle {
+  font-weight: 600;
+}
 
 /* ------------------------------------------------- a comment, Gerrit-like */
 

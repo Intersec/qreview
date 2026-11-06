@@ -1068,6 +1068,42 @@ Rejected: a mark for each line rather than for each hunk. It marks more lines, b
 
 Nothing in the storage format or the export moves. A row of the API gains `rebase`, absent when false.
 
+## 2026-11-06 — An AsciiDoc file can be read rendered too
+
+A project that writes its documents in AsciiDoc had the diff alone. The
+rendered pane of section 3.8 reads the same way for both languages.
+
+**Decision.** The server renders an AsciiDoc file with `asciidoc-parser`
+and `asciidoc-html5`, in the `secure` safe mode: an include becomes a link,
+and nothing is read outside the blob. The option `source_locations` gives
+the first line of each block. The tree of the parser gives its last one.
+`syntect` colors a code block, as it does in Markdown. The marks, the
+follow and the images work as they do for Markdown.
+
+**The server cleans the HTML.** Here the converter writes the tags, not
+qreview, and a `++++` block or an attribute value lets raw HTML through.
+The server cleans the output with `ammonia`, from an allowlist: no script,
+no style, no form, no media, no event handler. It removes `data-lines`,
+`data-change` and `data-old` that come from the file, so a file cannot
+fake a mark or a place. DOMPurify in the page stays the second lock.
+A Markdown file keeps its own rule: raw HTML shows as text.
+
+The decision of 2026-10-26 rejected `ammonia` for Markdown, where the raw
+HTML is rare. In AsciiDoc it is a feature of the language, so a page that
+keeps it needs a real parser.
+
+**The API.** The field `markdown?: true` of a file becomes
+`rendered?: true`, for any language that the server renders. The interface
+ships in the same binary, so no older page reads the old name.
+
+**Cost.** Three crates: `asciidoc-parser`, `asciidoc-html5` and `ammonia`,
+with the HTML parser of `ammonia`. `asciidoc-html5` is at 0.2 and its
+README still calls it a placeholder, but its code renders the documents
+that the tests hold. Both AsciiDoc crates are pinned, and the tests of the
+module catch a change in their output.
+
+Nothing in the storage format or the export moves.
+
 ## 2026-11-10 — `qreview wait` has no time limit by default
 
 `qreview wait` ran out after 600 seconds. The skill told the agent to wait again each time. A user away for an hour cost the agent six turns, and each turn spent tokens to learn nothing.

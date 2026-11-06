@@ -77,6 +77,14 @@ struct Pending {
     ours: bool,
 }
 
+/// A markup language that the server renders as a page. See design
+/// section 3.8.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Markup {
+    Markdown,
+    AsciiDoc,
+}
+
 pub struct Highlighter {
     syntaxes: SyntaxSet,
     /// Keyed by blob hash. Two patch sets that share a file highlight it once.
@@ -183,10 +191,14 @@ impl Highlighter {
         painted.lines
     }
 
-    /// Whether the grammar of a file is Markdown. The grammar decides, so a
-    /// house extension mapped to Markdown counts.
-    pub fn is_markdown(&self, language: Option<&str>, path: &str) -> bool {
-        self.syntax_of("", language, path).1.name == "Markdown"
+    /// The markup a file is written in, when the server can render it. The
+    /// grammar decides, so a house extension mapped to Markdown counts.
+    pub fn markup(&self, language: Option<&str>, path: &str) -> Option<Markup> {
+        match self.syntax_of("", language, path).1.name.as_str() {
+            "Markdown" => Some(Markup::Markdown),
+            name if name.starts_with("AsciiDoc") => Some(Markup::AsciiDoc),
+            _ => None,
+        }
     }
 
     /// The entry of a blob, made empty on the first ask.
@@ -369,14 +381,22 @@ mod tests {
     }
 
     #[test]
-    fn the_grammar_says_which_file_is_markdown() {
+    fn the_grammar_says_which_markup_a_file_is_in() {
         let h = Highlighter::new();
+        let markdown = Some(Markup::Markdown);
+        let asciidoc = Some(Markup::AsciiDoc);
 
-        assert!(h.is_markdown(None, "README.md"));
-        assert!(h.is_markdown(None, "docs/guide.markdown"));
-        assert!(h.is_markdown(Some("markdown"), "notes.txt"), "the map wins");
-        assert!(!h.is_markdown(None, "src/main.rs"));
-        assert!(!h.is_markdown(None, "Makefile"));
+        assert_eq!(h.markup(None, "README.md"), markdown);
+        assert_eq!(h.markup(None, "docs/guide.markdown"), markdown);
+        assert_eq!(
+            h.markup(Some("markdown"), "notes.txt"),
+            markdown,
+            "the map wins"
+        );
+        assert_eq!(h.markup(None, "docs/guide.adoc"), asciidoc);
+        assert_eq!(h.markup(None, "docs/guide.asciidoc"), asciidoc);
+        assert_eq!(h.markup(None, "src/main.rs"), None);
+        assert_eq!(h.markup(None, "Makefile"), None);
     }
 
     #[test]
