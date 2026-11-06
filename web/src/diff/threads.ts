@@ -22,6 +22,9 @@ export interface Threads {
   movedTo?(id: string): { id: string; commit: string } | undefined;
   /// Open a thread where it stands now, on the newest version.
   follow?(id: string): Promise<void>;
+  /// The thread the agent answers now, from the server: an ask from a box
+  /// or an earlier page reaches no card.
+  answering?: ComputedRef<string | null>;
 }
 
 export const THREADS: InjectionKey<Threads> = Symbol('threads');

@@ -277,7 +277,9 @@ function saveEdit(id: string, body: string) {
           Done
         </label>
         <span class="spacer"></span>
-        <span v-if="asked" class="talk-hint">Asked</span>
+        <span v-if="asked || threads?.answering?.value === comment.id" class="talk-hint"
+          >Asked</span
+        >
         <button
           v-else-if="threads && !comment.done && askable"
           type="button"

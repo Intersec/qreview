@@ -35,6 +35,7 @@ function card(
   attach = false,
   moved: Record<string, { id: string; commit: string }> = {},
   foldDone: Ref<FoldDone | null> = ref(null),
+  answering: Ref<string | null> = ref(null),
 ) {
   const threads: Threads = {
     repliesOf: () => replies,
@@ -45,6 +46,7 @@ function card(
     blockedFiles: computed(() => new Set<string>()),
     movedTo: (id: string) => moved[id],
     follow: vi.fn(async () => {}),
+    answering: computed(() => answering.value),
   };
   const wrapper = mount(CommentCard, {
     props: { comment: remark, at: 'abc' },
@@ -151,6 +153,19 @@ describe('a thread', () => {
 
     expect(threads.ask).toHaveBeenCalledWith('a');
     expect(wrapper.text()).toContain('Asked');
+  });
+
+  it('says Asked on a thread the agent answers, though asked from elsewhere', async () => {
+    const answering = ref<string | null>('a');
+    const { wrapper } = card(comment('a'), [], false, {}, ref(null), answering);
+    const asks = () => wrapper.findAll('button').some((b) => b.text() === 'Ask agent');
+
+    expect(asks()).toBe(false);
+    expect(wrapper.text()).toContain('Asked');
+
+    answering.value = 'other';
+    await nextTick();
+    expect(asks()).toBe(true);
   });
 
   it('offers no Ask under the last word of the agent', () => {
