@@ -186,6 +186,7 @@ provide(THREADS, {
   blockedFiles,
   movedTo: review.movedTo,
   follow: followThread,
+  answering: computed(() => (task.value?.kind === 'answer' ? task.value.id : null)),
 });
 
 const comments = computed(() => review.comments());
