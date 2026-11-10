@@ -12,6 +12,37 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.18.0]
+
+### Added
+
+- **Rebase marks** — between two patch sets on two bases, the lines that came
+  with the rebase are painted apart, in the colours of Gerrit: lavender for an
+  added line, pale yellow for a removed one.
+
+### Changed
+
+- Between two patch sets on two bases, the file list leaves out a file whose
+  differences all came with the rebase, and the line counts leave out what the
+  rebase brought. Gerrit does the same.
+- `qreview wait` has no time limit by default, so an agent that waits for you
+  spends no tokens to wake up every 10 minutes. `--timeout` still sets one.
+
+### Fixed
+
+- A thread asked with Save and ask, or from another page, no longer offers
+  Ask agent while the agent answers it.
+- A reload, Back or Forward on a file that only an older patch set has comes
+  back to that file. It used to open the commit message, or to say that the
+  file is not in the change.
+- A click on a remark in the pane puts the cursor on the line where the diff
+  shows the remark. A remark of the patch set read against used to land on the
+  line with the same number in the right column.
+- A click on a remark in the pane opens the patch set that the remark was
+  written on, when the version on the screen does not show it. A remark on a
+  file that a later patch set dropped used to say that the file is not in the
+  change.
+
 ## [0.17.0]
 
 ### Added
