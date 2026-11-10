@@ -47,7 +47,8 @@ configure.
 Repeat until the user says the review is over:
 
 1. Run `qreview wait --after <next>` in the background. Use the `next`
-   number of the last `wait`. Leave out `--after` the first time.
+   number of the last `wait`. Leave out `--after` the first time. Give it
+   no `--timeout`: it blocks until the user asks, for hours if needed.
 2. When it returns, read the JSON:
    - `events`: the requests of the user. An event of kind `ask` names one
      thread, and carries it in `thread`: the remark first, then the
@@ -56,12 +57,9 @@ Repeat until the user says the review is over:
      waits.
    - `"reset": true`: the server restarted. Read everything again with
      `qreview export --json`.
-   - Exit code 1 and no event: the time ran out. Wait again.
-   - The error `no qreview server runs on this worktree`: the server
-     stopped and did not come back before the time ran out. Tell the user
-     once, then wait again. A `wait` attaches to the server as soon as the
-     user starts one. If the server stops during a `wait`, the `wait`
-     looks for it again, and a new server answers `"reset": true`.
+   - If the server stops during a `wait`, the `wait` looks for it again,
+     and attaches to it as soon as the user starts one. A new server
+     answers `"reset": true`.
    - An event of kind `fix`: the user pressed **Fix this change** on the
      change `key`. See "Fix a change". If `key` is empty, the user pressed
      **Fix the series**. See "Fix the series".
@@ -197,7 +195,7 @@ Then wait for the replies of the user with the loop above.
 |---|---|
 | `qreview` | Start the review, or print the address of the one that runs |
 | `qreview export --json` | The open threads, each comment with its `id` |
-| `qreview wait [--after <n>] [--timeout <s>]` | Block until the user writes, and print it as JSON |
+| `qreview wait [--after <n>] [--timeout <s>]` | Block until the user asks, and print it as JSON. No time limit by default |
 | `qreview reply <id> --body <text> [--done] [--blocked]` | Reply to a thread |
 | `qreview comment <file>[:<side>:<line>[-<end>]] --body <text> [--key <id>]` | Write a remark |
 | `qreview migrate --from <old> [--to <new>] [--done <ids>] [--blocked <id>=<text>]` | Declare a new version after an amend, and move its threads |

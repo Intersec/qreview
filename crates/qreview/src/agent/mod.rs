@@ -283,13 +283,17 @@ const RETRY: Duration = Duration::from_secs(1);
 ///
 /// Answers with the requests, each with the thread it names, and the number
 /// to pass as `after` next time. The flag is false when the time ran out
-/// with nothing to report.
+/// with nothing to report. Without a timeout, the wait never runs out.
 ///
 /// A server that stops does not end the wait: the user may start it again,
 /// and the agent then stays attached with no word from it. A new server
 /// numbers its events again, so the wait answers `reset` then.
-pub async fn wait(home: &Home, after: Option<u64>, timeout: Duration) -> Result<(Value, bool)> {
-    let deadline = Instant::now() + timeout;
+pub async fn wait(
+    home: &Home,
+    after: Option<u64>,
+    timeout: Option<Duration>,
+) -> Result<(Value, bool)> {
+    let deadline = timeout.map(|timeout| Instant::now() + timeout);
     let mut client = reach(home, deadline).await?;
     let mut after = match after {
         Some(after) => after,
@@ -325,23 +329,27 @@ pub async fn wait(home: &Home, after: Option<u64>, timeout: Duration) -> Result<
         }
 
         after = next;
-        if Instant::now() >= deadline {
+        if past(deadline) {
             return Ok((json!({ "events": [], "next": after }), false));
         }
     }
 }
 
 /// The server of the worktree, as soon as one answers before the deadline.
-async fn reach(home: &Home, deadline: Instant) -> Result<Client> {
+async fn reach(home: &Home, deadline: Option<Instant>) -> Result<Client> {
     loop {
         if let Some(client) = running(home).await {
             return Ok(client);
         }
-        if Instant::now() >= deadline {
+        if past(deadline) {
             bail!("no qreview server runs on this worktree. Run `qreview` first");
         }
         tokio::time::sleep(RETRY).await;
     }
+}
+
+fn past(deadline: Option<Instant>) -> bool {
+    deadline.is_some_and(|deadline| Instant::now() >= deadline)
 }
 
 /// Each request with the thread it names, the remark first and the replies

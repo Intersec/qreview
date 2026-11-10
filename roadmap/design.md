@@ -1583,15 +1583,16 @@ only: an `ask` event, never a remark being written, changed or deleted.
 Each request carries `thread`, the remark and its replies in order, empty
 when the thread was deleted since. `next` is the `--after` of the next
 wait, so no request made between two waits is missed. Without `--after`, it waits
-from now. It exits 0 with events, and 1 when the time runs out, 600 seconds
-by default. A `"reset": true` says the server restarted: read the review
+from now. It exits 0 with events, and 1 when the time runs out. It has no
+time limit unless `--timeout` sets one. A `"reset": true` says the server restarted: read the review
 again with `export --json`.
 
 `wait` stays attached across a stop of the server. When no server answers,
 it looks for one every second until the time runs out, so it attaches to a
 server that the user starts again. When the server it waited on stops and
-another one starts, it answers `"reset": true`. When no server comes before
-the time runs out, it fails with the message to run `qreview`.
+another one starts, it answers `"reset": true`. When `--timeout` is set and
+no server comes before the time runs out, it fails with the message to run
+`qreview`.
 
 **The server of a worktree.** The worktrees of a clone share one store
 (section 5.1), but each one runs a server of its own. `<worktree-id>` is the

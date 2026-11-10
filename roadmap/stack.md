@@ -1018,3 +1018,13 @@ Like the one of Gerrit, the mark is best effort. A hunk that touches a change of
 Rejected: a mark for each line rather than for each hunk. It marks more lines, but it disagrees with Gerrit on the same pair of versions, and Gerrit is what the reader compares with.
 
 Nothing in the storage format or the export moves. A row of the API gains `rebase`, absent when false.
+
+## 2026-11-10 — `qreview wait` has no time limit by default
+
+`qreview wait` ran out after 600 seconds. The skill told the agent to wait again each time. A user away for an hour cost the agent six turns, and each turn spent tokens to learn nothing.
+
+**Decision.** `qreview wait` blocks until a request comes, with no time limit. `--timeout <s>` still sets one, for a check such as `qreview wait --timeout 1`. The skill no longer tells the agent to wait again on a timeout.
+
+The server sees no change. The `wait` still asks `/api/events` again every 30 seconds inside one process, so the agent counts as listening as before.
+
+Nothing in the storage format or the export moves.

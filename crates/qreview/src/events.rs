@@ -112,8 +112,7 @@ pub enum TaskKind {
 }
 
 /// How long after a wait that answered an agent still counts as listening.
-/// A `qreview wait` that runs out of time returns, and the agent starts the
-/// next one on its next turn.
+/// The agent reads the answer and starts the next `qreview wait`.
 const LISTENS_FOR: Duration = Duration::from_secs(30);
 
 /// How long after a wait that it hung up on an agent still counts as

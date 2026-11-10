@@ -93,9 +93,9 @@ pub enum Command {
         /// The `next` number of the last wait. Now by default.
         #[arg(long)]
         after: Option<u64>,
-        /// Seconds to wait.
-        #[arg(long, default_value_t = 600)]
-        timeout: u64,
+        /// Seconds to wait. No limit by default.
+        #[arg(long)]
+        timeout: Option<u64>,
     },
 
     /// Read the repository again, as the refresh button does.
@@ -169,6 +169,17 @@ mod tests {
                 "the procedure names `qreview {word}`, which this release does not have"
             );
         }
+    }
+
+    #[test]
+    fn a_wait_has_no_time_limit_by_default() {
+        // An agent wakes up, and spends tokens, each time its wait runs out.
+        let cli = Cli::try_parse_from(["qreview", "wait"]).unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Some(Command::Wait { timeout: None, .. })
+        ));
     }
 
     #[test]
