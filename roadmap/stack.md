@@ -1156,6 +1156,47 @@ The server sees no change. The `wait` still asks `/api/events` again every 30 se
 
 Nothing in the storage format or the export moves.
 
+## 2026-11-11 — qreview sends remarks to Gerrit as drafts
+
+qreview served one use: the author reviews their own series before the push. Two other uses came up, and the tool did both badly:
+
+- **Answering the reviewers.** The remarks of the reviewers were shown read only and counted nowhere. The author took them to an agent in another session, and wrote the answers in Gerrit by hand.
+- **Reviewing a colleague.** The reader fetched and checked out the change by hand, and then copied each remark into Gerrit.
+
+The concept said that qreview reads from Gerrit and never writes to it. That rule blocked both uses.
+
+**Decision.** qreview writes to Gerrit, with three limits:
+
+- It writes **drafts** and nothing else. A draft is visible to its author only. The reader publishes it in Gerrit, with the vote, as they do today. qreview never publishes, never votes and never submits.
+- It writes **when the reader clicks Send**, and at no other time. The agent stages a remark for Gerrit, and the reader decides when it leaves.
+- It writes **through the REST API**, with an authorization that a command of the reader gives. Section 6.6 of the design holds how qreview uses it without keeping it.
+
+Beside this, qreview reads the threads of Gerrit through REST, with their ids and their state. An unresolved thread of a reviewer is work, like a remark of the reader: it is counted, exported, and the agent can fix it. Section 6.8 holds the rules.
+
+The rest stays on ssh: the query, the patch sets, `git fetch`, and the commits of a blame. REST serves only what ssh cannot.
+
+`qreview <gerrit-url>` fetches a change and opens its review. The worktree then runs one server for each review, not one server in all. Sections 6.9 and 11 hold the rules.
+
+**Why REST for the threads and the drafts.** The ssh query gives no comment id, no thread link and no resolved state. Without the id, a reply opens a new thread beside the thread of the reviewer and resolves nothing. `gerrit review --json` over ssh can post, but it publishes at once: it cannot write a draft.
+
+**Why drafts.** A mistake of the tool, or of the agent, then reaches nobody. The reader reads every remark once more in Gerrit, where the colleague will read it, before it is public. This also lowers the cost of the one weak point: the agent holds the same session token as the page, so the server cannot prove that a click came from the reader. The send route refuses a request on the Unix socket, which is the only way in for an agent in a container.
+
+**Why a command of the reader.** Gerrit moves to OIDC, which ends the HTTP password. `gerrit.auth.command` names a program that prints `{"authorization": "<value of the header>", "expiresIn": <seconds>}`: a token of OIDC or an HTTP password, from a refresh token, a keyring or a central service. qreview stores no secret, reads no secret from its own configuration, and gives none to the page or to the agent. The command runs at the first REST call, in the terminal where the reader started `qreview`, so it may ask a password or open a browser there. Only the configuration of the user may name it: a cloned repository must not choose a program that the server runs. Settled on 2026-11-19, when the move to OIDC was announced.
+
+**Rejected:**
+
+- **ssh only.** No threads and no drafts, see above.
+- **REST for everything.** It would replace a query and a fetch that work, and a patch set would have to be rebuilt from the content of its files. qreview runs on the host, where ssh and `git fetch` are there.
+- **Publishing directly.** The agent drafts the text, and one click would make it public under the name of the reader.
+- **A password in the configuration of qreview.** A secret in a plain file, which a reader copies between machines and pastes into an issue.
+- **The git credential helper, or environment variables that qreview reads.** They hold an HTTP password, which OIDC ends, and a keyring is a poor place for it. A command covers both, and a token too.
+- **qreview as a client of the MCP server that Claude sessions will use for Gerrit.** qreview sends without Claude, when the reader clicks Send. An MCP client needs the protocol, its transport and its own OAuth, for four REST calls. Tools made for a model give no contract on the fields that a draft needs, such as `in_reply_to` and the ranges in UTF-16 units. The MCP server needs an authorization too, so the problem moves without going away. And a client shared with the agent weakens the rule that the agent never writes to Gerrit.
+- **A login at the start of `qreview`, or a `qreview gerrit login` command.** A series with no Gerrit would ask for nothing it needs. And the server is another process: a command that keeps no cache, such as one that asks a password, could not give it to the server.
+- **`curl -u user:password`.** Every local user reads the arguments of a process in `ps`.
+- **An HTTP crate in the binary.** The tool already runs `git`, `ssh` and `curl` as child processes. A TLS stack would grow the static binary for one feature.
+
+The store goes to format 5: a comment gains `gerrit`, and `parent` can name a thread of Gerrit. The export changes: it holds the open threads of the reviewers, and a review of a colleague's change opens with another request. The concept loses the non-goal "qreview never writes to Gerrit".
+
 ## 2026-11-17 — The server says how to reach it in the git directory
 
 An agent in a devcontainer cannot reach the server on the machine. The container has its own network, its own `/tmp` and its own `~/.local/state`. It shares the project only, at the same path. The study "qreview in a Devcontainer" compared five ways in.
