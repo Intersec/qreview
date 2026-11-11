@@ -103,6 +103,11 @@ Two rules that no tool enforces:
   and `<git-dir>/qreview/`, the socket and the address for an agent in a
   container, removed at stop. No ref, no file of the tree, ever. A task that
   needs more is a stop-and-report.
+- **The server writes to Gerrit drafts, and nothing else.** Only when the
+  reader clicks Send, never on a command of the agent. No publish, no vote,
+  no submit. REST serves only what ssh cannot: the threads and the drafts. The authorization comes from `gerrit.auth.command`, which only the
+  configuration of the user may name. It stays in memory, and reaches
+  `curl` on standard input only.
 - **The server binds `127.0.0.1` only**, with a session token. No other
   interface, ever. Beside it, a Unix socket in a directory only the user can
   enter, for an agent in a sandbox, with the same token.
@@ -143,7 +148,7 @@ way the project does a thing. Keep each line short.
 - **A new field on a stored type carries `#[serde(default)]`,** and the format
   number goes up. An older file must still read.
 - **Nothing is tested against a network.** Gerrit answers come from recorded
-  files, and the browser tests from a fake `ssh` on the PATH.
+  files, and the browser tests from a fake `ssh` and a fake `curl` on the PATH.
 - **Look at `make shots` before saying a visual change works.** Add a shot when
   a view has no picture yet.
 

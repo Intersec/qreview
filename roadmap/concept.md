@@ -44,22 +44,31 @@ Comments live on disk and survive an amend, because they are keyed by
 
 ## Who it is for
 
-Developers who work in a Gerrit workflow. The first user is the author of the
-series, before the push. A second reader can use it on a fetched series, but
-qreview does not replace Gerrit for team review. Nothing is shared through a
-server.
+Developers who work in a Gerrit workflow. qreview serves three uses:
+
+1. **Review your own series before the push.** This is the first use, and
+   the one the tool is built around.
+2. **Answer the reviewers.** The threads of Gerrit are work in the review.
+   An agent fixes them, and qreview stages the replies.
+3. **Review a colleague.** `qreview <gerrit-url>` fetches the change, and
+   the remarks go to Gerrit as drafts.
+
+qreview does not replace Gerrit for team review. The review is shared
+through Gerrit, and through no server of its own.
 
 ## Non-goals
 
 - **Not a Gerrit replacement.** No votes, no submit, no CI results, no
-  reviewer management. qreview reads from Gerrit. It never writes to Gerrit.
+  reviewer management. qreview writes to Gerrit drafts, when the reader
+  clicks Send, and nothing else. The reader publishes them in Gerrit.
 - **Not a Git client.** No commit, no rebase, no amend from the interface.
 - **Not a merge request tool.** No GitHub, no GitLab, no forge API.
 - **Not multi-user.** One developer, one machine, no authentication beyond
   the loopback address and a session token. An agent that the developer
   runs in a terminal is a second author in the review, not a second user.
 - **Not a way to share a review.** Sharing a review with a colleague is what
-  Gerrit is for. Push the series and comment there.
+  Gerrit is for. qreview sends a remark there, and shares nothing in any
+  other way.
 
 ## Prior art
 

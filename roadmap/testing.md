@@ -64,7 +64,8 @@ word that you can grep for.
 | Intra-line diff | The word spans of a changed line, and the case where a line changed completely |
 | Comment storage | A write is atomic. A read of a corrupt file reports an error and never deletes the file. Two writes in the same second do not lose one |
 | Anchoring | The three branches: same blob, moved line found by context, and nothing found. An unanchored comment is never dropped |
-| Gerrit parsing | The recorded answers, including a change with no patch set and a query that returns nothing |
+| Gerrit parsing | The recorded answers, including a change with no patch set and a query that returns nothing. The REST answers too: threads linked by `in_reply_to`, a draft, the `)]}'` line |
+| Gerrit drafts | The `CommentInput` of each kind of remark, pinned by a snapshot: a line, a range, the old side, a merge parent, the commit message, a reply that resolves. The authorization never appears in an argument of `curl` |
 | Language map | Every extension of the built-in map resolves to the expected language. An unknown extension falls back to plain text and does not fail |
 | Highlighting | The syntax spans and the intra-line spans on the same row do not overlap and cover the text exactly. A row is reproducible, so it is pinned by a snapshot |
 | Export | The exact text for a fixed set of comments. The format is a contract with a Claude session, so it is pinned by a snapshot |
@@ -133,6 +134,8 @@ A fake `ssh`, first on the `PATH`, answers two things:
 - `git-upload-pack …` runs against a bare repository next door, so
   `git fetch origin refs/changes/…` really fetches, and a patch set that
   lived only on the server arrives in the clone.
+
+A fake `curl`, first on the `PATH` too, stands for the REST API. It prints the recorded answer of the route it is given, and keeps its standard input and its arguments in a file beside it. A test reads that file to check what qreview sent, and that the authorization came on standard input only. `gerrit.auth.command` in the configuration of the test is a script of the fixture, which gives a fake account.
 
 Nothing in the tool changes for it. That is the point: an HTTP mode added
 only to make testing easier would test something else than what ships.
