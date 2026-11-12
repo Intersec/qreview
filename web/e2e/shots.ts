@@ -361,6 +361,15 @@ for (const scheme of ['light', 'dark'] as const) {
   await second.locator('.talk-box:not(.posted-box)').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-posted.png`) });
 
+  // A remark staged for Gerrit: the box that stages it, then its card.
+  await second.locator('td.gutter-comment[data-column="new"]').nth(3).click();
+  await second.getByRole('textbox').first().fill('Please say why the loop stops at three.');
+  await second.locator('form.talk-box').getByLabel('For Gerrit').check();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-box.png`) });
+  await second.getByRole('button', { name: 'Save', exact: true }).click();
+  await second.locator('.talk-tag-gerrit').first().waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-staged.png`) });
+
   // A line of the blame that opens its change on Gerrit.
   await second.keyboard.press('b');
   await second.locator('td.blame a[target="_blank"]').first().hover();

@@ -633,6 +633,7 @@ mod tests {
             done: None,
             blocked: false,
             ask: false,
+            gerrit: None,
         }
     }
 
@@ -656,6 +657,7 @@ mod tests {
             done: None,
             blocked: false,
             ask: false,
+            gerrit: None,
         }
     }
 
@@ -703,6 +705,7 @@ mod tests {
                     done: None,
                     blocked: false,
                     ask: false,
+                    gerrit: None,
                 },
             )
             .await
@@ -844,6 +847,7 @@ mod tests {
                     ..Default::default()
                 },
             )
+            .await
             .unwrap();
 
         let value = json(&session, None).await.unwrap();
@@ -909,6 +913,7 @@ mod tests {
                     done: None,
                     blocked: false,
                     ask: false,
+                    gerrit: None,
                 },
             )
             .await
@@ -996,6 +1001,7 @@ mod tests {
                         done: None,
                         blocked: false,
                         ask: false,
+                        gerrit: None,
                     },
                 )
                 .await
@@ -1067,6 +1073,7 @@ mod tests {
                     done: None,
                     blocked: false,
                     ask: false,
+                    gerrit: None,
                 },
             )
             .await
@@ -1426,6 +1433,7 @@ mod tests {
                         done: None,
                         blocked: false,
                         ask: false,
+                        gerrit: None,
                     },
                 )
                 .await

@@ -183,6 +183,8 @@ provide(THREADS, {
   reply: review.reply,
   ask: review.askAgent,
   setDone: review.setDone,
+  setGerrit: review.setGerrit,
+  onGerrit: computed(() => review.onGerrit),
   blockedChanges,
   blockedFiles,
   movedTo: review.movedTo,

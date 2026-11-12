@@ -16,6 +16,7 @@ function comment(id: string, extra: Partial<Comment> = {}): Comment {
     parent: null,
     done: false,
     blocked: false,
+    gerrit: null,
     ...extra,
   };
 }

@@ -13,6 +13,11 @@ export interface Threads {
   /// Ask the agent to answer the thread.
   ask(id: string): Promise<void>;
   setDone(id: string, done: boolean): Promise<void>;
+  /// Stage a remark for Gerrit, or keep it here.
+  setGerrit?(id: string, on: boolean): Promise<void>;
+  /// True when Gerrit holds the version the change carries now, so a remark
+  /// on it can go there.
+  onGerrit?: ComputedRef<boolean>;
   /// The changes, and the files of the change on the screen, that hold a
   /// thread waiting for the reader.
   blockedChanges: ComputedRef<Set<string>>;

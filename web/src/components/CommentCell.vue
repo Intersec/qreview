@@ -26,7 +26,7 @@ defineProps<{
   label: string;
 }>();
 const emit = defineEmits<{
-  save: [body: string, ask: boolean];
+  save: [body: string, ask: boolean, gerrit: boolean];
   cancel: [];
   edit: [id: string, body: string];
   remove: [id: string];
@@ -50,7 +50,8 @@ const emit = defineEmits<{
     :draft="draft"
     :label="label"
     askable
-    @save="(body, ask) => emit('save', body, ask)"
+    remark
+    @save="(body, ask, gerrit) => emit('save', body, ask, gerrit)"
     @cancel="emit('cancel')"
   />
 </template>
