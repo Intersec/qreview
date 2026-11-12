@@ -128,6 +128,7 @@ async fn one(
         done: None,
         blocked: false,
         ask: false,
+        gerrit: None,
     };
 
     // A version that is not in this clone reads as no blob, no hash and no
@@ -149,6 +150,7 @@ async fn one(
             done: false,
             blocked: false,
             moves: Vec::new(),
+            gerrit: None,
         },
         wire,
     }

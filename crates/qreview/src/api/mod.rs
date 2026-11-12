@@ -1074,7 +1074,7 @@ async fn edit_comment(
         Some(_) => (Kind::Done, edit.author),
         None => (Kind::Edited, edit.author),
     };
-    let comment = session.edit_comment(&key, &id, edit)?;
+    let comment = session.edit_comment(&key, &id, edit).await?;
     state.events.push(kind, author, &key, Some(&id));
 
     Ok(Json(comment))

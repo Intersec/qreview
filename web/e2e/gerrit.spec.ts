@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { openChange, openFile } from './act.ts';
+import { card, openChange, openFile } from './act.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
@@ -67,6 +67,26 @@ test('the version being reviewed is the last one in the list', async ({ page }) 
   // Every version says when it was pushed or written, the server's included.
   await expect(options.nth(0)).toContainText(/\d{4}-\d{2}-\d{2}/);
   await expect(options.nth(1)).toContainText(/\d{4}-\d{2}-\d{2}/);
+});
+
+test('a remark on a version that Gerrit holds is staged for it, and counts as no work', async ({
+  page,
+}) => {
+  await openFile(page, 'net.blk');
+  await page.locator('td.gutter-comment[data-column="new"]').first().click();
+  await page.getByRole('textbox').first().fill('A remark for the author.');
+  await page.getByLabel('For Gerrit').check();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  const staged = card(page, 'A remark for the author.');
+  await expect(staged.locator('.talk-tag-gerrit')).toHaveText('for Gerrit');
+  // A message to a colleague is no work for the agent, so nothing to copy.
+  await expect(page.getByRole('button', { name: /^Copy this change/ })).toBeDisabled();
+
+  // It comes back here with the same box, and counts again.
+  await staged.getByLabel('For Gerrit').uncheck();
+  await expect(staged.locator('.talk-tag-gerrit')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Copy this change · 1' })).toBeEnabled();
 });
 
 test.describe('the blame', () => {

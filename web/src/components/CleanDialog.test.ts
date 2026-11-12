@@ -21,6 +21,7 @@ function done(id: string): Comment {
     parent: null,
     done: true,
     blocked: false,
+    gerrit: null,
   };
 }
 

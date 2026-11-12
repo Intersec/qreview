@@ -232,6 +232,7 @@ mod tests {
             done: false,
             blocked: false,
             moves: Vec::new(),
+            gerrit: None,
         }
     }
 

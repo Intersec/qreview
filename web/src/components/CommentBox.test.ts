@@ -5,8 +5,10 @@
 // reaches the text and still opens nothing.
 
 import { mount } from '@vue/test-utils';
+import { computed } from 'vue';
 import { describe, expect, it } from 'vitest';
 import CommentBox from './CommentBox.vue';
+import { THREADS, type Threads } from '@/diff/threads';
 
 /// Send a real key to the text area and say whether the browser kept it.
 function press(area: HTMLTextAreaElement, key: string, ctrl: boolean, shift = false) {
@@ -30,13 +32,13 @@ describe('the keys that save', () => {
   it('saves on Ctrl+Enter', () => {
     const { wrapper, area } = box('A remark.');
     press(area, 'Enter', true);
-    expect(wrapper.emitted('save')).toEqual([['A remark.', false]]);
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false, false]]);
   });
 
   it('saves on Ctrl+S, and keeps the browser out of it', () => {
     const { wrapper, area } = box('A remark.');
     expect(press(area, 's', true)).toBe(true);
-    expect(wrapper.emitted('save')).toEqual([['A remark.', false]]);
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false, false]]);
   });
 
   it('holds the browser back even when there is nothing to save', () => {
@@ -53,7 +55,7 @@ describe('the keys that save', () => {
 
     press(area, 'Enter', true, true);
 
-    expect(wrapper.emitted('save')).toEqual([['A question?', true]]);
+    expect(wrapper.emitted('save')).toEqual([['A question?', true, false]]);
   });
 
   it('never asks from a box that cannot', () => {
@@ -61,12 +63,38 @@ describe('the keys that save', () => {
 
     press(area, 'Enter', true, true);
 
-    expect(wrapper.emitted('save')).toEqual([['A remark.', false]]);
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false, false]]);
   });
 
   it('leaves a plain s to the text', () => {
     const { wrapper, area } = box('A remark.');
     expect(press(area, 's', false)).toBe(false);
     expect(wrapper.emitted('save')).toBeUndefined();
+  });
+});
+
+describe('the For Gerrit box', () => {
+  function box(remark: boolean, onGerrit: boolean) {
+    const threads = { onGerrit: computed(() => onGerrit) } as unknown as Threads;
+    return mount(CommentBox, {
+      props: { label: 'Comment', start: 'A remark.', remark },
+      global: { provide: { [THREADS as symbol]: threads } },
+    });
+  }
+
+  it('stages the remark when it is checked', async () => {
+    const wrapper = box(true, true);
+    await wrapper.get('input[type=checkbox]').setValue(true);
+    await wrapper.get('form').trigger('submit');
+
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false, true]]);
+  });
+
+  it('is not there on a version that Gerrit does not hold', () => {
+    expect(box(true, false).find('input[type=checkbox]').exists()).toBe(false);
+  });
+
+  it('is not there on a reply', () => {
+    expect(box(false, true).find('input[type=checkbox]').exists()).toBe(false);
   });
 });

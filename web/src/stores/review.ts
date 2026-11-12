@@ -674,6 +674,20 @@ export const useReview = defineStore('review', () => {
     await editComment(id, { done });
   }
 
+  /// Stage a remark for Gerrit, or keep it here.
+  async function setGerrit(id: string, on: boolean) {
+    await editComment(id, { gerrit: on ? {} : null });
+  }
+
+  /// True when Gerrit holds the version the change carries now, read
+  /// against its parent. A remark goes to Gerrit on that patch set, and a
+  /// local version has none. Gerrit knows no other left column.
+  const onGerrit = computed(
+    () =>
+      against.value === undefined &&
+      patchSets.value.some((set) => set.commit === currentSha.value && set.gerritRef !== undefined),
+  );
+
   /// The open threads of the current version that wait for the reader,
   /// change by change.
   const blockedThreads = computed(() => {
@@ -723,7 +737,9 @@ export const useReview = defineStore('review', () => {
   const openHere = computed(() => openSeries.value.filter((t) => t.key === changeKey.value));
   /// Its done threads: what Clean deletes.
   const doneHere = computed(() =>
-    here.value ? rounds(here.value).current.filter((comment) => comment.done) : [],
+    here.value
+      ? rounds(here.value).current.filter((comment) => comment.done && !comment.gerrit)
+      : [],
   );
   const waitingHere = computed(() => blockedThreads.value.filter((t) => t.key === changeKey.value));
 
@@ -1035,6 +1051,7 @@ export const useReview = defineStore('review', () => {
     movedTo,
     stranded,
     readingOlder,
+    onGerrit,
     currentSha,
     reading,
     posted,
@@ -1047,6 +1064,7 @@ export const useReview = defineStore('review', () => {
     reply,
     askAgent,
     setDone,
+    setGerrit,
     blockedThreads,
     blockedChanges,
     blockedFiles,

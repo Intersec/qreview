@@ -208,6 +208,24 @@ export interface Comment {
   done: boolean;
   /// A reply of the agent that waits for the reader.
   blocked: boolean;
+  /// Set when the remark goes to Gerrit. Null on a remark that stays here.
+  gerrit: GerritMark | null;
+}
+
+/// A remark bound for Gerrit, and how far it went.
+export interface GerritMark {
+  /// `staged` waits for Send; `sent` is a draft on Gerrit.
+  state: 'staged' | 'sent';
+  /// The patch set of Gerrit that the draft goes to.
+  patchSet: number;
+  resolve: boolean;
+  id: string | null;
+  sentAt: string | null;
+}
+
+/// What staging a remark for Gerrit asks for.
+export interface Stage {
+  resolve?: boolean;
 }
 
 export type Author = 'reader' | 'agent';
@@ -291,11 +309,15 @@ export interface NewComment {
   done?: boolean;
   /// Ask the agent to answer the thread once the comment is saved.
   ask?: boolean;
+  /// Stage the remark for Gerrit.
+  gerrit?: Stage;
 }
 
 export interface EditComment {
   body?: string;
   done?: boolean;
+  /// Stage the remark for Gerrit, or, with null, keep it here.
+  gerrit?: Stage | null;
 }
 
 export type Origin = 'local' | 'prev' | 'gerrit';

@@ -169,7 +169,9 @@ async fn move_threads(
     let remarks: Vec<String> = source
         .comments
         .iter()
-        .filter(|c| c.is_remark() && c.commit == from)
+        // A remark for Gerrit belongs to its patch set of Gerrit, which
+        // the new version is not yet. See section 5.8 of the design.
+        .filter(|c| c.is_remark() && c.commit == from && !c.is_for_gerrit())
         .map(|c| c.id.clone())
         .collect();
     let in_thread = |c: &Comment| {
@@ -336,6 +338,7 @@ impl Pair<'_> {
             done: None,
             blocked: false,
             ask: false,
+            gerrit: None,
         };
         comments::anchor_of(&self.session.git, self.to, self.new_base, &new)
             .await
@@ -409,6 +412,7 @@ fn agent_reply(parent: &str, body: &str, done: Option<bool>, blocked: bool) -> N
         done,
         blocked,
         ask: false,
+        gerrit: None,
     }
 }
 
@@ -488,6 +492,7 @@ mod tests {
             done: None,
             blocked: false,
             ask: false,
+            gerrit: None,
         }
     }
 
@@ -543,6 +548,28 @@ mod tests {
                 .is_empty(),
             "nothing is left behind"
         );
+    }
+
+    #[tokio::test]
+    async fn a_remark_for_gerrit_stays_on_its_patch_set() {
+        let (repo, mut session, old, old_key) = two_versions().await;
+        let mut file = session.store.load(&old_key, "").unwrap();
+        file.comments[0].gerrit = Some(crate::store::model::Gerrit {
+            state: crate::store::model::Outbox::Staged,
+            patch_set: 2,
+            resolve: false,
+            id: None,
+            sent_at: None,
+        });
+        session.store.save(&file).unwrap();
+        amend(&repo, "a.c", "one\nzero\ntwo\nthree\n", "work: a change").await;
+
+        let outcome = run(&mut session, request(&old)).await.unwrap();
+
+        assert!(outcome.moved.is_empty());
+        let kept = &session.store.load(&old_key, "").unwrap().comments[0];
+        assert_eq!(kept.commit, old);
+        assert!(kept.moves.is_empty());
     }
 
     #[tokio::test]
