@@ -6,7 +6,9 @@
   },
   "gerrit": {
     "enabled": true,
-    "branch": null
+    "branch": null,
+    "url": null,
+    "auth": null
   },
   "series": {
     "maxCommits": 50,

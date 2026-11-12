@@ -1,12 +1,14 @@
-//! Reading the patch sets already pushed to Gerrit.
+//! Reading the patch sets already pushed to Gerrit, and writing drafts.
 //!
-//! qreview only reads. It never votes, never comments on the server, and
-//! never pushes. Gerrit is optional at every point: a query that fails, times
-//! out, or finds nothing leaves the local review working.
+//! The query and the fetch go over ssh. The threads and the drafts go over
+//! REST, in `rest`. qreview never votes, never publishes, and never pushes.
+//! Gerrit is optional at every point: a query that fails, times out, or
+//! finds nothing leaves the local review working.
 
 pub mod answer;
 pub mod coords;
 pub mod posted;
+pub mod rest;
 
 use std::process::Stdio;
 use std::time::Duration;
@@ -141,6 +143,30 @@ pub fn pick<'a>(changes: &'a [Change], change_id: &str, commit: &str) -> Option<
     let open = mine.iter().find(|c| c.status == "NEW");
 
     holds_it.or(open).or(mine.first()).copied()
+}
+
+/// The address of the REST API of the server.
+///
+/// `gerrit.url` when the configuration sets it. Otherwise the page of any
+/// change of the project, which the ssh query gives.
+pub async fn rest_address(configured: Option<&str>, coords: &Coordinates) -> Result<String> {
+    if let Some(url) = configured {
+        return rest::configured(url);
+    }
+    let terms = format!("project:{} limit:1", coords.project);
+    let text = ask(coords, &terms, false, TIMEOUT)
+        .await
+        .map_err(Failed::error)?;
+
+    answer::parse(&text)
+        .iter()
+        .find_map(|change| rest::base_of(&change.url))
+        .ok_or_else(|| {
+            anyhow!(
+                "{} gives no https page for its changes. Set gerrit.url in the configuration",
+                coords.host
+            )
+        })
 }
 
 /// Why a query gave nothing.

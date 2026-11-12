@@ -6,12 +6,17 @@
 //! messages are all there is.
 
 use std::io::{IsTerminal, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Clear the line the cursor is on.
 const CLEAR: &str = "\r\x1b[2K";
 
 /// How much of a subject the line shows.
 const SHOWN: usize = 40;
+
+/// Programs that ask the user in the terminal now. The line stays away
+/// meanwhile: its redraw would erase their question.
+static LENT: AtomicUsize = AtomicUsize::new(0);
 
 /// The state that the line shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,6 +107,9 @@ pub struct Terminal {
     live: bool,
     color: bool,
     drawn: Option<String>,
+    /// The messages said while the terminal was lent, which would have
+    /// landed in the middle of a question.
+    held: Vec<String>,
 }
 
 impl Terminal {
@@ -110,11 +118,28 @@ impl Terminal {
             live: std::io::stdout().is_terminal() && !crate::trace::on(),
             color: std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty()),
             drawn: None,
+            held: Vec::new(),
         }
     }
 
     /// Print a message above the status line.
     pub fn say(&mut self, message: &str) {
+        if lent() {
+            self.held.push(message.to_owned());
+            return;
+        }
+        self.say_held();
+        self.print(message);
+    }
+
+    /// The messages held while the terminal was lent, in their order.
+    fn say_held(&mut self) {
+        for message in std::mem::take(&mut self.held) {
+            self.print(&message);
+        }
+    }
+
+    fn print(&self, message: &str) {
         let mut out = std::io::stdout().lock();
         if self.live && self.drawn.is_some() {
             let _ = write!(out, "{CLEAR}");
@@ -129,6 +154,10 @@ impl Terminal {
     /// Draw the status line again. Every time, and not only on a change:
     /// a line that another writer broke comes back whole.
     pub fn draw(&mut self, state: &Snapshot) {
+        if lent() {
+            return;
+        }
+        self.say_held();
         if !self.live {
             return;
         }
@@ -146,6 +175,27 @@ impl Default for Terminal {
     }
 }
 
+/// Lend the terminal to a program that may ask the user: the status line
+/// clears now, and comes back when the guard drops.
+pub fn lend() -> Lent {
+    LENT.fetch_add(1, Ordering::SeqCst);
+    clear();
+    Lent
+}
+
+fn lent() -> bool {
+    LENT.load(Ordering::SeqCst) > 0
+}
+
+/// The terminal is lent while it lives.
+pub struct Lent;
+
+impl Drop for Lent {
+    fn drop(&mut self) {
+        LENT.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// Clear the status line, so the shell prompt starts on a clean line.
 pub fn clear() {
     let mut out = std::io::stdout();
@@ -158,6 +208,25 @@ pub fn clear() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_message_waits_while_a_program_asks_the_user() {
+        let mut terminal = Terminal {
+            live: false,
+            color: false,
+            drawn: None,
+            held: Vec::new(),
+        };
+
+        {
+            let _lent = lend();
+            terminal.say("The review page is open.");
+            assert_eq!(terminal.held, ["The review page is open."]);
+        }
+        terminal.say_held();
+
+        assert!(terminal.held.is_empty());
+    }
 
     #[test]
     fn a_new_review_waits_for_its_page_and_its_agent() {
