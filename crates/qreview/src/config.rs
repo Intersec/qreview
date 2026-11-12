@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::theme::{self, Theme};
@@ -52,6 +52,12 @@ pub struct Gerrit {
     pub enabled: bool,
     /// The branch a change targets, when `.gerrit-branch` does not say.
     pub branch: Option<String>,
+    /// The address of the REST API, when the server gives no page for a
+    /// change. Never a password.
+    pub url: Option<String>,
+    /// The command that prints the authorization for REST. Only the file
+    /// of the user may name it.
+    pub auth: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -111,6 +117,8 @@ impl Default for Config {
             gerrit: Gerrit {
                 enabled: true,
                 branch: None,
+                url: None,
+                auth: None,
             },
             series: Series {
                 max_commits: 50,
@@ -175,6 +183,15 @@ pub struct UpdateLayer {
 pub struct GerritLayer {
     pub enabled: Option<bool>,
     pub branch: Option<String>,
+    pub url: Option<String>,
+    pub auth: Option<AuthLayer>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AuthLayer {
+    /// The program and its arguments, run with no shell.
+    pub command: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -223,6 +240,11 @@ impl Config {
         if let Some(gerrit) = layer.gerrit {
             self.gerrit.enabled = gerrit.enabled.unwrap_or(self.gerrit.enabled);
             self.gerrit.branch = gerrit.branch.or(self.gerrit.branch.take());
+            self.gerrit.url = gerrit.url.or(self.gerrit.url.take());
+            self.gerrit.auth = gerrit
+                .auth
+                .map(|auth| auth.command)
+                .or(self.gerrit.auth.take());
         }
         if let Some(series) = layer.series {
             self.series.max_commits = series.max_commits.unwrap_or(self.series.max_commits);
@@ -273,12 +295,19 @@ fn load_from(user: Option<PathBuf>, repo_root: &Path) -> Result<Config> {
 fn load_with(user: Option<PathBuf>, repo_root: &Path, loaded: Option<Loaded>) -> Result<Config> {
     let mut config = Config::default();
     let themes = user.as_deref().and_then(theme_dir_of);
+    let repo = repo_root.join(".qreview.json");
 
-    for path in [user, Some(repo_root.join(".qreview.json"))]
-        .into_iter()
-        .flatten()
-    {
+    for path in [user, Some(repo.clone())].into_iter().flatten() {
         if let Some(layer) = read(&path)? {
+            // A repository that someone cloned must not choose a command that
+            // the server runs.
+            if path == repo && layer.gerrit.as_ref().is_some_and(|g| g.auth.is_some()) {
+                bail!(
+                    "{} sets gerrit.auth, which only the configuration of the user may set. \
+                     Remove it from that file",
+                    path.display()
+                );
+            }
             if let Some(value) = layer.ui.as_ref().and_then(|ui| ui.theme.clone()) {
                 config.ui.choices.push(Choice {
                     file: path.clone(),
@@ -287,6 +316,9 @@ fn load_with(user: Option<PathBuf>, repo_root: &Path, loaded: Option<Loaded>) ->
             }
             config.apply(layer);
         }
+    }
+    if config.gerrit.auth.as_ref().is_some_and(Vec::is_empty) {
+        bail!("gerrit.auth.command is empty. Name the program, and its arguments");
     }
 
     if let Some(dir) = themes {
@@ -522,7 +554,13 @@ mod tests {
     fn the_later_layer_wins() {
         let mut config = Config::default();
         config.apply(layer(r#"{"gerrit":{"enabled":false}}"#));
-        config.apply(layer(r#"{"gerrit":{"enabled":true}}"#));
+        config.apply(layer(
+            r#"{"gerrit":{"enabled":true,"url":"https://review.example.com"}}"#,
+        ));
+        assert_eq!(
+            config.gerrit.url.as_deref(),
+            Some("https://review.example.com")
+        );
 
         assert!(config.gerrit.enabled);
     }
@@ -563,6 +601,32 @@ mod tests {
 
         let error = read(&path).unwrap_err().to_string();
         assert!(error.contains(".qreview.json"), "{error}");
+    }
+
+    #[test]
+    fn only_the_user_names_the_command_of_the_authorization() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".qreview.json"),
+            r#"{"gerrit":{"auth":{"command":["sh","-c","evil"]}}}"#,
+        )
+        .unwrap();
+
+        let error = load_from(None, dir.path()).unwrap_err().to_string();
+        assert!(error.contains("gerrit.auth"), "{error}");
+
+        let mut config = Config::default();
+        config.apply(layer(
+            r#"{"gerrit":{"auth":{"command":["gerrit-auth","--host","x"]}}}"#,
+        ));
+        assert_eq!(
+            config.gerrit.auth,
+            Some(vec![
+                "gerrit-auth".to_owned(),
+                "--host".to_owned(),
+                "x".to_owned()
+            ])
+        );
     }
 
     #[test]

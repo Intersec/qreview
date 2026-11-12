@@ -6,6 +6,7 @@ Copy the one you need and change what you want.
 |---|---|
 | `config.json` | `~/.config/qreview/config.json`, your own settings |
 | `languages.json` | `.qreview.json` at the top level of a repository |
+| `gerrit-auth-basic.sh` | A `gerrit.auth.command`: asks the HTTP password of Gerrit in the terminal of qreview |
 
 A `.qreview.json` in a repository is read after your own file, so it wins.
 Put the file types of a code base there and every reader of that repository
