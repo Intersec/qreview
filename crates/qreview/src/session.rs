@@ -1482,6 +1482,11 @@ impl Session {
             subject: &subject,
             // One patch set until M5 adds the rest.
             patch_set: 1,
+            // Only a stage asks Gerrit: a plain remark must not wait on it.
+            on_gerrit: match new.gerrit {
+                Some(_) => self.gerrit_patch_set(key, &rev).await,
+                None => None,
+            },
         }
         .add(new)
         .await
@@ -1504,9 +1509,24 @@ impl Session {
         Ok(())
     }
 
-    pub fn edit_comment(&self, key: &str, id: &str, edit: EditComment) -> Result<Comment> {
+    pub async fn edit_comment(&self, key: &str, id: &str, edit: EditComment) -> Result<Comment> {
         let current = self.commit_of(key).unwrap_or_default();
-        comments::edit(&self.store, key, &current, id, edit)
+        // Only a stage asks Gerrit: an edit of the text must not wait on it.
+        let on_gerrit = match edit.gerrit {
+            Some(Some(_)) => self.gerrit_patch_set(key, &current).await,
+            _ => None,
+        };
+        comments::edit(&self.store, key, (&current, on_gerrit), id, edit)
+    }
+
+    /// The patch set of Gerrit that a version of a change is, when Gerrit
+    /// holds it. A remark goes to Gerrit on that patch set.
+    pub async fn gerrit_patch_set(&self, key: &str, commit: &str) -> Option<usize> {
+        let sets = self.patch_sets(key).await.ok()?;
+
+        sets.iter()
+            .find(|set| set.commit == commit && set.gerrit_ref.is_some())
+            .map(|set| set.number)
     }
 
     pub fn delete_comment(&self, key: &str, id: &str) -> Result<usize> {

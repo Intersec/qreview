@@ -1151,6 +1151,13 @@ tr.talk td {
   white-space: nowrap;
   color: var(--ink-faint);
 }
+/* A remark bound for Gerrit, staged or sent. Blue, the color of the
+   selection, because it leaves this tool. */
+.talk-tag-gerrit {
+  background: var(--pick);
+  color: var(--pick-edge);
+  font-weight: 600;
+}
 /* A thread that waits for the reader. It must catch the eye. */
 .talk-blocked {
   border-color: var(--waiting-edge);
@@ -1189,8 +1196,10 @@ tr.talk td {
 }
 .talk-done-box {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
   font-weight: 600;
   color: var(--ink-quiet);
 }

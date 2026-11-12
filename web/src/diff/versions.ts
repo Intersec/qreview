@@ -35,8 +35,10 @@ export function rounds<T extends { comments: Comment[]; commit: string }>(
 
 /// The threads of the current version that are not done: what every count
 /// on the screen counts, and what the export holds.
+///
+/// A remark for Gerrit is a message to a colleague, and no work.
 export function open<T extends { comments: Comment[]; commit: string }>(change: T): Comment[] {
-  return rounds(change).current.filter((comment) => !comment.done);
+  return rounds(change).current.filter((comment) => !comment.done && !comment.gerrit);
 }
 
 /// The previous remarks of a change, in groups, one per version they were

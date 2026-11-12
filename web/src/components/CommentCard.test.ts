@@ -25,6 +25,7 @@ function comment(id: string, extra: Partial<Comment> = {}): Comment {
     parent: null,
     done: false,
     blocked: false,
+    gerrit: null,
     ...extra,
   };
 }
@@ -36,8 +37,11 @@ function card(
   moved: Record<string, { id: string; commit: string }> = {},
   foldDone: Ref<FoldDone | null> = ref(null),
   answering: Ref<string | null> = ref(null),
+  onGerrit = false,
 ) {
   const threads: Threads = {
+    setGerrit: vi.fn(async () => {}),
+    onGerrit: computed(() => onGerrit),
     repliesOf: () => replies,
     reply: vi.fn(async () => {}),
     ask: vi.fn(async () => {}),
@@ -322,5 +326,46 @@ describe('a thread', () => {
 
     expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false);
     expect(wrapper.findAll('button').some((b) => b.text() === 'Reply')).toBe(false);
+  });
+});
+
+describe('a remark for Gerrit', () => {
+  const mark = (state: 'staged' | 'sent') => ({
+    state,
+    patchSet: 2,
+    resolve: false,
+    id: null,
+    sentAt: null,
+  });
+  const gerritCard = (remark: Comment, onGerrit = true) =>
+    card(remark, [], false, {}, ref(null), ref(null), onGerrit);
+  const boxes = (wrapper: ReturnType<typeof card>['wrapper']) =>
+    wrapper.findAll('.talk-done-box').map((box) => box.text());
+
+  it('is staged with the For Gerrit box, on a version that Gerrit holds', async () => {
+    const { wrapper, threads } = gerritCard(comment('a'));
+
+    await wrapper.findAll('.talk-done-box input')[1]!.setValue(true);
+
+    expect(threads.setGerrit).toHaveBeenCalledWith('a', true);
+  });
+
+  it('has no For Gerrit box on a version that Gerrit does not hold', () => {
+    expect(boxes(gerritCard(comment('a'), false).wrapper)).toEqual(['Done']);
+  });
+
+  it('says it goes to Gerrit, and is no work to mark done', () => {
+    const { wrapper } = gerritCard(comment('a', { gerrit: mark('staged') }));
+
+    expect(wrapper.get('.talk-tag-gerrit').text()).toBe('for Gerrit');
+    expect(boxes(wrapper)).toEqual(['For Gerrit']);
+  });
+
+  it('is read only once it is a draft on Gerrit', () => {
+    const { wrapper } = gerritCard(comment('a', { gerrit: mark('sent') }));
+
+    expect(wrapper.get('.talk-tag-gerrit').text()).toBe('draft on Gerrit');
+    expect(boxes(wrapper)).toEqual([]);
+    expect(wrapper.findAll('.action').map((b) => b.text())).not.toContain('Edit');
   });
 });

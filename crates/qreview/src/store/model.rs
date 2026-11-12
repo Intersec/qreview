@@ -17,7 +17,10 @@ use serde::{Deserialize, Serialize};
 /// and the Done and blocked states, and the earlier places of a remark that
 /// a declared new version moved. A file of format 3 reads as remarks of the
 /// reader, each alone in its thread, none of them done or moved.
-pub const VERSION: u32 = 4;
+///
+/// 5 added the remarks bound for Gerrit. A comment of format 4 carries no
+/// `gerrit`, and stays in qreview.
+pub const VERSION: u32 = 5;
 
 /// Everything a review of one change holds.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -100,6 +103,36 @@ pub struct Comment {
     /// oldest first. The move is recorded, never silent.
     #[serde(default)]
     pub moves: Vec<Move>,
+    /// Set when the remark goes to Gerrit. Absent on a remark that stays
+    /// in qreview, which every remark of format 4 is.
+    #[serde(default)]
+    pub gerrit: Option<Gerrit>,
+}
+
+/// A remark bound for Gerrit, and how far it went.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Gerrit {
+    pub state: Outbox,
+    /// The patch set of Gerrit that the draft goes to.
+    pub patch_set: usize,
+    /// On a reply to a thread of Gerrit, the draft resolves that thread.
+    #[serde(default)]
+    pub resolve: bool,
+    /// The id that Gerrit gave the draft.
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub sent_at: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Outbox {
+    /// It waits for the reader to click Send.
+    Staged,
+    /// It is a draft on Gerrit, under the account of the reader.
+    Sent,
 }
 
 /// One earlier place of a remark.
@@ -128,6 +161,12 @@ impl Comment {
     /// True when this comment opens a thread.
     pub fn is_remark(&self) -> bool {
         self.parent.is_none()
+    }
+
+    /// True when the remark goes to Gerrit, staged or sent. Such a remark
+    /// is a message to a colleague, not work for the agent.
+    pub fn is_for_gerrit(&self) -> bool {
+        self.gerrit.is_some()
     }
 }
 

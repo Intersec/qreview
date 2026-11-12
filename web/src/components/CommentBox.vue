@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { computed, inject, onMounted, ref, watch } from 'vue';
 import { drop, read, write } from '@/diff/drafts';
+import { THREADS } from '@/diff/threads';
 
 const props = defineProps<{
   start?: string;
@@ -9,8 +10,15 @@ const props = defineProps<{
   draft?: string;
   /// The box can save and ask the agent to answer in one go.
   askable?: boolean;
+  /// The box writes a new remark, which can go to Gerrit.
+  remark?: boolean;
 }>();
-const emit = defineEmits<{ save: [body: string, ask: boolean]; cancel: [] }>();
+const emit = defineEmits<{ save: [body: string, ask: boolean, gerrit: boolean]; cancel: [] }>();
+
+/// The For Gerrit box, on a new remark on a version that Gerrit holds.
+const threads = inject(THREADS, null);
+const offersGerrit = computed(() => props.remark === true && threads?.onGerrit?.value === true);
+const forGerrit = ref(false);
 
 /// What the reader typed and did not save wins over the text the box starts
 /// from: an edit that a reload interrupted comes back as it was left.
@@ -56,7 +64,7 @@ function save(ask = false) {
     return;
   }
   forget();
-  emit('save', body.value, ask && props.askable === true);
+  emit('save', body.value, ask && props.askable === true, offersGerrit.value && forGerrit.value);
 }
 
 function forget() {
@@ -92,6 +100,14 @@ function forget() {
         >.</span
       >
       <span class="spacer"></span>
+      <label
+        v-if="offersGerrit"
+        class="talk-done-box"
+        title="Send this remark to Gerrit as a draft, when you click Send"
+      >
+        <input v-model="forGerrit" type="checkbox" />
+        For Gerrit
+      </label>
       <button
         type="button"
         class="action"

@@ -16,6 +16,7 @@ function remark(id: string, commit: string): Comment {
     parent: null,
     done: false,
     blocked: false,
+    gerrit: null,
   };
 }
 

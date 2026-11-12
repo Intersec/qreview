@@ -33,6 +33,7 @@ function comment(id: string): Comment {
     parent: null,
     done: false,
     blocked: false,
+    gerrit: null,
   };
 }
 
