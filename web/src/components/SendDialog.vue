@@ -24,6 +24,8 @@ const props = defineProps<{
   sending: boolean;
   /// The subject of a change, which heads its remarks in the series.
   subjectOf: (key: string) => string | undefined;
+  /// The changes whose current version Gerrit does not hold yet.
+  unpushed?: string[];
 }>();
 const emit = defineEmits<{ send: []; close: [] }>();
 
@@ -117,11 +119,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true));
             </li>
           </template>
         </ul>
+        <p v-if="allowed && unpushed?.length" class="send-failed" role="alert">
+          Gerrit does not hold the newest version of
+          {{
+            unpushed.length === 1
+              ? (subjectOf(unpushed[0]!) ?? 'this change')
+              : `${unpushed.length} changes`
+          }}. Push first, so the reviewers read your replies with the code they speak of.
+        </p>
         <p v-if="!allowed" class="send-failed" role="alert">
           {{ status?.reason ?? 'Gerrit takes no draft from this run.' }}
         </p>
         <p v-if="sending" class="fix-keys">Sending…</p>
-        <p v-else-if="allowed" class="fix-keys"><kbd>Enter</kbd> sends · <kbd>Esc</kbd> closes</p>
+        <p v-else-if="allowed" class="fix-keys">
+          <kbd>Enter</kbd> {{ unpushed?.length ? 'sends anyway' : 'sends' }} · <kbd>Esc</kbd> closes
+        </p>
         <p v-else class="fix-keys"><kbd>Esc</kbd> closes</p>
       </template>
     </div>

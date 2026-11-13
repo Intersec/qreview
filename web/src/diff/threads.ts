@@ -4,7 +4,7 @@
 // through one context rather than through every component between them.
 
 import type { ComputedRef, InjectionKey, Ref } from 'vue';
-import type { Comment, PostedComment } from '@/api/types';
+import type { Comment, PostedComment, SentState } from '@/api/types';
 
 export interface Threads {
   /// The replies of a remark, in the order they were written.
@@ -22,6 +22,10 @@ export interface Threads {
   askGerrit?(thread: string): Promise<void>;
   /// Check or clear the Done box of a thread of Gerrit.
   setGerritDone?(thread: string, done: boolean): Promise<void>;
+  /// Where a remark of the change on screen, sent to Gerrit, is now.
+  sentState?(comment: Comment): SentState | null;
+  /// The page of the change on screen on Gerrit.
+  gerritUrl?: ComputedRef<string | null>;
   /// Delete a reply written here to a thread of Gerrit.
   remove?(id: string): Promise<void>;
   reply(id: string, body: string, ask?: boolean): Promise<void>;
@@ -98,8 +102,15 @@ export function isResolved(remark: PostedComment, replies: PostedComment[]): boo
   return (replies[replies.length - 1] ?? remark).unresolved === false;
 }
 
-/// True when a reply written here resolves the thread of Gerrit: staged or
-/// sent, it makes the thread done before Gerrit knows.
-export function resolvesHere(replies: Comment[]): boolean {
-  return replies.some((reply) => reply.gerrit?.resolve === true);
+/// True when a reply written here resolves the thread of Gerrit: staged, or
+/// a draft on Gerrit, it makes the thread done before Gerrit knows. Once
+/// published or deleted there, Gerrit says what the thread is.
+export function resolvesHere(
+  replies: Comment[],
+  state: (reply: Comment) => SentState | null = () => null,
+): boolean {
+  return replies.some((reply) => {
+    const left = reply.gerrit?.state === 'sent' ? state(reply) : null;
+    return reply.gerrit?.resolve === true && left !== 'published' && left !== 'deleted';
+  });
 }

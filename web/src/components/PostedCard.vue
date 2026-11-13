@@ -21,16 +21,30 @@ const props = defineProps<{
 const threads = inject(THREADS, null);
 
 const replies = computed(() => threads?.postedRepliesOf?.(props.comment.id) ?? []);
-const ours = computed(() => threads?.repliesOf(`${GERRIT_PARENT}${props.comment.id}`) ?? []);
+/// The replies written here. One published on Gerrit is among the replies
+/// of Gerrit now, and shows there.
+const ours = computed(() =>
+  (threads?.repliesOf(`${GERRIT_PARENT}${props.comment.id}`) ?? []).filter(
+    (reply) => threads?.sentState?.(reply) !== 'published',
+  ),
+);
 /// Over ssh, Gerrit gives no id: nothing can answer the thread.
 const answerable = computed(() => props.comment.unresolved !== null && threads !== null);
 const resolved = computed(() => isResolved(props.comment, replies.value));
 /// Resolved on Gerrit, or by a reply written here.
-const done = computed(() => resolved.value || resolvesHere(ours.value));
+const done = computed(
+  () => resolved.value || resolvesHere(ours.value, (reply) => threads?.sentState?.(reply) ?? null),
+);
 /// A resolving reply that left is a draft on Gerrit: it is taken back there.
 const doneSent = computed(() =>
-  ours.value.some((reply) => reply.gerrit?.resolve && reply.gerrit.state === 'sent'),
+  ours.value.some(
+    (reply) => reply.gerrit?.resolve && reply.gerrit.state === 'sent' && !gone(reply),
+  ),
 );
+/// A reply sent, whose draft Gerrit no longer holds: it left nothing there.
+function gone(reply: Comment): boolean {
+  return reply.gerrit?.state === 'sent' && threads?.sentState?.(reply) === 'deleted';
+}
 
 /// Null until the reader folds or unfolds it, so the state decides.
 const foldedByHand = ref<boolean | null>(null);
@@ -147,13 +161,19 @@ async function toggleDone(event: Event) {
             >for Gerrit</span
           >
           <span
+            v-else-if="gone(reply)"
+            class="talk-tag"
+            title="This draft was deleted on Gerrit. Write a new reply to send it again"
+            >deleted on Gerrit</span
+          >
+          <span
             v-else-if="reply.gerrit?.state === 'sent'"
             class="talk-tag talk-tag-gerrit"
             title="This reply is a draft on Gerrit. Edit or publish it there"
             >draft on Gerrit</span
           >
-          <span v-if="reply.gerrit?.resolve" class="talk-tag">resolves</span>
-          <template v-if="reply.gerrit?.state !== 'sent'">
+          <span v-if="reply.gerrit?.resolve && !gone(reply)" class="talk-tag">resolves</span>
+          <template v-if="reply.gerrit?.state !== 'sent' || gone(reply)">
             <span class="spacer"></span>
             <button type="button" class="action" @click="threads?.remove?.(reply.id)">
               Delete

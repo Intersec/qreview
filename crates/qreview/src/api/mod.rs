@@ -917,8 +917,15 @@ async fn gerrit_status(State(state): State<AppState>) -> Json<GerritStatus> {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ChangeThreads {
     key: String,
+    /// The page of the change on Gerrit.
+    url: String,
+    /// Gerrit holds the version that the change carries now.
+    pushed: bool,
+    /// The ids of the drafts of the reader. Null without an authorization.
+    drafts: Option<Vec<String>>,
     threads: Vec<crate::model::GerritThread>,
 }
 
@@ -928,12 +935,19 @@ async fn gerrit_threads(State(state): State<AppState>) -> Json<Vec<ChangeThreads
     let session = state.session.read().await;
     let mut out = Vec::new();
     for change in &session.series.changes {
-        if let Some(threads) = session.gerrit_threads_of(&change.key).await {
-            out.push(ChangeThreads {
-                key: change.key.clone(),
-                threads,
-            });
-        }
+        let Some(threads) = session.gerrit_threads_of(&change.key).await else {
+            continue;
+        };
+        let Some(answer) = session.gerrit_change(&change.key).await else {
+            continue;
+        };
+        out.push(ChangeThreads {
+            key: change.key.clone(),
+            url: answer.url.clone(),
+            pushed: session.gerrit_pushed(&change.key).await,
+            drafts: session.gerrit_drafts(&answer).await,
+            threads,
+        });
     }
     Json(out)
 }

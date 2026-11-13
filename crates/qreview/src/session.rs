@@ -81,6 +81,9 @@ pub struct Session {
     /// or `None` when REST gave nothing. Asked once per change until a
     /// refresh.
     gerrit_threads: tokio::sync::Mutex<std::collections::HashMap<u64, Option<Vec<RestComment>>>>,
+    /// The ids of the drafts of the reader on each change, or `None` when
+    /// REST gave nothing. Asked once per change, until a refresh or a send.
+    gerrit_drafts: tokio::sync::Mutex<std::collections::HashMap<u64, Option<Vec<String>>>>,
 }
 
 /// What the REST API of Gerrit allows this run. See section 6.6 of the
@@ -255,6 +258,7 @@ impl Session {
             lists: Arc::new(diff::FileLists::default()),
             rest: tokio::sync::Mutex::new(None),
             gerrit_threads: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            gerrit_drafts: tokio::sync::Mutex::new(std::collections::HashMap::new()),
         };
         session.make_keys_unique();
         session.link_versions().await;
@@ -389,6 +393,7 @@ impl Session {
         self.gerrit_pages.lock().await.clear();
         *self.rest.lock().await = None;
         self.gerrit_threads.lock().await.clear();
+        self.gerrit_drafts.lock().await.clear();
 
         for count in std::mem::take(&mut self.extends) {
             // The boundary can be gone, and then there is nothing to walk.
@@ -1428,6 +1433,46 @@ impl Session {
             .insert(change.id.clone(), Some(change));
     }
 
+    /// The ids of the drafts of the reader on a change. `None` without an
+    /// authorization, or when REST gives nothing: then nobody knows.
+    pub async fn gerrit_drafts(&self, change: &gerrit::Change) -> Option<Vec<String>> {
+        // Held across the call: a send that empties the cache meanwhile
+        // waits, so a list read before its drafts is never kept after it.
+        let mut cache = self.gerrit_drafts.lock().await;
+        if let Some(known) = cache.get(&change.number) {
+            return known.clone();
+        }
+        let state = self.gerrit_rest().await;
+        let client = match (state.client, state.status) {
+            (Some(client), RestStatus::Ok) => client,
+            _ => return None,
+        };
+        let route = format!(
+            "changes/{}~{}/drafts",
+            rest::encode(&change.project),
+            change.number
+        );
+        let found = match client.call("GET", &route, None).await {
+            Ok(answer) => Some(threads::parse(&answer).into_iter().map(|c| c.id).collect()),
+            Err(error) => {
+                self.rest_failed(&error).await;
+                None
+            }
+        };
+        cache.insert(change.number, found.clone());
+        found
+    }
+
+    /// True when Gerrit holds the version that the change carries now, so a
+    /// reply sent now speaks of code that the reviewer can read.
+    pub async fn gerrit_pushed(&self, key: &str) -> bool {
+        let (Some(current), Some(change)) = (self.commit_of(key), self.gerrit_change(key).await)
+        else {
+            return false;
+        };
+        change.patch_sets.iter().any(|set| set.revision == current)
+    }
+
     /// The remarks of a change over REST, with their ids and their state.
     /// `None` when REST gives nothing: the ssh answer then stands in.
     pub async fn gerrit_threads(&self, change: &gerrit::Change) -> Option<Vec<RestComment>> {
@@ -1550,6 +1595,8 @@ impl Session {
         }
 
         comments::mark_sent(&self.store, key, &sent)?;
+        // The drafts changed: the next read asks Gerrit again.
+        self.gerrit_drafts.lock().await.remove(&change.number);
         Ok(out)
     }
 
@@ -1558,6 +1605,7 @@ impl Session {
     pub async fn gerrit_threads_of(&self, key: &str) -> Option<Vec<crate::model::GerritThread>> {
         let change = self.gerrit_change(key).await?;
         let found = self.gerrit_threads(&change).await?;
+        let drafts = self.gerrit_drafts(&change).await;
         let posted = gerrit::posted::of_rest(&self.git, &change, &found).await;
         let ours: Vec<Comment> = self
             .store
@@ -1604,10 +1652,20 @@ impl Session {
             thread
                 .replies
                 .sort_by(|a, b| a.created_at.cmp(&b.created_at));
-            thread.done = thread
-                .replies
-                .iter()
-                .any(|c| c.gerrit.as_ref().is_some_and(|g| g.resolve));
+            // A resolving reply counts until Gerrit holds it: once
+            // published or deleted there, Gerrit says what the thread is.
+            thread.done = thread.replies.iter().any(|c| {
+                c.gerrit.as_ref().is_some_and(|g| {
+                    g.resolve
+                        && match (&g.state, g.id.as_deref()) {
+                            (crate::store::model::Outbox::Sent, Some(id)) => {
+                                !found.iter().any(|posted| posted.id == id)
+                                    && drafts.as_ref().is_none_or(|d| d.iter().any(|d| d == id))
+                            }
+                            _ => true,
+                        }
+                })
+            });
         }
         Some(out)
     }
@@ -1932,12 +1990,45 @@ impl Session {
 
     pub async fn edit_comment(&self, key: &str, id: &str, edit: EditComment) -> Result<Comment> {
         let current = self.commit_of(key).unwrap_or_default();
+        // A draft deleted on Gerrit can be staged again: it left nothing
+        // there. See section 5.8 of the design.
+        if matches!(edit.gerrit, Some(Some(_))) && self.deleted_on_gerrit(key, id).await {
+            comments::forget_sent(&self.store, key, id)?;
+        }
         // Only a stage asks Gerrit: an edit of the text must not wait on it.
         let on_gerrit = match edit.gerrit {
             Some(Some(_)) => self.gerrit_patch_set(key, &current).await,
             _ => None,
         };
         comments::edit(&self.store, key, (&current, on_gerrit), id, edit)
+    }
+
+    /// True when a remark was sent, and Gerrit holds it neither as a draft
+    /// nor as a published comment.
+    async fn deleted_on_gerrit(&self, key: &str, id: &str) -> bool {
+        let Ok(file) = self.store.load(key, "") else {
+            return false;
+        };
+        let Some(draft) = file
+            .comments
+            .iter()
+            .find(|c| c.id == id)
+            .and_then(|c| c.gerrit.as_ref())
+            .filter(|g| g.state == crate::store::model::Outbox::Sent)
+            .and_then(|g| g.id.clone())
+        else {
+            return false;
+        };
+        let Some(change) = self.gerrit_change(key).await else {
+            return false;
+        };
+        let (Some(drafts), Some(published)) = (
+            self.gerrit_drafts(&change).await,
+            self.gerrit_threads(&change).await,
+        ) else {
+            return false;
+        };
+        !drafts.contains(&draft) && !published.iter().any(|c| c.id == draft)
     }
 
     /// The patch set of Gerrit that a version of a change is, when Gerrit

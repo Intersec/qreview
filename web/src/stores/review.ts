@@ -19,6 +19,7 @@ import type {
   ChangeComments,
   ChangeThreads,
   GerritThread,
+  SentState,
   Comment,
   Config,
   EditComment,
@@ -190,13 +191,35 @@ export const useReview = defineStore('review', () => {
         change.key,
         change.threads
           .filter(
-            (t) => t.unresolved && !resolvesHere(answers.get(`${GERRIT_PARENT}${t.id}`) ?? []),
+            (t) =>
+              t.unresolved &&
+              !resolvesHere(answers.get(`${GERRIT_PARENT}${t.id}`) ?? [], (reply) =>
+                sentState(change.key, reply),
+              ),
           )
           .map(asRemark),
       );
     }
     return out;
   });
+
+  /// Where a remark sent to Gerrit is now: still a draft, published in a
+  /// thread, or deleted there. Null when it was not sent, or when Gerrit
+  /// says nothing of the change.
+  function sentState(key: string, comment: Comment): SentState | null {
+    const id = comment.gerrit?.state === 'sent' ? comment.gerrit.id : null;
+    const change = gerritThreads.value.find((c) => c.key === key);
+    if (!id || !change) {
+      return null;
+    }
+    if (change.threads.some((t) => t.comments.some((c) => c.id === id))) {
+      return 'published';
+    }
+    if (change.drafts !== null && !change.drafts.includes(id)) {
+      return 'deleted';
+    }
+    return 'draft';
+  }
 
   /// The open threads of a change: the remarks here, and those of Gerrit.
   function openOf(change: ChangeComments): Comment[] {
@@ -665,8 +688,24 @@ export const useReview = defineStore('review', () => {
   });
 
   /// The comments the diff shows. See `shows`.
+  /// A remark published on Gerrit shows as the thread of Gerrit, in its
+  /// place. It stays in the store: a comment is never lost.
   function comments(): Comment[] {
-    return (review.value?.comments ?? []).filter((c) => c.parent === null && shows(c));
+    const key = changeKey.value ?? '';
+    return (review.value?.comments ?? []).filter(
+      (c) => c.parent === null && shows(c) && sentState(key, c) !== 'published',
+    );
+  }
+
+  /// The page of the change on screen on Gerrit, when REST answers for it.
+  const gerritUrl = computed(
+    () => gerritThreads.value.find((c) => c.key === changeKey.value)?.url ?? null,
+  );
+
+  /// The changes of the series whose current version Gerrit does not hold.
+  /// A reply sent now speaks of code the reviewer cannot read yet.
+  function unpushed(keys: string[]): string[] {
+    return keys.filter((key) => gerritThreads.value.some((c) => c.key === key && !c.pushed));
   }
 
   /// True when the diff shows a remark: it was written on a version on the
@@ -931,11 +970,13 @@ export const useReview = defineStore('review', () => {
     let out: Sent | null = null;
     await guard(async () => {
       out = await api.sendDrafts(key);
+      // The new drafts first: a remark that turns sent before Gerrit's
+      // list holds its id would show as deleted there.
+      await readGerritThreads();
       await reload();
     });
     // A refused authorization changes what the run allows.
     await readGerritStatus();
-    await readGerritThreads();
     return out;
   }
 
@@ -1266,6 +1307,9 @@ export const useReview = defineStore('review', () => {
     stagedSeries,
     stagedHere,
     gerritThreads,
+    sentState,
+    gerritUrl,
+    unpushed,
     replyOnGerrit,
     askGerrit,
     setGerritDone,

@@ -434,6 +434,17 @@ pub fn edit(
     Ok(updated)
 }
 
+/// Forget that a remark was sent to Gerrit, when its draft is gone there.
+pub fn forget_sent(store: &Store, key: &str, id: &str) -> Result<()> {
+    let _lock = store.lock()?;
+    let mut file = store.load(key, "")?;
+    if let Some(found) = file.comments.iter_mut().find(|c| c.id == id) {
+        found.gerrit = None;
+        found.updated_at = now();
+    }
+    store.save(&file)
+}
+
 /// Mark remarks sent to Gerrit, each with the id of its draft.
 pub fn mark_sent(store: &Store, key: &str, sent: &[(String, Option<String>)]) -> Result<()> {
     if sent.is_empty() {

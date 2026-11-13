@@ -2,7 +2,7 @@
 // shell script. A fake `curl` first on the PATH keeps what it was given, so
 // a test reads what left the tool, and how.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { card, openChange, openFile } from './act.ts';
@@ -73,7 +73,7 @@ test('nothing leaves before Enter', async ({ page }) => {
   await expect(card(page, 'Kept here for now.').locator('.talk-tag-gerrit')).toHaveText(
     'for Gerrit',
   );
-  expect(logged('curl.log')).not.toContain('/drafts');
+  expect(logged('curl.log')).not.toContain('request = "PUT"');
 });
 
 test('the agent stages the remark that the user asked for, and only the user sends it', async ({
@@ -98,5 +98,61 @@ test('the agent stages the remark that the user asked for, and only the user sen
   const remark = card(page, 'Could this function be named');
   await expect(remark.locator('.talk-tag-gerrit')).toHaveText('for Gerrit');
   await expect(page.getByRole('button', { name: 'Send to Gerrit · 1' })).toBeVisible();
-  expect(logged('curl.log')).not.toContain('/drafts');
+  expect(logged('curl.log')).not.toContain('request = "PUT"');
+});
+
+/// Write a remark on the first line, stage it, and send it.
+async function sendOne(page: import('@playwright/test').Page, body: string) {
+  await page.locator('td.gutter-comment[data-column="new"]').first().click();
+  await page.getByRole('textbox').first().fill(body);
+  await page.locator('form.talk-box').getByLabel('For Gerrit').check();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: 'Send to Gerrit · 1' }).click();
+  await page.keyboard.press('Enter');
+  await expect(card(page, body).locator('.talk-tag-gerrit')).toHaveText('draft on Gerrit');
+}
+
+test('a draft deleted on Gerrit says so, and can be staged again', async ({ page }) => {
+  await sendOne(page, 'Name it after what it does.');
+
+  // The reader deletes the draft on Gerrit, then reads the repository again.
+  writeFileSync(join(server.fixture.bin!, 'drafts.ids'), '');
+  writeFileSync(join(server.fixture.bin!, 'comments.json'), `)]}'\n{}\n`);
+  await page.getByRole('button', { name: 'Read the repository again' }).click();
+
+  const remark = card(page, 'Name it after what it does.');
+  await expect(remark.getByText('deleted on Gerrit')).toBeVisible();
+  await remark.getByLabel('For Gerrit').check();
+  await expect(remark.locator('.talk-tag-gerrit')).toHaveText('for Gerrit');
+  await expect(page.getByRole('button', { name: 'Send to Gerrit · 1' })).toBeVisible();
+});
+
+test('a draft published on Gerrit shows as its thread there', async ({ page }) => {
+  await sendOne(page, 'Name it after what it does.');
+
+  // The reader publishes it: Gerrit now holds it as a comment, same id.
+  const id = readFileSync(join(server.fixture.bin!, 'drafts.ids'), 'utf8').trim();
+  const published = {
+    'src/net.blk': [
+      {
+        id,
+        patch_set: 2,
+        line: 1,
+        author: { name: 'Test Reviewer' },
+        message: 'Name it after what it does.',
+        unresolved: true,
+        updated: '2026-11-13 10:00:00.000000000',
+      },
+    ],
+  };
+  writeFileSync(join(server.fixture.bin!, 'comments.json'), `)]}'\n${JSON.stringify(published)}\n`);
+  writeFileSync(join(server.fixture.bin!, 'drafts.ids'), '');
+  await page.getByRole('button', { name: 'Read the repository again' }).click();
+
+  await expect(page.locator('.posted-box', { hasText: 'Name it after what it does.' })).toHaveCount(
+    1,
+  );
+  await expect(
+    page.locator('.talk-box:not(.posted-box)', { hasText: 'Name it after' }),
+  ).toHaveCount(0);
 });
