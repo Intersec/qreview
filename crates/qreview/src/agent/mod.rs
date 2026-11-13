@@ -510,15 +510,58 @@ async fn with_threads(client: &Client, events: Vec<Value>) -> Result<Vec<Value>>
         .flat_map(|change| change["comments"].as_array().into_iter().flatten())
         .collect();
 
+    // The threads of Gerrit only when one is asked about: REST may be slow.
+    let asks_gerrit = events
+        .iter()
+        .any(|e| e["id"].as_str().is_some_and(|id| id.starts_with(GERRIT)));
+    let gerrit = match asks_gerrit {
+        true => client.get("/api/gerrit/threads").await?,
+        false => Value::Null,
+    };
+
     Ok(events
         .into_iter()
         .map(|mut event| {
-            if let Some(id) = event["id"].as_str() {
-                event["thread"] = Value::Array(thread_of(&comments, id));
-            }
+            let thread = match event["id"].as_str() {
+                Some(id) => match id.strip_prefix(GERRIT) {
+                    Some(id) => gerrit_thread(&gerrit, id),
+                    None => thread_of(&comments, id),
+                },
+                None => return event,
+            };
+            event["thread"] = Value::Array(thread);
             event
         })
         .collect())
+}
+
+/// A thread of Gerrit as the agent reads it: the comments of Gerrit, each
+/// with the name of its author, then the replies written here.
+fn gerrit_thread(all: &Value, id: &str) -> Vec<Value> {
+    let Some(thread) = all
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|change| change["threads"].as_array().into_iter().flatten())
+        .find(|thread| thread["id"].as_str() == Some(id))
+    else {
+        return Vec::new();
+    };
+    let mut out: Vec<Value> = thread["comments"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|c| {
+            json!({
+                "id": format!("{GERRIT}{}", c["id"].as_str().unwrap_or_default()),
+                "author": "gerrit",
+                "name": c["author"],
+                "body": c["body"],
+            })
+        })
+        .collect();
+    out.extend(thread["replies"].as_array().into_iter().flatten().cloned());
+    out
 }
 
 /// The remark `id` and its replies, oldest first.
@@ -660,5 +703,37 @@ mod tests {
         assert_eq!(segment("I8f3a"), "I8f3a");
         assert_eq!(segment("sha-4a91"), "sha-4a91");
         assert_eq!(segment("../x?y"), "xy");
+    }
+
+    #[test]
+    fn a_thread_of_gerrit_reads_its_reviewers_then_the_replies_here() {
+        let all = json!([{
+            "key": "I1",
+            "threads": [{
+                "id": "g1",
+                "comments": [
+                    { "id": "g1", "author": "Jane", "body": "Why?" },
+                    { "id": "g2", "author": "Bob", "body": "Indeed." }
+                ],
+                "replies": [{ "id": "c-1", "author": "reader", "body": "Answer this." }]
+            }]
+        }]);
+
+        let thread = gerrit_thread(&all, "g1");
+
+        let said: Vec<(&str, &str)> = thread
+            .iter()
+            .map(|c| (c["id"].as_str().unwrap(), c["body"].as_str().unwrap()))
+            .collect();
+        assert_eq!(
+            said,
+            [
+                ("gerrit:g1", "Why?"),
+                ("gerrit:g2", "Indeed."),
+                ("c-1", "Answer this.")
+            ]
+        );
+        assert_eq!(thread[0]["name"], "Jane");
+        assert!(gerrit_thread(&all, "gone").is_empty());
     }
 }

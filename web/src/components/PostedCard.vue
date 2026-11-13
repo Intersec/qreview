@@ -52,9 +52,28 @@ function who(reply: Comment): string {
   return reply.author === 'agent' ? 'Agent' : 'You';
 }
 
-async function sendReply(body: string, _ask: boolean, gerrit: boolean, resolve: boolean) {
+async function sendReply(body: string, ask: boolean, gerrit: boolean, resolve: boolean) {
   replying.value = false;
-  await threads?.replyOnGerrit?.(props.comment.id, body, gerrit ? { resolve } : null);
+  await threads?.replyOnGerrit?.(props.comment.id, body, gerrit ? { resolve } : null, ask);
+  asked.value = ask;
+}
+
+/// The thread was sent to the agent, and no answer has come back yet.
+const asked = ref(false);
+watch(
+  () => ours.value.length,
+  () => {
+    if (ours.value[ours.value.length - 1]?.author === 'agent') {
+      asked.value = false;
+    }
+  },
+);
+/// Under its own answer, asking the agent again buys the same answer.
+const askable = computed(() => ours.value[ours.value.length - 1]?.author !== 'agent');
+
+async function askAgent() {
+  asked.value = true;
+  await threads?.askGerrit?.(props.comment.id);
 }
 
 async function toggleDone(event: Event) {
@@ -150,6 +169,7 @@ async function toggleDone(event: Event) {
           label="Reply"
           :draft="threadSlot(`${GERRIT_PARENT}${comment.id}`, 'reply')"
           gerrit-reply
+          askable
           @save="sendReply"
           @cancel="replying = false"
         />
@@ -169,6 +189,20 @@ async function toggleDone(event: Event) {
           Done
         </label>
         <span class="spacer"></span>
+        <span
+          v-if="asked || threads?.answering?.value === `${GERRIT_PARENT}${comment.id}`"
+          class="talk-hint"
+          >Asked</span
+        >
+        <button
+          v-else-if="!done && askable"
+          type="button"
+          class="action"
+          title="Ask the agent to answer this thread"
+          @click="askAgent"
+        >
+          Ask agent
+        </button>
         <button type="button" class="action" @click="replying = true">Reply</button>
       </div>
     </template>

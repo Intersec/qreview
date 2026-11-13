@@ -13,6 +13,7 @@ import type {
   FileDiff,
   FileEntry,
   GerritStatus,
+  ChangeThreads,
   MergeListItem,
   NewComment,
   PatchSet,
@@ -256,6 +257,7 @@ export const api = {
     }),
 
   gerritStatus: () => call<GerritStatus>('/api/gerrit/status'),
+  gerritThreads: () => call<ChangeThreads[]>('/api/gerrit/threads'),
 
   /// Send the staged remarks of a change to Gerrit as drafts, or of the
   /// whole series with no key.

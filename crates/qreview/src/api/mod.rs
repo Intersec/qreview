@@ -1234,13 +1234,23 @@ async fn ask(
     Path((key, id)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
     let session = state.session.read().await;
-    let file = session.comments(&key, "")?;
-    let thread = file
-        .comments
-        .iter()
-        .find(|c| c.id == id)
-        .map(|c| c.parent.clone().unwrap_or_else(|| c.id.clone()))
-        .ok_or_else(|| ApiError::not_found(format!("no comment {id}")))?;
+    let thread = match id.strip_prefix(crate::comments::GERRIT_PARENT) {
+        // A thread of Gerrit is named by the comment that opens it.
+        Some(gerrit) => {
+            let found = session
+                .gerrit_thread(&key, gerrit)
+                .await
+                .map_err(|error| ApiError::not_found(format!("{error:#}")))?;
+            format!("{}{}", crate::comments::GERRIT_PARENT, found.id)
+        }
+        None => session
+            .comments(&key, "")?
+            .comments
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.parent.clone().unwrap_or_else(|| c.id.clone()))
+            .ok_or_else(|| ApiError::not_found(format!("no comment {id}")))?,
+    };
     drop(session);
     state
         .events

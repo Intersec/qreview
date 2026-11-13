@@ -18,6 +18,8 @@ export interface Threads {
     stage: { resolve: boolean } | null,
     ask?: boolean,
   ): Promise<void>;
+  /// Ask the agent about a thread of Gerrit.
+  askGerrit?(thread: string): Promise<void>;
   /// Check or clear the Done box of a thread of Gerrit.
   setGerritDone?(thread: string, done: boolean): Promise<void>;
   /// Delete a reply written here to a thread of Gerrit.
