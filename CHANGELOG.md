@@ -12,6 +12,31 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.19.0]
+
+### Added
+
+- **Rendered AsciiDoc** — an AsciiDoc file opens rendered beside its diff too,
+  with the same marks in the margin, colored source blocks, and the images of
+  the tree. Raw HTML in the file is cleaned on the server: nothing in it runs.
+- **Rendered Markdown** — a Show rendered button on a Markdown file opens the
+  rendered page in a pane beside the diff. The pane and the diff follow each
+  other as either one scrolls. The pane marks in its margin the blocks that
+  the change touches, and shows the images of the tree. Beside the pane, the
+  diff wraps its long lines. The file renders only when you ask for it.
+- **Mermaid diagrams** — a Mermaid block of a rendered Markdown or AsciiDoc
+  file shows as its diagram. Each diagram is drawn in a sandboxed frame that
+  can reach nothing. A diagram that Mermaid cannot read leaves its code, with
+  the error under it.
+
+### Fixed
+
+- The Delete and Cancel buttons of the Clean dialog no longer run into each
+  other and into the line of keys.
+- The list of comments follows the series pane: the newest change at the top.
+  A click on a remark of another change no longer moves that change to the
+  top, under the pointer. The list scrolls to the open change instead.
+
 ## [0.18.0]
 
 ### Added
