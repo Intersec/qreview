@@ -4,7 +4,7 @@
 // passes or fails here, it only makes the interface visible.
 
 import { chromium, type Page } from '@playwright/test';
-import { mkdirSync, readdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import config from '../playwright.config.ts';
 import { openChange, openFile, pickTheme, useSplit } from './act.ts';
@@ -12,6 +12,40 @@ import { build, rebaseNewest } from './fixture.ts';
 import { start } from './server.ts';
 
 const OUT = join(import.meta.dirname, '.shots');
+
+/// What the REST API of Gerrit answers for the comments of the change.
+const GERRIT_THREADS = {
+  'src/net.blk': [
+    {
+      id: 'ask1',
+      patch_set: 2,
+      line: 3,
+      author: { name: 'Jane Reviewer' },
+      message: 'Where does this loop stop?',
+      unresolved: true,
+      updated: '2026-11-01 10:00:00.000000000',
+    },
+    {
+      id: 'ask2',
+      in_reply_to: 'ask1',
+      patch_set: 2,
+      line: 3,
+      author: { name: 'Test Author' },
+      message: 'At the first error.',
+      unresolved: true,
+      updated: '2026-11-01 11:00:00.000000000',
+    },
+    {
+      id: 'ok1',
+      patch_set: 2,
+      line: 1,
+      author: { name: 'Jane Reviewer' },
+      message: 'Rename this function.',
+      unresolved: false,
+      updated: '2026-11-01 09:00:00.000000000',
+    },
+  ],
+};
 
 async function openLongFile(page: Page) {
   await openChange(page, /long: touch two places/);
@@ -390,6 +424,18 @@ for (const scheme of ['light', 'dark'] as const) {
   await openFile(second, 'Commit message');
   await second.locator('.posted-box').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-posted-change.png`) });
+
+  // The threads of Gerrit over REST: replies under their remark, and a
+  // resolved thread folded. The file goes once the shot is taken, so the
+  // next scheme reads the ssh answer again.
+  const threads = join(other.fixture.bin!, 'comments.json');
+  writeFileSync(threads, `)]}'\n${JSON.stringify(GERRIT_THREADS)}\n`);
+  await second.getByRole('button', { name: 'Read the repository again' }).click();
+  await openFile(second, 'net.blk');
+  await second.getByText('At the first error.').waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-threads.png`) });
+  rmSync(threads);
+  await second.getByRole('button', { name: 'Read the repository again' }).click();
 
   // The work of the agent, named in the top bar.
   const otherSession = (await (

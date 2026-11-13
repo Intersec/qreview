@@ -202,6 +202,8 @@ function fakeGerrit(base: string, repo: string): { bin: string; served: string }
       `echo -- >> ${log}`,
       'case "$config" in',
       `  *accounts/self*) cat ${JSON.stringify(join(bin, 'self.json'))}; printf 200 ;;`,
+      // The threads of the change, when a test wrote them.
+      `  */comments\\"*) if [ -f ${JSON.stringify(join(bin, 'comments.json'))} ]; then cat ${JSON.stringify(join(bin, 'comments.json'))}; printf 200; else echo "Not found"; printf 404; fi ;;`,
       `  */drafts*) echo ")]}'"; echo "{\\"id\\":\\"draft-$(grep -c '^--$' ${log})\\"}"; printf 201 ;;`,
       '  *) echo "Not found"; printf 404 ;;',
       'esac',

@@ -1,0 +1,56 @@
+{
+  "src/net.c": [
+    {
+      "author": { "_account_id": 1000096, "name": "Jane Reviewer", "email": "jane@example.com", "username": "jane" },
+      "change_message_id": "c1",
+      "patch_set": 1,
+      "id": "a1",
+      "line": 3,
+      "range": { "start_line": 3, "start_character": 4, "end_line": 3, "end_character": 8 },
+      "updated": "2026-11-01 10:00:00.000000000",
+      "message": "Why read() here?",
+      "unresolved": true,
+      "commit_id": "1111111111111111111111111111111111111111"
+    },
+    {
+      "author": { "_account_id": 1000097, "name": "Test Author", "email": "author@example.com" },
+      "patch_set": 1,
+      "id": "a2",
+      "in_reply_to": "a1",
+      "line": 3,
+      "updated": "2026-11-01 11:00:00.000000000",
+      "message": "Done",
+      "unresolved": false
+    },
+    {
+      "author": { "_account_id": 1000096, "name": "Jane Reviewer" },
+      "patch_set": 1,
+      "id": "a3",
+      "in_reply_to": "a2",
+      "line": 3,
+      "updated": "2026-11-01 12:00:00.000000000",
+      "message": "Not quite.",
+      "unresolved": true
+    },
+    {
+      "author": { "_account_id": 1000096, "name": "Jane Reviewer" },
+      "patch_set": 1,
+      "id": "p1",
+      "side": "PARENT",
+      "line": 2,
+      "updated": "2026-11-01 10:30:00.000000000",
+      "message": "This check went away.",
+      "unresolved": false
+    }
+  ],
+  "/PATCHSET_LEVEL": [
+    {
+      "author": { "_account_id": 1000098, "username": "bob" },
+      "patch_set": 1,
+      "id": "w1",
+      "updated": "2026-11-01 09:00:00.000000000",
+      "message": "Split this change.",
+      "unresolved": true
+    }
+  ]
+}

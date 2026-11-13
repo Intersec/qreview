@@ -4,11 +4,13 @@
 // through one context rather than through every component between them.
 
 import type { ComputedRef, InjectionKey, Ref } from 'vue';
-import type { Comment } from '@/api/types';
+import type { Comment, PostedComment } from '@/api/types';
 
 export interface Threads {
   /// The replies of a remark, in the order they were written.
   repliesOf(id: string): Comment[];
+  /// The replies of a thread of Gerrit, from Gerrit, oldest first.
+  postedRepliesOf?(thread: string): PostedComment[];
   reply(id: string, body: string, ask?: boolean): Promise<void>;
   /// Ask the agent to answer the thread.
   ask(id: string): Promise<void>;
@@ -70,4 +72,11 @@ export function isBlocked(replies: Comment[]): boolean {
 /// would only buy the same answer twice.
 export function awaitsAgent(remark: Comment, replies: Comment[]): boolean {
   return (replies[replies.length - 1] ?? remark).author === 'reader';
+}
+
+/// True when a thread of Gerrit is resolved: its newest comment says so,
+/// the rule of Gerrit. The ssh answer gives no state: such a thread is
+/// neither.
+export function isResolved(remark: PostedComment, replies: PostedComment[]): boolean {
+  return (replies[replies.length - 1] ?? remark).unresolved === false;
 }
