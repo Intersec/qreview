@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // What the session holds, as a list to walk.
 //
-// The change on the screen comes first, because that is what the reader is
-// working on. The rest follows in the order of the export, so the pane and
-// the text handed to a session say the same thing in the same order.
+// The changes come newest first, like the series pane above. Inside a change,
+// the remarks keep the order of the export. The order never follows the change
+// on the screen: a row that opens another change must not move the rows under
+// the pointer. The list scrolls to that change instead.
 
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { label } from '@/diff/paths';
 import { open, previousGroups, rounds } from '@/diff/versions';
 import type { ChangeComments, Comment } from '@/api/types';
@@ -31,18 +32,31 @@ const total = computed(() => props.written.reduce((sum, change) => sum + open(ch
 /// whose remarks are all previous counts nothing and must still be read.
 const anything = computed(() => props.written.some((change) => change.comments.length > 0));
 
-/// The change being read first, the others in the order they came, and
-/// inside each one the current remarks before the previous ones.
-const groups = computed(() => {
-  const here = props.written.filter((change) => change.key === props.openKey);
-  const rest = props.written.filter((change) => change.key !== props.openKey);
-
-  return [...here, ...rest].map((change) => ({
+/// The changes newest first, as the export lists them oldest first. Inside
+/// each one, the current remarks before the previous ones.
+const groups = computed(() =>
+  [...props.written].reverse().map((change) => ({
     change,
     current: rounds(change).current,
     previous: previousGroups(change),
-  }));
-});
+  })),
+);
+
+const body = ref<HTMLElement | null>(null);
+
+/// Bring the remarks of the change on the screen into view. `nearest` leaves
+/// the list still when they are already in sight, as after a click on a row.
+watch(
+  () => props.openKey,
+  async (key) => {
+    await nextTick();
+    const group = [...(body.value?.querySelectorAll<HTMLElement>('.list-group') ?? [])].find(
+      (element) => element.dataset.key === key,
+    );
+    group?.scrollIntoView({ block: 'nearest' });
+  },
+  { immediate: true },
+);
 
 /// Where a comment sits, short enough for a narrow pane.
 function place(comment: Comment): string {
@@ -89,8 +103,13 @@ function go(change: ChangeComments, comment: Comment) {
       <span aria-hidden="true">{{ folded ? '▸' : '▾' }}</span>
     </button>
 
-    <div v-if="!folded" class="list-body">
-      <template v-for="group in groups" :key="group.change.key">
+    <div v-if="!folded" ref="body" class="list-body">
+      <div
+        v-for="group in groups"
+        :key="group.change.key"
+        class="list-group"
+        :data-key="group.change.key"
+      >
         <p class="list-change" :title="group.change.subject">
           <span v-if="group.change.key === openKey" class="tag">here</span>
           {{ group.change.subject }}
@@ -129,7 +148,7 @@ function go(change: ChangeComments, comment: Comment) {
             <span class="list-gist">{{ gist(comment) }}</span>
           </button>
         </template>
-      </template>
+      </div>
     </div>
   </section>
 </template>

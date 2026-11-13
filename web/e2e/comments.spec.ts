@@ -58,9 +58,7 @@ test('the list names the place and the first line of each remark', async ({ page
   await expect(list.locator('.list-gist')).toHaveText('The loop never ends.');
 });
 
-test('the change being read comes first, and the rest in the order of the export', async ({
-  page,
-}) => {
+test('the list keeps the order of the series when a row opens another change', async ({ page }) => {
   await openChange(page, /net: retry the read/);
   await openFile(page, 'net.blk');
   await remark(page, 0, 'About net.');
@@ -69,9 +67,19 @@ test('the change being read comes first, and the rest in the order of the export
   await openFile(page, 'long.c');
   await remark(page, 0, 'About the long file.');
 
-  // `net` is the older commit, so the export would name it first. The list
-  // puts the change on the screen ahead of it.
+  await openChange(page, /net: retry the read/);
+
+  // `long` is the newer commit, so it stands above `net`, as in the series
+  // pane, even with `net` on the screen.
   const groups = page.locator('.comment-list .list-change');
+  await expect(groups.first()).toContainText('long: touch two places');
+  await expect(groups.nth(1)).toContainText('net: retry the read');
+  await expect(groups.nth(1)).toContainText('here');
+
+  // A row that opens another change must not move the rows under the pointer.
+  await page.locator('.comment-list .list-row', { hasText: 'About the long file.' }).click();
+  await expect(page.locator('.file-bar h2')).toContainText('long.c');
+  await expect(groups.first()).toContainText('here');
   await expect(groups.first()).toContainText('long: touch two places');
   await expect(groups.nth(1)).toContainText('net: retry the read');
   await expect(page.locator('.comment-list .list-row').first()).toContainText(
