@@ -89,6 +89,8 @@ pub fn summary(hash: &str, author: &str, parents: &[String]) -> ChangeSummary {
         is_merge: false,
         worktree: true,
         lines: None,
+        own: true,
+        email: String::new(),
     }
 }
 

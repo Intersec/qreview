@@ -27,6 +27,8 @@ const threads = inject(THREADS, null);
 const offersGerrit = computed(
   () => props.gerritReply === true || (props.remark === true && threads?.onGerrit?.value === true),
 );
+/// Clear at first: a remark is talk with the agent until the reader says
+/// it goes to Gerrit.
 const forGerrit = ref(false);
 const resolve = ref(false);
 

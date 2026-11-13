@@ -75,7 +75,9 @@ describe('the keys that save', () => {
 
 describe('the For Gerrit box', () => {
   function box(remark: boolean, onGerrit: boolean) {
-    const threads = { onGerrit: computed(() => onGerrit) } as unknown as Threads;
+    const threads = {
+      onGerrit: computed(() => onGerrit),
+    } as unknown as Threads;
     return mount(CommentBox, {
       props: { label: 'Comment', start: 'A remark.', remark },
       global: { provide: { [THREADS as symbol]: threads } },
@@ -101,6 +103,13 @@ describe('the For Gerrit box', () => {
     await wrapper.get('form').trigger('submit');
 
     expect(wrapper.emitted('save')).toEqual([['Done.', false, true, true]]);
+  });
+
+  it('starts clear: a remark is talk with the agent first', async () => {
+    const wrapper = box(true, true);
+    await wrapper.get('form').trigger('submit');
+
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false, false, false]]);
   });
 
   it('is not there on a version that Gerrit does not hold', () => {

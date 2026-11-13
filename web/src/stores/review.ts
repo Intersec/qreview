@@ -916,11 +916,21 @@ export const useReview = defineStore('review', () => {
 
   /// The change on the screen, as every count reads it.
   const here = computed(() => written.value.find((change) => change.key === changeKey.value));
-  /// The open threads of every change: what Fix the series hands over.
+  /// The changes of colleagues. Fix leaves them alone: the reader does not
+  /// amend their commits. See section 5.9 of the design.
+  const colleagues = computed(
+    () => new Set(series.value?.changes.filter((c) => c.own === false).map((c) => c.key) ?? []),
+  );
+  /// The change on the screen belongs to a colleague.
+  const colleague = computed(
+    () => changeKey.value !== null && colleagues.value.has(changeKey.value),
+  );
+  /// The open threads of every change of the reader: what Fix the series
+  /// hands over.
   const openSeries = computed(() =>
-    withThreads.value.flatMap((change) =>
-      openOf(change).map((comment) => ({ key: change.key, comment })),
-    ),
+    withThreads.value
+      .filter((change) => !colleagues.value.has(change.key))
+      .flatMap((change) => openOf(change).map((comment) => ({ key: change.key, comment }))),
   );
   /// The open threads of the change on the screen: what Fix this change
   /// hands over.
@@ -932,6 +942,11 @@ export const useReview = defineStore('review', () => {
       : [],
   );
   const waitingHere = computed(() => blockedThreads.value.filter((t) => t.key === changeKey.value));
+  /// The questions that hold back Fix the series: those of the changes it
+  /// fixes.
+  const waitingSeries = computed(() =>
+    blockedThreads.value.filter((t) => !colleagues.value.has(t.key)),
+  );
 
   /// The remarks staged for Gerrit, change by change: what Send sends. A
   /// staged remark stays on its patch set after an amend, so a previous
@@ -1289,6 +1304,7 @@ export const useReview = defineStore('review', () => {
     stranded,
     readingOlder,
     onGerrit,
+    colleague,
     currentSha,
     reading,
     posted,
@@ -1330,6 +1346,7 @@ export const useReview = defineStore('review', () => {
     openHere,
     doneHere,
     waitingHere,
+    waitingSeries,
     openSeries,
     askFix,
     clean,

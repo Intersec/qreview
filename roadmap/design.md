@@ -633,6 +633,7 @@ type ChangeSummary = {
   unresolvedCount: number;
   isMerge: boolean;
   lines: { added: number; removed: number } | null; // against the first parent, null on a merge
+  own: boolean;            // false on the change of a colleague, section 5.9
 };
 
 type PatchSet = {
@@ -1197,10 +1198,13 @@ A comment is never lost: the local remark stays in the store in each case.
 
 A change is the reader's own when the author email of its commit equals `git config user.email`. Any other change is the change of a colleague. On such a change:
 
-- **Fix this change** is hidden, and **Fix the series** skips it. The reader does not amend the commits of a colleague.
+- **Fix this change** is hidden, and **Fix the series** skips it. The reader does not amend the commits of a colleague. The fix route refuses such a change, and the procedure of the agent says to skip a change whose `own` is false.
 - **Ask agent** stays. The agent helps the reader read the code and word a remark.
-- The box opens with For Gerrit checked.
-- The export asks for help with a review, not for a fix (section 9).
+- The export asks for help with a review, not for a fix (section 9). It also holds the remarks staged for Gerrit and not sent: the agent helps word them.
+
+For Gerrit starts clear in every box, as on a change of the reader: a remark is talk with the agent until the reader says that it goes to Gerrit.
+
+Without `user.email`, every change is the reader's own.
 
 ## 6. Gerrit integration
 
@@ -1787,8 +1791,14 @@ Rules for the format:
 - On the change of a colleague (section 5.9), the opening asks for help
   rather than a fix: "I am reviewing this change by <author> and left the
   comments below. Help me review it: answer each comment, and do not change
-  the code." A series that holds changes of both kinds says it per change,
-  under the heading of each one.
+  the code." A series of changes of colleagues only asks it once: "I am
+  reviewing this series and left the comments below. Help me review it:
+  answer each comment, and do not change the code." A series that holds
+  changes of both kinds opens with "I left the comments below on this
+  series.", and says it per change, under the heading of each one: "This
+  change is mine. Please address these comments." or "This change is by
+  <author>. Help me review it: answer each comment, and do not change the
+  code."
 
 The comments are ordered the way a reader walks the code:
 

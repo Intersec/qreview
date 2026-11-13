@@ -183,6 +183,11 @@ If the agent waits for an answer, the dialog lists those questions instead
 and sends nothing. The buttons are greyed out while no agent runs
 `qreview wait`.
 
+**A change of a colleague**, one whose author email is not your
+`user.email`, has no Fix this change, and Fix the series skips it: you
+review it, you do not amend it. Ask agent still works, and the export
+asks the agent for help with the review rather than a fix.
+
 While the agent works on a fix, the page says **Agent working…** and holds
 its writes, then shows the whole fix at once when the agent waits again. A
 remark you are typing meanwhile stays in its box, and follows its line to

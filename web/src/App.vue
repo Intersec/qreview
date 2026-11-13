@@ -69,7 +69,9 @@ const {
   openHere,
   doneHere,
   waitingHere,
+  waitingSeries,
   openSeries,
+  colleague,
   stagedHere,
   stagedSeries,
   gerritStatus,
@@ -135,7 +137,9 @@ const noFix = computed(() =>
 const fixing = ref<'change' | 'series' | null>(null);
 
 function openFix(scope: 'change' | 'series') {
-  if (agent.value && !working.value && (scope === 'series' || changeKey.value)) {
+  // The reader does not fix the change of a colleague, section 5.9.
+  const target = scope === 'series' || (changeKey.value !== null && !colleague.value);
+  if (agent.value && !working.value && target) {
     fixing.value = scope;
   }
 }
@@ -650,6 +654,7 @@ onBeforeUnmount(() => {
           >Agent connected</span
         >
         <button
+          v-if="!colleague"
           type="button"
           class="chip chip-fix"
           :title="noFix ?? 'Ask the agent to fix this change (a)'"
@@ -881,7 +886,7 @@ onBeforeUnmount(() => {
       v-if="fixing"
       :series="fixing === 'series'"
       :open="fixing === 'series' ? openSeries : openHere"
-      :waiting="fixing === 'series' ? blockedThreads : waitingHere"
+      :waiting="fixing === 'series' ? waitingSeries : waitingHere"
       :subject-of="subjectOf"
       @send="sendFix"
       @jump="jumpTo"

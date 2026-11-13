@@ -1201,6 +1201,16 @@ Settled while reading the threads, on 2026-11-13: `GET /api/changes/:key/posted`
 
 The store goes to format 5: a comment gains `gerrit`, and `parent` can name a thread of Gerrit. The export changes: it holds the open threads of the reviewers, and a review of a colleague's change opens with another request. The concept loses the non-goal "qreview never writes to Gerrit".
 
+## 2026-11-13 — The export of a series that holds changes of colleagues
+
+Section 9 said that a series of both kinds asks per change, and said nothing of a series of colleagues only, nor of the opening above the headings.
+
+**Decision.** A series of the reader only keeps its opening. A series of colleagues only asks once for help, in the words of the change alone. A mixed series opens with a neutral sentence, and each heading says whose change it is and what to do. The fix route refuses the change of a colleague too, so a request that skips the page still fixes nothing.
+
+**Rejected:**
+
+- Asking per change in every series: a series of one kind would repeat one sentence under every heading.
+
 ## 2026-11-17 — The server says how to reach it in the git directory
 
 An agent in a devcontainer cannot reach the server on the machine. The container has its own network, its own `/tmp` and its own `~/.local/state`. It shares the project only, at the same path. The study "qreview in a Devcontainer" compared five ways in.
