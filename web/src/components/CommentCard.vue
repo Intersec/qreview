@@ -95,14 +95,17 @@ async function toggleDone(event: Event) {
 
 /// A draft on Gerrit is changed there: here it is read only.
 const sent = computed(() => props.comment.gerrit?.state === 'sent');
+/// A sent remark whose draft was deleted on Gerrit left nothing there: it
+/// can be staged again.
+const gone = computed(() => sent.value && threads?.sentState?.(props.comment) === 'deleted');
 
 /// The For Gerrit box: on a remark that is not sent yet, on a version that
 /// Gerrit holds. A staged remark can always come back here.
 const stageable = computed(
   () =>
     threads?.setGerrit !== undefined &&
-    !sent.value &&
-    (props.comment.gerrit !== null || threads.onGerrit?.value === true),
+    (!sent.value || gone.value) &&
+    (props.comment.gerrit?.state === 'staged' || threads.onGerrit?.value === true),
 );
 
 async function toggleGerrit(event: Event) {
@@ -219,6 +222,21 @@ function saveEdit(id: string, body: string) {
           >for Gerrit</span
         >
         <span
+          v-else-if="gone"
+          class="talk-tag"
+          title="This draft was deleted on Gerrit. Check For Gerrit to send it again"
+          >deleted on Gerrit</span
+        >
+        <a
+          v-else-if="sent && threads?.gerritUrl?.value"
+          class="talk-tag talk-tag-gerrit"
+          :href="threads.gerritUrl.value"
+          target="_blank"
+          rel="noopener"
+          title="This remark is a draft on Gerrit. Edit or publish it there"
+          >draft on Gerrit</a
+        >
+        <span
           v-else-if="sent"
           class="talk-tag talk-tag-gerrit"
           title="This remark is a draft on Gerrit. Edit or publish it there"
@@ -310,7 +328,11 @@ function saveEdit(id: string, body: string) {
           class="talk-done-box"
           title="Send this remark to Gerrit as a draft. Its replies stay here"
         >
-          <input type="checkbox" :checked="comment.gerrit !== null" @change="toggleGerrit" />
+          <input
+            type="checkbox"
+            :checked="comment.gerrit?.state === 'staged'"
+            @change="toggleGerrit"
+          />
           For Gerrit
         </label>
         <span class="spacer"></span>

@@ -1724,4 +1724,49 @@ mod tests {
             ]
         );
     }
+
+    #[tokio::test]
+    async fn a_thread_reopened_after_a_published_done_waits_again() {
+        let repo = reviewed().await;
+        let session = session_of(&repo).await;
+        on_gerrit(&repo, &session).await;
+        let done = session
+            .store
+            .load("Iretry", "")
+            .unwrap()
+            .comments
+            .into_iter()
+            .find(|c| c.parent.as_deref() == Some("gerrit:g4"))
+            .unwrap();
+        crate::comments::mark_sent(
+            &session.store,
+            "Iretry",
+            &[(done.id, Some("g5".to_owned()))],
+        )
+        .unwrap();
+
+        // The reader published the Done, and the reviewer answered.
+        let change = session.gerrit_change("Iretry").await.unwrap();
+        let comments = serde_json::json!({
+            "src/net.blk": [
+                { "id": "g4", "patch_set": 1, "line": 2, "message": "Say why.",
+                  "author": { "name": "Bob" }, "unresolved": true,
+                  "updated": "2026-11-01 09:30:00.000000000" },
+                { "id": "g5", "in_reply_to": "g4", "patch_set": 1, "line": 2,
+                  "message": "Done", "author": { "name": "Test Author" },
+                  "unresolved": false, "updated": "2026-11-02 09:00:00.000000000" },
+                { "id": "g6", "in_reply_to": "g5", "patch_set": 1, "line": 2,
+                  "message": "Still wrong.", "author": { "name": "Bob" },
+                  "unresolved": true, "updated": "2026-11-03 09:00:00.000000000" }
+            ]
+        });
+        session
+            .hold_gerrit(change, crate::gerrit::threads::parse(&comments))
+            .await;
+
+        let value = json(&session, Some("Iretry")).await.unwrap();
+        let threads = value["changes"][0]["threads"].as_array().unwrap();
+        let ids: Vec<&str> = threads.iter().map(|t| t["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["gerrit:g4"]);
+    }
 }

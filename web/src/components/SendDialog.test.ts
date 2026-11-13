@@ -41,7 +41,11 @@ function staged(id: string): { key: string; comment: Comment } {
 
 const ok: GerritStatus = { rest: 'ok', reason: null, base: 'https://review.example.com' };
 
-function dialog(status: GerritStatus | null, failed = new Map<string, string>()) {
+function dialog(
+  status: GerritStatus | null,
+  failed = new Map<string, string>(),
+  unpushed: string[] = [],
+) {
   return mount(SendDialog, {
     props: {
       series: false,
@@ -49,7 +53,8 @@ function dialog(status: GerritStatus | null, failed = new Map<string, string>())
       status,
       failed,
       sending: false,
-      subjectOf: () => undefined,
+      subjectOf: (key: string) => (key === 'I1' ? 'net: retry' : undefined),
+      unpushed,
     },
     attachTo: document.body,
   });
@@ -88,6 +93,15 @@ describe('the dialog of Send', () => {
   it('says why Gerrit refused a remark', () => {
     wrapper = dialog(ok, new Map([['a', 'Gerrit answered 400']]));
     expect(wrapper.get('[role=alert]').text()).toBe('Gerrit answered 400');
+  });
+
+  it('says to push first when Gerrit lacks the newest version, and still sends', () => {
+    wrapper = dialog(ok, new Map(), ['I1']);
+    expect(wrapper.text()).toContain('Gerrit does not hold the newest version of net: retry');
+    expect(wrapper.text()).toContain('sends anyway');
+
+    press('Enter');
+    expect(wrapper.emitted('send')).toHaveLength(1);
   });
 
   it('closes on Escape', () => {
