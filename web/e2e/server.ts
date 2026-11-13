@@ -15,6 +15,9 @@ export interface Running {
   kill(): void;
   /// What the server wrote in its terminal so far.
   output(): string;
+  /// Run a command of the agent on the repository, and answer what it
+  /// printed.
+  agent(args: string[]): string;
 }
 
 export const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qreview');
@@ -84,13 +87,14 @@ export async function start(
     args.push('--prev', fixture.previous);
   }
 
-  const { child, url, output } = await spawnOn(fixture.repo, args, {
+  const env = {
     XDG_STATE_HOME: fixture.state,
     XDG_CONFIG_HOME: fixture.config,
     NO_COLOR: '1',
     // The fake ssh answers the query and serves the fetch.
     PATH: options.gerrit ? `${fixture.bin}:${process.env.PATH}` : process.env.PATH,
-  });
+  };
+  const { child, url, output } = await spawnOn(fixture.repo, args, env);
 
   return {
     url,
@@ -101,6 +105,12 @@ export async function start(
     },
     kill: () => child.kill('SIGTERM'),
     output,
+    agent: (args) =>
+      execFileSync(BINARY, args, {
+        cwd: fixture.repo,
+        encoding: 'utf8',
+        env: { ...process.env, ...env },
+      }),
   };
 }
 

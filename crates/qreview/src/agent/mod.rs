@@ -147,6 +147,7 @@ pub async fn comment(
     place: &Place,
     body: &str,
     key: Option<&str>,
+    gerrit: bool,
 ) -> Result<Value> {
     let key = match key {
         Some(key) => key.to_owned(),
@@ -161,6 +162,9 @@ pub async fn comment(
             new["endLine"] = json!(to);
         }
         None => new["scope"] = json!("file"),
+    }
+    if gerrit {
+        new["gerrit"] = json!({});
     }
 
     client
@@ -218,22 +222,90 @@ pub async fn reply(
         .await
 }
 
-/// The change that holds a comment.
-async fn key_of(client: &Client, id: &str) -> Result<String> {
+/// Write a staged remark at the place of the thread that holds `id`.
+///
+/// The thread is the talk between the user and the agent, and stays in
+/// qreview. The new remark is what the author of the change reads. See
+/// section 5.8 of the design.
+pub async fn stage(client: &Client, id: &str, body: &str, resolve: bool) -> Result<Value> {
+    if id.starts_with("gerrit:") {
+        bail!(
+            "{id}: this release reads no thread of Gerrit. Stage a remark on a thread of qreview"
+        );
+    }
+    if resolve {
+        bail!("--resolve answers a thread of Gerrit, and {id} is a thread of qreview");
+    }
+    let (key, comments) = change_of(client, id).await?;
+    let find = |id: &str| comments.iter().find(|c| c["id"].as_str() == Some(id));
+    let comment = find(id).with_context(|| format!("no comment {id} in this series"))?;
+    // A thread is one remark and its replies: the place is the remark's.
+    let root = match comment["parent"].as_str() {
+        Some(parent) => {
+            find(parent).with_context(|| format!("no comment {parent} in this series"))?
+        }
+        None => comment,
+    };
+
+    let session = client.get("/api/session").await?;
+    let current = session["series"]["changes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|change| change["key"].as_str() == Some(&key))
+        .and_then(|change| change["commit"].as_str());
+    if current != root["commit"].as_str() {
+        bail!(
+            "the thread {id} is on an older version of the change. Write the remark on the \
+             current one with `qreview comment <place> --gerrit`"
+        );
+    }
+
+    let mut new = json!({
+        "scope": root["scope"],
+        "author": "agent",
+        "body": body,
+        "gerrit": {},
+    });
+    let anchor = &root["anchor"];
+    if anchor.is_object() {
+        for field in [
+            "file",
+            "side",
+            "startLine",
+            "endLine",
+            "startChar",
+            "endChar",
+        ] {
+            new[field] = anchor[field].clone();
+        }
+    }
+
+    client
+        .post(&format!("/api/changes/{}/comments", segment(&key)), &new)
+        .await
+}
+
+/// The change that holds a comment, and every comment of that change.
+async fn change_of(client: &Client, id: &str) -> Result<(String, Vec<Value>)> {
     let all = client.get("/api/comments").await?;
 
     all.as_array()
         .into_iter()
         .flatten()
-        .find(|change| {
-            change["comments"]
-                .as_array()
-                .into_iter()
-                .flatten()
+        .find_map(|change| {
+            let comments = change["comments"].as_array()?;
+            comments
+                .iter()
                 .any(|c| c["id"].as_str() == Some(id))
+                .then(|| Some((change["key"].as_str()?.to_owned(), comments.clone())))?
         })
-        .and_then(|change| change["key"].as_str().map(str::to_owned))
         .with_context(|| format!("no comment {id} in this series"))
+}
+
+/// The change that holds a comment.
+async fn key_of(client: &Client, id: &str) -> Result<String> {
+    Ok(change_of(client, id).await?.0)
 }
 
 /// Declare `to` the next version of `from`, and move the threads onto it.

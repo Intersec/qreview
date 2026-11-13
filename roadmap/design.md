@@ -2041,7 +2041,7 @@ read from the right. `--key` names the change; without it, the change is
 the newest one of the series that touches the file. A body of `-` is read
 from standard input, so a long answer needs no quoting.
 
-`--gerrit` stages the remark for Gerrit (section 5.8). `stage` writes a staged remark at the place of the thread `<id>`, for the text that the reader asked the agent to word. When `<id>` is `gerrit:<id>`, a thread of Gerrit, it writes a staged reply in that thread, and `--resolve` resolves it (section 6.8). `reply` takes a `gerrit:<id>` too, for a reply that stays in qreview. No command sends: the reader does, in the page.
+`--gerrit` stages the remark for Gerrit (section 5.8). `stage` writes a staged remark at the place of the thread `<id>`, for the text that the reader asked the agent to word. The thread must sit on the newest version of its change: on an older one, its place may not exist any more, and `stage` refuses and names `comment --gerrit`. When `<id>` is `gerrit:<id>`, a thread of Gerrit, it writes a staged reply in that thread, and `--resolve` resolves it (section 6.8). `reply` takes a `gerrit:<id>` too, for a reply that stays in qreview. No command sends: the reader does, in the page.
 
 `comment`, `reply` and `stage` print the comment they wrote, its `id` included.
 `wait` prints `{ "events": [...], "next": <n> }`. It returns on a request

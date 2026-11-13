@@ -100,6 +100,33 @@ Rules:
 - A long body goes on standard input: `--body -`.
 - Markdown works in a body.
 
+## Put a remark on Gerrit
+
+The user may ask you to put a remark on Gerrit, where the author of the
+change reads it. Usually they ask in a thread: they wrote a remark, you
+talked it over, and they say "put it on Gerrit" or "word it for the
+author". Then write the remark for the author:
+
+```sh
+qreview stage <id> --body "<the remark, for the author of the change>"
+```
+
+- `stage` writes a new remark at the place of the thread `<id>`, staged for
+  Gerrit. The thread itself stays in qreview: the author never reads it.
+- Write the body to the author of the change, not to the user. Leave out
+  your talk with the user, and do not mention qreview or yourself.
+- Then reply in the thread with one line, such as "Staged for Gerrit." The
+  user reads the staged remark, edits it if needed, and sends it.
+- When you review a change on your own and the user asked for the remarks
+  to go to Gerrit, write them with `qreview comment <place> --gerrit`.
+- Stage only what the user asked for. Without a request, a remark stays in
+  qreview.
+
+**You never send anything to Gerrit.** No command does: the user sends from
+the page, and Gerrit keeps each remark as a draft that only the user sees
+until they publish it there. `stage` fails when Gerrit does not hold the
+version yet: tell the user that the change must be pushed first.
+
 ## Change the code
 
 Only in a fix. The remarks are on commits, so a fix amends the commit it
@@ -202,7 +229,8 @@ Then wait for the replies of the user with the loop above.
 | `qreview export --json` | The open threads, each comment with its `id` |
 | `qreview wait [--after <n>] [--timeout <s>]` | Block until the user asks, and print it as JSON. No time limit by default |
 | `qreview reply <id> --body <text> [--done] [--blocked]` | Reply to a thread |
-| `qreview comment <file>[:<side>:<line>[-<end>]] --body <text> [--key <id>]` | Write a remark |
+| `qreview comment <file>[:<side>:<line>[-<end>]] --body <text> [--key <id>] [--gerrit]` | Write a remark, staged for Gerrit with `--gerrit` |
+| `qreview stage <id> --body <text>` | Write the remark for Gerrit at the place of a thread, staged |
 | `qreview migrate --from <old> [--to <new>] [--done <ids>] [--blocked <id>=<text>]` | Declare a new version after an amend, and move its threads |
 | `qreview refresh` | Read the repository again |
 
