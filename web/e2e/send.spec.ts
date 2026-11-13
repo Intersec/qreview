@@ -75,3 +75,28 @@ test('nothing leaves before Enter', async ({ page }) => {
   );
   expect(logged('curl.log')).not.toContain('/drafts');
 });
+
+test('the agent stages the remark that the user asked for, and only the user sends it', async ({
+  page,
+}) => {
+  await page.locator('td.gutter-comment[data-column="new"]').first().click();
+  await page.getByRole('textbox').first().fill('this name is bad, word it for Bob');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(card(page, 'this name is bad')).toBeVisible();
+
+  const open = JSON.parse(server.agent(['export', '--json'])) as unknown;
+  const id = JSON.stringify(open).match(/"id":"([^"]+)"/)?.[1];
+  expect(id).toBeTruthy();
+  const staged = JSON.parse(
+    server.agent(['stage', id!, '--body', 'Could this function be named after what it does?']),
+  ) as { gerrit: { state: string } };
+  expect(staged.gerrit.state).toBe('staged');
+
+  // The thread with the agent stays, and the remark for the author sits on
+  // the same line, staged.
+  await expect(card(page, 'this name is bad')).toBeVisible();
+  const remark = card(page, 'Could this function be named');
+  await expect(remark.locator('.talk-tag-gerrit')).toHaveText('for Gerrit');
+  await expect(page.getByRole('button', { name: 'Send to Gerrit · 1' })).toBeVisible();
+  expect(logged('curl.log')).not.toContain('/drafts');
+});

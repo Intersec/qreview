@@ -70,6 +70,23 @@ pub enum Command {
         /// The change. The newest change that touches the file by default.
         #[arg(long, value_name = "CHANGE-ID")]
         key: Option<String>,
+        /// Stage the remark for Gerrit. The user sends it from the page.
+        #[arg(long)]
+        gerrit: bool,
+    },
+
+    /// Write the remark for Gerrit that the user asked for, at the place
+    /// of a thread, staged. The user sends it from the page.
+    Stage {
+        /// The id of a comment of the thread.
+        id: String,
+        /// The text, for the author of the change. `-` reads it from
+        /// standard input.
+        #[arg(long)]
+        body: String,
+        /// Resolve the thread of Gerrit that the remark answers.
+        #[arg(long)]
+        resolve: bool,
     },
 
     /// Reply to a thread as the agent.

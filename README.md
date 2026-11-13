@@ -248,6 +248,11 @@ is staged: it stays in qreview, and the agent does not count it as work. Click
 draft on Gerrit. Only you see a draft, until you publish it in Gerrit. The
 replies of a thread never leave qreview.
 
+The agent can word a remark for you. Ask it in the thread, for example "put
+this on Gerrit". It writes a new remark at the same place, staged, with the
+text for the author of the change. The agent never sends: you read the
+remark, edit it if needed, and click Send.
+
 Sending needs access to the REST API of Gerrit. qreview stores no secret:
 a command of yours gives the `Authorization` header. Name it in
 `~/.config/qreview/config.json`, the only file that may name it:
