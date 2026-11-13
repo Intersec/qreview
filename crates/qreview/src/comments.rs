@@ -114,6 +114,31 @@ pub struct Target<'a> {
     pub patch_set: usize,
     /// The patch set of Gerrit that `rev` is, when Gerrit holds it.
     pub on_gerrit: Option<usize>,
+    /// The thread of Gerrit that a reply with a `gerrit:` parent answers.
+    pub gerrit_thread: Option<GerritThread>,
+}
+
+/// The prefix of a `parent` that names a thread of Gerrit, which the store
+/// does not hold. See section 6.8 of the design.
+pub const GERRIT_PARENT: &str = "gerrit:";
+
+/// A thread of Gerrit, as a reply in qreview needs it.
+#[derive(Clone, Debug)]
+pub struct GerritThread {
+    /// The id of the comment of Gerrit that opens the thread.
+    pub id: String,
+    /// The patch set of Gerrit that holds the thread.
+    pub patch_set: usize,
+    /// The revision of that patch set.
+    pub commit: String,
+    pub scope: Scope,
+    /// The place of the thread, so that the reply goes to the same one.
+    pub anchor: Option<Anchor>,
+}
+
+/// The id of the thread of Gerrit that a reply answers.
+pub fn gerrit_parent(comment: &Comment) -> Option<&str> {
+    comment.parent.as_deref()?.strip_prefix(GERRIT_PARENT)
 }
 
 /// Read the review of a change.
@@ -159,6 +184,9 @@ impl Target<'_> {
             bail!("a comment with no text says nothing");
         }
 
+        if let Some(thread) = &self.gerrit_thread {
+            return self.reply_on_gerrit(thread, new);
+        }
         if new.parent.is_some() {
             let _lock = self.store.lock()?;
             let mut file = self.store.load(self.key, self.subject)?;
@@ -205,6 +233,46 @@ impl Target<'_> {
         self.store.save(&file)?;
 
         Ok(comment)
+    }
+
+    /// Add a reply to a thread of Gerrit. A plain one stays in qreview, the
+    /// talk of the reader with the agent. A staged one goes out in the
+    /// thread, on its patch set, at the next Send.
+    fn reply_on_gerrit(&self, thread: &GerritThread, new: NewComment) -> Result<Comment> {
+        if new.blocked && new.author != Author::Agent {
+            bail!("only the agent waits for the reader");
+        }
+        let gerrit = new.gerrit.map(|stage| Gerrit {
+            state: Outbox::Staged,
+            patch_set: thread.patch_set,
+            resolve: stage.resolve,
+            id: None,
+            sent_at: None,
+        });
+
+        let now = now();
+        let reply = Comment {
+            id: new_id(),
+            patch_set: thread.patch_set,
+            commit: thread.commit.clone(),
+            created_at: now.clone(),
+            updated_at: now,
+            scope: thread.scope,
+            body: new.body.trim_end().to_owned(),
+            anchor: thread.anchor.clone(),
+            author: new.author,
+            parent: Some(format!("{GERRIT_PARENT}{}", thread.id)),
+            done: false,
+            blocked: new.blocked,
+            moves: Vec::new(),
+            gerrit,
+        };
+
+        let _lock = self.store.lock()?;
+        let mut file = self.store.load(self.key, self.subject)?;
+        file.comments.push(reply.clone());
+        self.store.save(&file)?;
+        Ok(reply)
     }
 
     /// Add a reply to its thread, and move the state of the thread with it.
@@ -315,6 +383,21 @@ pub fn edit(
     }
 
     if let Some(stage) = edit.gerrit {
+        // A reply to Gerrit is written for the thread: it can be kept here,
+        // and a new one written to send it again.
+        if gerrit_parent(found).is_some() {
+            match (stage, found.gerrit.as_mut()) {
+                // The Done box of the thread: a staged reply keeps its text,
+                // and stops resolving the thread.
+                (Some(stage), Some(staged)) => staged.resolve = stage.resolve,
+                (Some(_), None) => bail!("write a new reply to put it on Gerrit again"),
+                (None, _) => found.gerrit = None,
+            }
+            found.updated_at = now();
+            let out = found.clone();
+            store.save(&file)?;
+            return Ok(out);
+        }
         if !found.is_remark() {
             bail!("a reply stays in qreview: only the remark of a thread goes to Gerrit");
         }
@@ -372,9 +455,10 @@ pub fn mark_sent(store: &Store, key: &str, sent: &[(String, Option<String>)]) ->
     store.save(&file)
 }
 
-/// True when the remark waits for the reader to send it to Gerrit.
+/// True when the remark, or the reply to a thread of Gerrit, waits for the
+/// reader to send it to Gerrit.
 pub fn is_staged(comment: &Comment) -> bool {
-    comment.is_remark()
+    (comment.is_remark() || gerrit_parent(comment).is_some())
         && comment
             .gerrit
             .as_ref()
@@ -703,6 +787,7 @@ mod tests {
                 subject: "second",
                 patch_set: 1,
                 on_gerrit,
+                gerrit_thread: None,
             }
         }
 
@@ -1103,5 +1188,77 @@ mod tests {
             staged.gerrit,
             Some(Some(Stage { resolve: false }))
         ));
+    }
+
+    #[tokio::test]
+    async fn a_reply_to_a_thread_of_gerrit_takes_its_place_and_its_patch_set() {
+        let f = fixture().await;
+        let thread = GerritThread {
+            id: "g1".to_owned(),
+            patch_set: 3,
+            commit: f.rev.clone(),
+            scope: Scope::Line,
+            anchor: Some(Anchor {
+                file: "a.c".to_owned(),
+                side: Side::New,
+                start_line: Some(2),
+                end_line: Some(2),
+                start_char: None,
+                end_char: None,
+                blob: None,
+                line_hash: None,
+                context: Vec::new(),
+            }),
+        };
+        let target = Target {
+            gerrit_thread: Some(thread),
+            ..f.target()
+        };
+
+        let talk = target
+            .add(reply("gerrit:g1", Author::Agent, "It stops at EOF."))
+            .await
+            .unwrap();
+        assert_eq!(talk.parent.as_deref(), Some("gerrit:g1"));
+        assert_eq!(gerrit_parent(&talk), Some("g1"));
+        assert!(talk.gerrit.is_none(), "a plain reply stays here");
+
+        let done = target
+            .add(NewComment {
+                gerrit: Some(Stage { resolve: true }),
+                ..reply("gerrit:g1", Author::Reader, "Done")
+            })
+            .await
+            .unwrap();
+        let mark = done.gerrit.clone().unwrap();
+        assert_eq!((mark.patch_set, mark.resolve), (3, true));
+        assert_eq!(done.anchor.as_ref().unwrap().start_line, Some(2));
+        assert!(is_staged(&done));
+
+        // The Done box clears the resolve, and keeps the reply staged.
+        let open = EditComment {
+            gerrit: Some(Some(Stage { resolve: false })),
+            ..EditComment::default()
+        };
+        let open = edit(&f.store, "I8f3a", (&f.rev, Some(3)), &done.id, open).unwrap();
+        assert!(is_staged(&open));
+        assert!(!open.gerrit.unwrap().resolve);
+
+        // It can be kept here, but not staged again.
+        let kept = EditComment {
+            gerrit: Some(None),
+            ..EditComment::default()
+        };
+        let back = edit(&f.store, "I8f3a", (&f.rev, None), &done.id, kept).unwrap();
+        assert!(back.gerrit.is_none());
+        let again = EditComment {
+            gerrit: Some(Some(Stage::default())),
+            ..EditComment::default()
+        };
+        let error = edit(&f.store, "I8f3a", (&f.rev, Some(3)), &done.id, again).unwrap_err();
+        assert!(error.to_string().contains("new reply"), "{error}");
+
+        // Neither is work for the agent: the thread is on Gerrit.
+        assert_eq!(counts(&f.store, "I8f3a", &f.rev).total, 0);
     }
 }

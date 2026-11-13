@@ -501,3 +501,49 @@ export function addGuide(repo: string) {
   );
   commit(repo, 'docs: write a manual', 'Change-Id: Imanualaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 }
+
+/// What the REST API of Gerrit answers for the comments of the change
+/// `net: retry the read`: a thread that waits, with a reply, a resolved
+/// one, and one on the parent side.
+export const GERRIT_THREADS = {
+  'src/net.blk': [
+    {
+      id: 'ask1',
+      patch_set: 2,
+      line: 3,
+      author: { name: 'Jane Reviewer' },
+      message: 'Where does this loop stop?',
+      unresolved: true,
+      updated: '2026-11-01 10:00:00.000000000',
+    },
+    {
+      id: 'ask2',
+      in_reply_to: 'ask1',
+      patch_set: 2,
+      line: 3,
+      author: { name: 'Test Author' },
+      message: 'At the first error.',
+      unresolved: true,
+      updated: '2026-11-01 11:00:00.000000000',
+    },
+    {
+      id: 'ok1',
+      patch_set: 2,
+      line: 1,
+      author: { name: 'Jane Reviewer' },
+      message: 'Rename this function.',
+      unresolved: false,
+      updated: '2026-11-01 09:00:00.000000000',
+    },
+    {
+      id: 'old1',
+      patch_set: 2,
+      side: 'PARENT',
+      line: 3,
+      author: { name: 'Jane Reviewer' },
+      message: 'This return was the only exit.',
+      unresolved: true,
+      updated: '2026-11-01 09:30:00.000000000',
+    },
+  ],
+};

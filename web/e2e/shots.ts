@@ -8,44 +8,10 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import config from '../playwright.config.ts';
 import { openChange, openFile, useSplit } from './act.ts';
-import { build, rebaseNewest } from './fixture.ts';
+import { GERRIT_THREADS, build, rebaseNewest } from './fixture.ts';
 import { start } from './server.ts';
 
 const OUT = join(import.meta.dirname, '.shots');
-
-/// What the REST API of Gerrit answers for the comments of the change.
-const GERRIT_THREADS = {
-  'src/net.blk': [
-    {
-      id: 'ask1',
-      patch_set: 2,
-      line: 3,
-      author: { name: 'Jane Reviewer' },
-      message: 'Where does this loop stop?',
-      unresolved: true,
-      updated: '2026-11-01 10:00:00.000000000',
-    },
-    {
-      id: 'ask2',
-      in_reply_to: 'ask1',
-      patch_set: 2,
-      line: 3,
-      author: { name: 'Test Author' },
-      message: 'At the first error.',
-      unresolved: true,
-      updated: '2026-11-01 11:00:00.000000000',
-    },
-    {
-      id: 'ok1',
-      patch_set: 2,
-      line: 1,
-      author: { name: 'Jane Reviewer' },
-      message: 'Rename this function.',
-      unresolved: false,
-      updated: '2026-11-01 09:00:00.000000000',
-    },
-  ],
-};
 
 async function openLongFile(page: Page) {
   await openChange(page, /long: touch two places/);
@@ -418,8 +384,33 @@ for (const scheme of ['light', 'dark'] as const) {
   writeFileSync(threads, `)]}'\n${JSON.stringify(GERRIT_THREADS)}\n`);
   await second.getByRole('button', { name: 'Read the repository again' }).click();
   await openFile(second, 'net.blk');
+  // The scheme before resolved this thread with its reply: open it again.
+  const asking = second.locator('.posted-box', { hasText: 'Where does this loop stop?' });
+  await asking.waitFor();
+  if (await asking.evaluate((card) => card.classList.contains('talk-folded'))) {
+    await asking.getByRole('button', { name: /Jane Reviewer/ }).click();
+  }
   await second.getByText('At the first error.').waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-gerrit-threads.png`) });
+
+  // A reply in a thread of Gerrit, For Gerrit, that resolves it.
+  await asking.getByRole('button', { name: 'Reply' }).click();
+  await asking.getByRole('textbox').fill('It stops after three tries now.');
+  await asking.getByLabel('For Gerrit').check();
+  await asking.getByLabel('Resolve').check();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-reply-box.png`) });
+  await asking.getByRole('button', { name: 'Save', exact: true }).click();
+  await asking.locator('form').waitFor({ state: 'detached' });
+  await second.waitForTimeout(300);
+  if (await asking.evaluate((card) => card.classList.contains('talk-folded'))) {
+    await asking.getByRole('button', { name: /Jane Reviewer/ }).click();
+  }
+  await asking.getByText('It stops after three tries now.').first().waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-reply.png`) });
+  await second.getByRole('button', { name: /^Send to Gerrit/ }).click();
+  await second.getByRole('dialog').waitFor();
+  await second.keyboard.press('Enter');
+  await second.getByRole('dialog').waitFor({ state: 'detached' });
   rmSync(threads);
   await second.getByRole('button', { name: 'Read the repository again' }).click();
 

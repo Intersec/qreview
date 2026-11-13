@@ -14,11 +14,22 @@ use crate::store::model::{Comment, Side};
 pub const PATCHSET_LEVEL: &str = "/PATCHSET_LEVEL";
 
 /// The `CommentInput` of a remark written on `rev`, which is read against
-/// `base`.
-pub async fn input(git: &Git, comment: &Comment, rev: &str, base: &str) -> Value {
+/// `base`. `in_reply_to` is the newest comment of the thread of Gerrit that
+/// a reply answers.
+pub async fn input(
+    git: &Git,
+    comment: &Comment,
+    rev: &str,
+    base: &str,
+    in_reply_to: Option<&str>,
+) -> Value {
     let mut out = Map::new();
     out.insert("message".to_owned(), json!(comment.body));
-    out.insert("unresolved".to_owned(), json!(true));
+    let resolve = comment.gerrit.as_ref().is_some_and(|g| g.resolve);
+    out.insert("unresolved".to_owned(), json!(!resolve));
+    if let Some(id) = in_reply_to {
+        out.insert("in_reply_to".to_owned(), json!(id));
+    }
 
     let Some(anchor) = &comment.anchor else {
         out.insert("path".to_owned(), json!(PATCHSET_LEVEL));
@@ -176,9 +187,28 @@ mod tests {
         ];
         let mut out = String::new();
         for (name, comment) in cases {
-            let value = input(&git, &comment, &head, &parent).await;
+            let value = input(&git, &comment, &head, &parent, None).await;
             out.push_str(&format!("{name}: {value}\n"));
         }
         insta::assert_snapshot!(out);
+    }
+
+    #[tokio::test]
+    async fn a_reply_names_the_thread_and_may_resolve_it() {
+        let (_repo, git, head, parent) = repo().await;
+        let mut reply = remark("a.c", Side::New, Some((2, 2)));
+        reply.gerrit = Some(crate::store::model::Gerrit {
+            state: crate::store::model::Outbox::Staged,
+            patch_set: 1,
+            resolve: true,
+            id: None,
+            sent_at: None,
+        });
+
+        let value = input(&git, &reply, &head, &parent, Some("last")).await;
+
+        assert_eq!(value["in_reply_to"], "last");
+        assert_eq!(value["unresolved"], false);
+        assert_eq!(value["line"], 2);
     }
 }

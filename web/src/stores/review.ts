@@ -9,7 +9,7 @@ import { Catchup } from '@/diff/catchup';
 import { COMMIT_MSG } from '@/diff/paths';
 import { moveDrafts } from '@/diff/drafts';
 import { askLeave, tell } from '@/notify';
-import { awaitsAgent, isBlocked, repliesBy } from '@/diff/threads';
+import { GERRIT_PARENT, awaitsAgent, isBlocked, repliesBy } from '@/diff/threads';
 import { isCurrent, open, rounds } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
@@ -675,6 +675,44 @@ export const useReview = defineStore('review', () => {
     await addComment({ scope: 'line', parent: id, body, ask });
   }
 
+  /// Reply to a thread of Gerrit. Staged, it goes out in the thread at the
+  /// next Send, and `resolve` resolves it there.
+  async function replyOnGerrit(
+    thread: string,
+    body: string,
+    stage: { resolve: boolean } | null,
+    ask = false,
+  ) {
+    await addComment({
+      scope: 'line',
+      parent: `${GERRIT_PARENT}${thread}`,
+      body,
+      ask,
+      gerrit: stage ?? undefined,
+    });
+  }
+
+  /// The Done box of a thread of Gerrit: a staged reply `Done` that
+  /// resolves it, as the Done button of Gerrit writes. Clearing the box
+  /// takes back that reply while it is only staged. A reply that somebody
+  /// wrote keeps its text, and stops resolving the thread.
+  async function setGerritDone(thread: string, done: boolean) {
+    if (done) {
+      await replyOnGerrit(thread, 'Done', { resolve: true });
+      return;
+    }
+    for (const reply of repliesOf(`${GERRIT_PARENT}${thread}`)) {
+      if (reply.gerrit?.state !== 'staged' || !reply.gerrit.resolve) {
+        continue;
+      }
+      if (reply.author === 'reader' && reply.body === 'Done') {
+        await deleteComment(reply.id);
+      } else {
+        await editComment(reply.id, { gerrit: { resolve: false } });
+      }
+    }
+  }
+
   async function askAgent(id: string) {
     askLeave();
     asking.value = true;
@@ -764,7 +802,11 @@ export const useReview = defineStore('review', () => {
   const stagedSeries = computed(() =>
     written.value.flatMap((change) =>
       change.comments
-        .filter((comment) => comment.parent === null && comment.gerrit?.state === 'staged')
+        .filter(
+          (comment) =>
+            (comment.parent === null || comment.parent.startsWith(GERRIT_PARENT)) &&
+            comment.gerrit?.state === 'staged',
+        )
         .map((comment) => ({ key: change.key, comment })),
     ),
   );
@@ -1124,6 +1166,8 @@ export const useReview = defineStore('review', () => {
     setGerrit,
     stagedSeries,
     stagedHere,
+    replyOnGerrit,
+    setGerritDone,
     gerritStatus,
     readGerritStatus,
     sendDrafts,
