@@ -1408,6 +1408,8 @@ GET /a/changes/myproject~12321/comments    # published, on every patch set
 GET /a/changes/myproject~12321/drafts      # the drafts of the reader
 ```
 
+The drafts are not shown as remarks of Gerrit. A draft that qreview sent is a remark of the store, and its id says whether Gerrit still holds it as a draft (section 5.8).
+
 Each comment carries an `id`, `in_reply_to`, `unresolved`, a side, a line or a range, a patch set, an author and a date. The table of what the ssh answer misses (section 6.3) no longer applies. The placement rules of section 6.3 still hold: a remark shows on the version it was posted on.
 
 **A thread of Gerrit** is a comment and the comments that reply to it, through `in_reply_to`. It is unresolved when its last comment is unresolved, the rule of Gerrit.
@@ -1535,7 +1537,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `GET /api/changes/:key/rendered?ps=2&base=parent&file=...` | A Markdown or AsciiDoc file of the version read, as HTML, with the marks of its diff against the base. See section 3.8 |
 | `GET /api/changes/:key/blob?ps=2&path=...` | An image in the tree of the version read, for a rendered file. Raw bytes, not JSON. See section 3.8 |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
-| `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column. Each one carries its `id`, its `inReplyTo` and `unresolved`, and the drafts of the reader come with `draft: true`. See section 6.8 |
+| `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column. Over REST, each one carries the `id` of Gerrit, `thread` (the id of the remark that opens its thread), `inReplyTo`, `unresolved` and `updated`. Over ssh, the id is made from the place, `thread` is that id, and the other three are null. A remark on the `PARENT` side stands in the left column, and has no column when another version is on the left. See sections 6.3 and 6.8 |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
 | `GET /api/comments` | Every comment of the session, in reading order |
 | `GET /api/update` | Whether a newer qreview is out. Empty when nothing answers |

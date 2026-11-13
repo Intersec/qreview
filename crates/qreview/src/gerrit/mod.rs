@@ -10,6 +10,7 @@ pub mod coords;
 pub mod draft;
 pub mod posted;
 pub mod rest;
+pub mod threads;
 
 use std::process::Stdio;
 use std::time::Duration;

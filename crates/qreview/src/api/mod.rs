@@ -1112,12 +1112,14 @@ async fn posted(
     let rev = target(&session, &key, view.ps).await?;
     // Only another version on the left carries remarks of its own. A parent
     // or a base of a merge is no patch set.
-    let left = match resolve_base(&session, &key, parse_base(view.base.as_deref())?).await? {
-        Against::Tree(commit) => Some(commit),
+    let against = resolve_base(&session, &key, parse_base(view.base.as_deref())?).await?;
+    let left = match &against {
+        Against::Tree(commit) => Some(commit.clone()),
         _ => None,
     };
+    let base = session.base_of(&rev, &against).await?;
     let (comments, placed) =
-        crate::gerrit::posted::on_screen(&session.git, found, &rev, left.as_deref()).await;
+        crate::gerrit::posted::on_screen(&session.git, found, &rev, &base, left.as_deref()).await;
 
     Ok(Json(Posted { comments, placed }))
 }
