@@ -57,3 +57,13 @@ test('the ssh answer stands back when REST answers', async ({ page }) => {
   // The ssh answer holds other remarks on this patch set: REST replaces them.
   await expect(page.getByText('It still never stops.')).toHaveCount(0);
 });
+
+test('a thread that waits is work: the counts and the export hold it', async ({ page }) => {
+  // Two threads wait on this change, one on each side; the third is resolved.
+  await expect(page.getByRole('button', { name: /^Fix this change · 2/ })).toBeVisible();
+
+  const text = server.agent(['export']);
+  expect(text).toContain('Remark from Jane Reviewer on Gerrit: Where does this loop stop?');
+  expect(text).toContain('Reply from Test Author on Gerrit: At the first error.');
+  expect(text).not.toContain('Rename this function.');
+});

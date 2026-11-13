@@ -127,6 +127,24 @@ the page, and Gerrit keeps each remark as a draft that only the user sees
 until they publish it there. `stage` fails when Gerrit does not hold the
 version yet: tell the user that the change must be pushed first.
 
+## Threads of Gerrit
+
+The remarks that reviewers posted on Gerrit are threads too. Their id
+reads `gerrit:<id>`, in the export and in an `ask` event. A comment of
+Gerrit has the author `gerrit`, and `name` says which reviewer wrote it.
+A thread of Gerrit that waits for an answer is work, like a remark of the
+user: it is in the export, and in a fix.
+
+- **Talk with the user about it**: `qreview reply gerrit:<id> --body
+  "<text>"`. That reply stays in qreview: the reviewer never reads it.
+- **Answer the reviewer**, when the user asks: `qreview stage gerrit:<id>
+  --body "<text>"`. Write to the reviewer. The user sends it.
+- **Close it in a fix**: for a thread whose request you carried out, run
+  `qreview stage gerrit:<id> --resolve --body "Done"`, not `--done`. Gerrit
+  then shows the thread resolved, once the user sends.
+- A thread of Gerrit takes no `--done` and no `--blocked` in `migrate`.
+  Its place stays on the patch set it was posted on.
+
 ## Change the code
 
 Only in a fix. The remarks are on commits, so a fix amends the commit it
@@ -178,7 +196,8 @@ The user asked for a fix of a change: deal with every open thread of it.
    - a thread that waits for the user: leave it.
 3. Make all the fixes, amend once, and run one `qreview migrate` with
    `--done` for the threads you fixed and `--blocked` for your questions.
-   Nothing else is Done.
+   Nothing else is Done. For a thread of Gerrit that you fixed, stage a
+   reply that resolves it instead (see "Threads of Gerrit").
 4. Wait again, **only once the whole fix is over**: the code, the amend,
    every migrate and every reply. Your next `qreview wait` tells the page
    that the fix is done, and the page then shows it all at once. Do not
@@ -231,6 +250,7 @@ Then wait for the replies of the user with the loop above.
 | `qreview reply <id> --body <text> [--done] [--blocked]` | Reply to a thread |
 | `qreview comment <file>[:<side>:<line>[-<end>]] --body <text> [--key <id>] [--gerrit]` | Write a remark, staged for Gerrit with `--gerrit` |
 | `qreview stage <id> --body <text>` | Write the remark for Gerrit at the place of a thread, staged |
+| `qreview stage gerrit:<id> --body <text> [--resolve]` | Write a reply in a thread of Gerrit, staged, and resolve it with `--resolve` |
 | `qreview migrate --from <old> [--to <new>] [--done <ids>] [--blocked <id>=<text>]` | Declare a new version after an amend, and move its threads |
 | `qreview refresh` | Read the repository again |
 

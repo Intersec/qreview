@@ -1269,13 +1269,13 @@ impl Session {
 
     /// What Gerrit knows about a change, asked once.
     async fn ask_gerrit(&self, info: &commit::CommitInfo) -> Option<gerrit::Change> {
-        let coords = self.gerrit.as_ref()?;
         let change_id = info.change_id()?;
 
         let mut answers = self.gerrit_answers.lock().await;
         if let Some(known) = answers.get(change_id) {
             return known.clone();
         }
+        let coords = self.gerrit.as_ref()?;
 
         let answer = match gerrit::query(coords, change_id, &info.hash).await {
             Ok(answer) => answer,
@@ -1412,6 +1412,20 @@ impl Session {
             state.status = status;
             state.reason = Some(format!("{error:#}"));
         }
+    }
+
+    /// Hold the answers of Gerrit for a change, ssh and REST, as if the
+    /// server had given them: a test asks no network.
+    #[cfg(test)]
+    pub async fn hold_gerrit(&self, change: gerrit::Change, comments: Vec<RestComment>) {
+        self.gerrit_threads
+            .lock()
+            .await
+            .insert(change.number, Some(comments));
+        self.gerrit_answers
+            .lock()
+            .await
+            .insert(change.id.clone(), Some(change));
     }
 
     /// The remarks of a change over REST, with their ids and their state.
@@ -1558,10 +1572,17 @@ impl Session {
                 thread.comments.push(wire);
                 continue;
             }
+            let side = item
+                .placeable
+                .anchor
+                .as_ref()
+                .map_or(crate::store::model::Side::New, |a| a.side);
             out.push(crate::model::GerritThread {
                 id: wire.thread.clone(),
                 patch_set: wire.patch_set,
+                commit: item.placeable.commit,
                 file: wire.file.clone(),
+                side,
                 line: wire.line,
                 unresolved: false,
                 done: false,
