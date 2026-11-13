@@ -57,6 +57,17 @@ pub struct ChangeSummary {
     /// Absent on a merge, and when git could not count them.
     #[serde(default)]
     pub lines: Option<LineCount>,
+    /// The author email of the commit equals `user.email`. False on the
+    /// change of a colleague, section 5.9 of the design.
+    #[serde(default = "own_by_default")]
+    pub own: bool,
+    /// The author email of the commit, kept to decide `own`.
+    #[serde(skip)]
+    pub email: String,
+}
+
+fn own_by_default() -> bool {
+    true
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

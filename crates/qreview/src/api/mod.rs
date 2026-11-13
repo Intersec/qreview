@@ -1441,11 +1441,19 @@ async fn fix(
     State(state): State<AppState>,
     Path(key): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    if state.session.read().await.commit_of(&key).is_none() {
+    let session = state.session.read().await;
+    let Some(change) = session.series.changes.iter().find(|c| c.key == key) else {
         return Err(ApiError::not_found(format!(
             "no change {key} in the series"
         )));
+    };
+    // The reader does not amend the commits of a colleague, section 5.9.
+    if !change.own {
+        return Err(ApiError::bad_request(format!(
+            "{key} is the change of a colleague. Ask the agent about a thread instead"
+        )));
     }
+    drop(session);
     hand_fix(&state, &key)
 }
 
@@ -4271,6 +4279,28 @@ mod tests {
         assert_eq!(
             batch["working"], true,
             "the agent works until it waits again"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_change_of_a_colleague_takes_no_fix() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        for change in &mut state.session.write().await.series.changes {
+            change.own = false;
+        }
+        drop(state.events.agent_waits());
+        let server = app(state.clone());
+
+        let (status, body) = json(server, post("/api/changes/I8f3ac21/fix", "")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(
+            state
+                .events
+                .after(Some(0), std::time::Duration::ZERO, None)
+                .await
+                .events
+                .is_empty()
         );
     }
 
