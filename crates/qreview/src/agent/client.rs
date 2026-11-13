@@ -43,22 +43,25 @@ impl Client {
         self.send("PATCH", path, Some(body)).await
     }
 
-    async fn send(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
+    /// A body that is text, not JSON: the Markdown of an export.
+    pub async fn get_text(&self, path: &str) -> Result<String> {
+        let (status, body) = self.call("GET", path, None).await?;
+        refused(status, &body)?;
+        Ok(String::from_utf8_lossy(&body).into_owned())
+    }
+
+    async fn call(&self, method: &str, path: &str, body: Option<&Value>) -> Result<(u16, Vec<u8>)> {
         let call = self.exchange(method, path, body);
         let raw = tokio::time::timeout(TIMEOUT, call)
             .await
             .with_context(|| format!("the server did not answer {method} {path}"))??;
-        let (status, body) = parse(&raw)?;
-        let value: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+        parse(&raw)
+    }
 
-        if !(200..300).contains(&status) {
-            let message = value["error"]["message"]
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| String::from_utf8_lossy(&body).into_owned());
-            bail!("{message}");
-        }
-        Ok(value)
+    async fn send(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
+        let (status, body) = self.call(method, path, body).await?;
+        refused(status, &body)?;
+        Ok(serde_json::from_slice(&body).unwrap_or(Value::Null))
     }
 
     async fn exchange(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Vec<u8>> {
@@ -88,6 +91,19 @@ impl Client {
             .context("no qreview server answers on this worktree. Run `qreview` first")?;
         talk(&mut stream, &request).await
     }
+}
+
+/// The message of an answer that is not a success.
+fn refused(status: u16, body: &[u8]) -> Result<()> {
+    if (200..300).contains(&status) {
+        return Ok(());
+    }
+    let value: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+    let message = value["error"]["message"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| String::from_utf8_lossy(body).into_owned());
+    bail!("{message}");
 }
 
 async fn talk<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S, request: &str) -> Result<Vec<u8>> {

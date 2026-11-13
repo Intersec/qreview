@@ -42,6 +42,9 @@ pub struct Options {
     pub gerrit_url: Option<String>,
     /// The command that gives the authorization for REST: `gerrit.auth.command`.
     pub gerrit_auth: Option<Vec<String>>,
+    /// `base` is the merge base with the branch of a change that
+    /// `qreview <gerrit-url>` fetched, section 6.9 of the design.
+    pub base_from_gerrit: bool,
 }
 
 impl Options {
@@ -58,6 +61,7 @@ impl Options {
             worktree: true,
             gerrit_url: None,
             gerrit_auth: None,
+            base_from_gerrit: false,
         }
     }
 }
@@ -112,7 +116,13 @@ pub async fn plan(git: &Git, opts: &Options, gerrit: Option<&Coordinates>) -> Re
     if let Some(base) = &opts.base {
         return Ok(Plan {
             head,
-            base: Some((commit::resolve(git, base).await?, "--base")),
+            base: Some((
+                commit::resolve(git, base).await?,
+                match opts.base_from_gerrit {
+                    true => "the branch Gerrit has the change on",
+                    false => "--base",
+                },
+            )),
             guessing: false,
             limit: opts.max_commits,
         });

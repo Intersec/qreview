@@ -8,7 +8,8 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// A revision, or a `revA..revB` range. The current series by default.
+    /// A revision, a `revA..revB` range, or the address of a change of
+    /// Gerrit. The current series by default.
     pub rev: Option<String>,
 
     /// The base of the series. It wins over every other rule.
