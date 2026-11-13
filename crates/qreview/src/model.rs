@@ -278,6 +278,25 @@ pub struct PostedComment {
     pub updated: Option<String>,
 }
 
+/// A thread of Gerrit on a change, with what qreview knows of it.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GerritThread {
+    /// The id of the comment that opens it, which `gerrit:<id>` names.
+    pub id: String,
+    pub patch_set: usize,
+    pub file: String,
+    pub line: Option<usize>,
+    /// Its newest comment on Gerrit waits for an answer.
+    pub unresolved: bool,
+    /// A reply written here resolves it, staged or sent.
+    pub done: bool,
+    /// The comments of Gerrit, oldest first.
+    pub comments: Vec<PostedComment>,
+    /// The replies written here, oldest first.
+    pub replies: Vec<crate::store::model::Comment>,
+}
+
 /// Who wrote the lines of the file on the left of a diff.
 ///
 /// Empty when the left has no history to read: a file the change adds, the

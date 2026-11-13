@@ -12,13 +12,23 @@ const props = defineProps<{
   askable?: boolean;
   /// The box writes a new remark, which can go to Gerrit.
   remark?: boolean;
+  /// The box replies to a thread of Gerrit: the reply can go out in it, and
+  /// resolve it.
+  gerritReply?: boolean;
 }>();
-const emit = defineEmits<{ save: [body: string, ask: boolean, gerrit: boolean]; cancel: [] }>();
+const emit = defineEmits<{
+  save: [body: string, ask: boolean, gerrit: boolean, resolve: boolean];
+  cancel: [];
+}>();
 
-/// The For Gerrit box, on a new remark on a version that Gerrit holds.
+/// The For Gerrit box, on a new remark on a version that Gerrit holds, or
+/// on a reply to a thread of Gerrit, which always has its patch set there.
 const threads = inject(THREADS, null);
-const offersGerrit = computed(() => props.remark === true && threads?.onGerrit?.value === true);
+const offersGerrit = computed(
+  () => props.gerritReply === true || (props.remark === true && threads?.onGerrit?.value === true),
+);
 const forGerrit = ref(false);
+const resolve = ref(false);
 
 /// What the reader typed and did not save wins over the text the box starts
 /// from: an edit that a reload interrupted comes back as it was left.
@@ -64,7 +74,8 @@ function save(ask = false) {
     return;
   }
   forget();
-  emit('save', body.value, ask && props.askable === true, offersGerrit.value && forGerrit.value);
+  const gerrit = offersGerrit.value && forGerrit.value;
+  emit('save', body.value, ask && props.askable === true, gerrit, gerrit && resolve.value);
 }
 
 function forget() {
@@ -107,6 +118,14 @@ function forget() {
       >
         <input v-model="forGerrit" type="checkbox" />
         For Gerrit
+      </label>
+      <label
+        v-if="gerritReply && forGerrit"
+        class="talk-done-box"
+        title="Resolve the thread on Gerrit with this reply"
+      >
+        <input v-model="resolve" type="checkbox" />
+        Resolve
       </label>
       <button
         type="button"

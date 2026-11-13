@@ -32,13 +32,13 @@ describe('the keys that save', () => {
   it('saves on Ctrl+Enter', () => {
     const { wrapper, area } = box('A remark.');
     press(area, 'Enter', true);
-    expect(wrapper.emitted('save')).toEqual([['A remark.', false, false]]);
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false, false, false]]);
   });
 
   it('saves on Ctrl+S, and keeps the browser out of it', () => {
     const { wrapper, area } = box('A remark.');
     expect(press(area, 's', true)).toBe(true);
-    expect(wrapper.emitted('save')).toEqual([['A remark.', false, false]]);
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false, false, false]]);
   });
 
   it('holds the browser back even when there is nothing to save', () => {
@@ -55,7 +55,7 @@ describe('the keys that save', () => {
 
     press(area, 'Enter', true, true);
 
-    expect(wrapper.emitted('save')).toEqual([['A question?', true, false]]);
+    expect(wrapper.emitted('save')).toEqual([['A question?', true, false, false]]);
   });
 
   it('never asks from a box that cannot', () => {
@@ -63,7 +63,7 @@ describe('the keys that save', () => {
 
     press(area, 'Enter', true, true);
 
-    expect(wrapper.emitted('save')).toEqual([['A remark.', false, false]]);
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false, false, false]]);
   });
 
   it('leaves a plain s to the text', () => {
@@ -87,7 +87,20 @@ describe('the For Gerrit box', () => {
     await wrapper.get('input[type=checkbox]').setValue(true);
     await wrapper.get('form').trigger('submit');
 
-    expect(wrapper.emitted('save')).toEqual([['A remark.', false, true]]);
+    expect(wrapper.emitted('save')).toEqual([['A remark.', false, true, false]]);
+  });
+
+  it('offers to resolve the thread on a reply to Gerrit, once it goes there', async () => {
+    const wrapper = mount(CommentBox, {
+      props: { label: 'Reply', start: 'Done.', gerritReply: true },
+    });
+    expect(wrapper.text()).not.toContain('Resolve');
+
+    await wrapper.findAll('input[type=checkbox]')[0]!.setValue(true);
+    await wrapper.findAll('input[type=checkbox]')[1]!.setValue(true);
+    await wrapper.get('form').trigger('submit');
+
+    expect(wrapper.emitted('save')).toEqual([['Done.', false, true, true]]);
   });
 
   it('is not there on a version that Gerrit does not hold', () => {

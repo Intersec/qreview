@@ -152,6 +152,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/blame", get(blame))
         .route("/api/gerrit/commits", post(gerrit_commits))
         .route("/api/gerrit/status", get(gerrit_status))
+        .route("/api/gerrit/threads", get(gerrit_threads))
         .route("/api/changes/{key}/gerrit/send", post(send_drafts))
         .route("/api/series/gerrit/send", post(send_series_drafts))
         .route("/api/changes/{key}/mergelist", get(mergelist))
@@ -913,6 +914,28 @@ async fn gerrit_status(State(state): State<AppState>) -> Json<GerritStatus> {
         reason: rest.reason,
         base: rest.client.map(|c| c.base().to_owned()),
     })
+}
+
+#[derive(Serialize)]
+struct ChangeThreads {
+    key: String,
+    threads: Vec<crate::model::GerritThread>,
+}
+
+/// The threads of Gerrit on every change of the series that REST answers
+/// for. A change it gives nothing for is left out. See section 6.8.
+async fn gerrit_threads(State(state): State<AppState>) -> Json<Vec<ChangeThreads>> {
+    let session = state.session.read().await;
+    let mut out = Vec::new();
+    for change in &session.series.changes {
+        if let Some(threads) = session.gerrit_threads_of(&change.key).await {
+            out.push(ChangeThreads {
+                key: change.key.clone(),
+                threads,
+            });
+        }
+    }
+    Json(out)
 }
 
 #[derive(Deserialize, Default)]

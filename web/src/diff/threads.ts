@@ -11,6 +11,17 @@ export interface Threads {
   repliesOf(id: string): Comment[];
   /// The replies of a thread of Gerrit, from Gerrit, oldest first.
   postedRepliesOf?(thread: string): PostedComment[];
+  /// Reply to a thread of Gerrit: here only, or staged for Gerrit.
+  replyOnGerrit?(
+    thread: string,
+    body: string,
+    stage: { resolve: boolean } | null,
+    ask?: boolean,
+  ): Promise<void>;
+  /// Check or clear the Done box of a thread of Gerrit.
+  setGerritDone?(thread: string, done: boolean): Promise<void>;
+  /// Delete a reply written here to a thread of Gerrit.
+  remove?(id: string): Promise<void>;
   reply(id: string, body: string, ask?: boolean): Promise<void>;
   /// Ask the agent to answer the thread.
   ask(id: string): Promise<void>;
@@ -35,6 +46,10 @@ export interface Threads {
 }
 
 export const THREADS: InjectionKey<Threads> = Symbol('threads');
+
+/// The prefix of a `parent` that names a thread of Gerrit, which the store
+/// does not hold. See section 6.8 of the design.
+export const GERRIT_PARENT = 'gerrit:';
 
 /// What the reader last asked of every done thread on the screen: folded or
 /// not. Null until the reader asks, so each card starts the way its state
@@ -79,4 +94,10 @@ export function awaitsAgent(remark: Comment, replies: Comment[]): boolean {
 /// neither.
 export function isResolved(remark: PostedComment, replies: PostedComment[]): boolean {
   return (replies[replies.length - 1] ?? remark).unresolved === false;
+}
+
+/// True when a reply written here resolves the thread of Gerrit: staged or
+/// sent, it makes the thread done before Gerrit knows.
+export function resolvesHere(replies: Comment[]): boolean {
+  return replies.some((reply) => reply.gerrit?.resolve === true);
 }

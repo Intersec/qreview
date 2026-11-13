@@ -78,7 +78,8 @@ pub enum Command {
     /// Write the remark for Gerrit that the user asked for, at the place
     /// of a thread, staged. The user sends it from the page.
     Stage {
-        /// The id of a comment of the thread.
+        /// The id of a comment of the thread. `gerrit:<id>` names a thread
+        /// of Gerrit: the remark is then a reply in that thread.
         id: String,
         /// The text, for the author of the change. `-` reads it from
         /// standard input.
@@ -91,7 +92,8 @@ pub enum Command {
 
     /// Reply to a thread as the agent.
     Reply {
-        /// The id of a comment of the thread.
+        /// The id of a comment of the thread. `gerrit:<id>` names a thread
+        /// of Gerrit: the reply stays in qreview.
         id: String,
         /// The text. `-` reads it from standard input.
         #[arg(long)]

@@ -217,6 +217,9 @@ function undoClean() {
 provide(THREADS, {
   repliesOf: review.repliesOf,
   postedRepliesOf: review.postedRepliesOf,
+  replyOnGerrit: review.replyOnGerrit,
+  setGerritDone: review.setGerritDone,
+  remove: review.deleteComment,
   reply: review.reply,
   ask: review.askAgent,
   setDone: review.setDone,

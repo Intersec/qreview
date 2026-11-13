@@ -1492,8 +1492,27 @@ impl Session {
                     .push(fail(format!("patch set {number} is not on Gerrit")));
                 continue;
             };
-            let base = self.base_of(&set.revision, &Against::Parent).await?;
-            let body = gerrit::draft::input(&self.git, &comment, &set.revision, &base).await;
+            // Every draft that left must reach `mark_sent`, or a retry
+            // sends it twice.
+            let base = match self.base_of(&set.revision, &Against::Parent).await {
+                Ok(base) => base,
+                Err(error) => {
+                    out.failed.push(fail(format!("{error:#}")));
+                    continue;
+                }
+            };
+            let in_reply_to = match comments::gerrit_parent(&comment) {
+                Some(thread) => Some(self.newest_of_thread(&change, thread).await),
+                None => None,
+            };
+            let body = gerrit::draft::input(
+                &self.git,
+                &comment,
+                &set.revision,
+                &base,
+                in_reply_to.as_deref(),
+            )
+            .await;
             let route = format!(
                 "changes/{}~{}/revisions/{}/drafts",
                 rest::encode(&change.project),
@@ -1518,6 +1537,72 @@ impl Session {
 
         comments::mark_sent(&self.store, key, &sent)?;
         Ok(out)
+    }
+
+    /// The threads of Gerrit on a change, with the replies written here.
+    /// `None` when REST gives nothing: then no thread can be answered.
+    pub async fn gerrit_threads_of(&self, key: &str) -> Option<Vec<crate::model::GerritThread>> {
+        let change = self.gerrit_change(key).await?;
+        let found = self.gerrit_threads(&change).await?;
+        let posted = gerrit::posted::of_rest(&self.git, &change, &found).await;
+        let ours: Vec<Comment> = self
+            .store
+            .load(key, "")
+            .map(|file| file.comments)
+            .unwrap_or_default();
+
+        let mut out: Vec<crate::model::GerritThread> = Vec::new();
+        for item in posted {
+            let wire = item.wire;
+            if let Some(thread) = out.iter_mut().find(|t| t.id == wire.thread) {
+                thread.comments.push(wire);
+                continue;
+            }
+            out.push(crate::model::GerritThread {
+                id: wire.thread.clone(),
+                patch_set: wire.patch_set,
+                file: wire.file.clone(),
+                line: wire.line,
+                unresolved: false,
+                done: false,
+                comments: vec![wire],
+                replies: Vec::new(),
+            });
+        }
+        for thread in &mut out {
+            // In the order of the dates, which `parse` already gave.
+            thread.unresolved = thread
+                .comments
+                .last()
+                .is_some_and(|c| c.unresolved == Some(true));
+            thread.replies = ours
+                .iter()
+                .filter(|c| comments::gerrit_parent(c) == Some(thread.id.as_str()))
+                .cloned()
+                .collect();
+            thread
+                .replies
+                .sort_by(|a, b| a.created_at.cmp(&b.created_at));
+            thread.done = thread
+                .replies
+                .iter()
+                .any(|c| c.gerrit.as_ref().is_some_and(|g| g.resolve));
+        }
+        Some(out)
+    }
+
+    /// The newest comment of a thread of Gerrit, which a reply answers so
+    /// that Gerrit shows it last. The first one when REST gives nothing.
+    async fn newest_of_thread(&self, change: &gerrit::Change, thread: &str) -> String {
+        let Some(found) = self.gerrit_threads(change).await else {
+            return thread.to_owned();
+        };
+        let roots = threads::roots(&found);
+        found
+            .iter()
+            .filter(|c| roots.get(&c.id).map(String::as_str) == Some(thread))
+            .max_by(|a, b| a.updated.cmp(&b.updated))
+            .map_or_else(|| thread.to_owned(), |c| c.id.clone())
     }
 
     /// The changes of the series that hold a remark staged for Gerrit.
@@ -1750,6 +1835,14 @@ impl Session {
             }
         };
         let base = self.base_of(&rev, &Against::Parent).await?;
+        let gerrit_thread = match new
+            .parent
+            .as_deref()
+            .and_then(|p| p.strip_prefix(comments::GERRIT_PARENT))
+        {
+            Some(id) => Some(self.gerrit_thread(key, id).await?),
+            None => None,
+        };
 
         Target {
             store: &self.store,
@@ -1765,9 +1858,38 @@ impl Session {
                 Some(_) => self.gerrit_patch_set(key, &rev).await,
                 None => None,
             },
+            gerrit_thread,
         }
         .add(new)
         .await
+    }
+
+    /// The thread of Gerrit that holds the comment `id`, with its place.
+    pub async fn gerrit_thread(&self, key: &str, id: &str) -> Result<comments::GerritThread> {
+        let change = self
+            .gerrit_change(key)
+            .await
+            .context("Gerrit does not know this change")?;
+        let found = self.gerrit_threads(&change).await.context(
+            "Gerrit gave no thread: its REST API does not answer",
+        )?;
+        let roots = threads::roots(&found);
+        let root = roots
+            .get(id)
+            .and_then(|root| found.iter().find(|c| &c.id == root))
+            .with_context(|| format!("no thread {id} on Gerrit for this change"))?;
+
+        let placed = gerrit::posted::of_rest(&self.git, &change, std::slice::from_ref(root))
+            .await
+            .pop()
+            .with_context(|| format!("patch set {} is not on Gerrit", root.patch_set))?;
+        Ok(comments::GerritThread {
+            id: root.id.clone(),
+            patch_set: root.patch_set,
+            commit: placed.placeable.commit,
+            scope: placed.placeable.scope,
+            anchor: placed.placeable.anchor,
+        })
     }
 
     /// Mark a change read, or unread.
