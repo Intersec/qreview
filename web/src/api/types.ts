@@ -391,8 +391,9 @@ export interface Placed {
 }
 
 /**
- * A remark already posted on Gerrit. Read only: qreview never writes to the
- * server, so it has no edit and no delete.
+ * A remark already posted on Gerrit. It is edited in Gerrit, never here.
+ * Over ssh, the id is made from the place, and the thread, the reply link
+ * and the state are missing.
  */
 export interface PostedComment {
   id: string;
@@ -401,6 +402,11 @@ export interface PostedComment {
   body: string;
   file: string;
   line: number | null;
+  /// The id of the remark that opens the thread: its own id when it opens it.
+  thread: string;
+  inReplyTo: string | null;
+  unresolved: boolean | null;
+  updated: string | null;
 }
 
 /** What Gerrit already holds, placed in the patch set being read. */

@@ -11,6 +11,7 @@ use crate::comments::{self, EditComment, NewComment, Target};
 use crate::commitmsg;
 use crate::diff;
 use crate::gerrit::rest::{self, Rest};
+use crate::gerrit::threads::{self, RestComment};
 use crate::gerrit::{self, Coordinates};
 use crate::git::blame as git_blame;
 use crate::git::commit;
@@ -76,6 +77,10 @@ pub struct Session {
     /// The REST API of Gerrit, and what it allows. Resolved on first use,
     /// and again after a refresh, which runs `gerrit.auth.command` again.
     rest: tokio::sync::Mutex<Option<RestState>>,
+    /// The remarks of each change over REST, by the number of the change,
+    /// or `None` when REST gave nothing. Asked once per change until a
+    /// refresh.
+    gerrit_threads: tokio::sync::Mutex<std::collections::HashMap<u64, Option<Vec<RestComment>>>>,
 }
 
 /// What the REST API of Gerrit allows this run. See section 6.6 of the
@@ -249,6 +254,7 @@ impl Session {
             gerrit_pages: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             lists: Arc::new(diff::FileLists::default()),
             rest: tokio::sync::Mutex::new(None),
+            gerrit_threads: tokio::sync::Mutex::new(std::collections::HashMap::new()),
         };
         session.make_keys_unique();
         session.link_versions().await;
@@ -382,6 +388,7 @@ impl Session {
         self.gerrit_answers.lock().await.clear();
         self.gerrit_pages.lock().await.clear();
         *self.rest.lock().await = None;
+        self.gerrit_threads.lock().await.clear();
 
         for count in std::mem::take(&mut self.extends) {
             // The boundary can be gone, and then there is nothing to walk.
@@ -549,7 +556,10 @@ impl Session {
             return Vec::new();
         };
 
-        gerrit::posted::of_change(&self.git, &change).await
+        match self.gerrit_threads(&change).await {
+            Some(found) => gerrit::posted::of_rest(&self.git, &change, &found).await,
+            None => gerrit::posted::of_change(&self.git, &change).await,
+        }
     }
 
     /// True when the revision is the work that is not committed.
@@ -1385,12 +1395,53 @@ impl Session {
         }
     }
 
-    /// Gerrit refused the authorization. Nothing more is sent this run.
-    async fn rest_refused(&self, error: &anyhow::Error) {
+    /// Gerrit refused the authorization, or did not answer. Nothing more is
+    /// asked this run, until a refresh.
+    async fn rest_failed(&self, error: &rest::Failed) {
+        let (status, error) = match error {
+            rest::Failed::Refused(error) => (RestStatus::Refused, error),
+            rest::Failed::Unreachable(error) => (RestStatus::Unreachable, error),
+            rest::Failed::Answer(_) => return,
+        };
         if let Some(state) = self.rest.lock().await.as_mut() {
-            state.status = RestStatus::Refused;
+            // An anonymous reader that the server turns away holds no
+            // authorization to refuse: the drafts still wait for a command.
+            if status == RestStatus::Refused && state.status == RestStatus::Anonymous {
+                return;
+            }
+            state.status = status;
             state.reason = Some(format!("{error:#}"));
         }
+    }
+
+    /// The remarks of a change over REST, with their ids and their state.
+    /// `None` when REST gives nothing: the ssh answer then stands in.
+    pub async fn gerrit_threads(&self, change: &gerrit::Change) -> Option<Vec<RestComment>> {
+        if let Some(known) = self.gerrit_threads.lock().await.get(&change.number) {
+            return known.clone();
+        }
+        let state = self.gerrit_rest().await;
+        let client = match (state.client, state.status) {
+            (Some(client), RestStatus::Ok | RestStatus::Anonymous) => client,
+            _ => return None,
+        };
+        let route = format!(
+            "changes/{}~{}/comments",
+            rest::encode(&change.project),
+            change.number
+        );
+        let found = match client.call("GET", &route, None).await {
+            Ok(answer) => Some(threads::parse(&answer)),
+            Err(error) => {
+                self.rest_failed(&error).await;
+                None
+            }
+        };
+        self.gerrit_threads
+            .lock()
+            .await
+            .insert(change.number, found.clone());
+        found
     }
 
     /// Send the staged remarks of a change to Gerrit, each as a draft. See
@@ -1455,9 +1506,9 @@ impl Session {
                     sent.push((comment.id.clone(), answer["id"].as_str().map(str::to_owned)));
                     out.sent.push(comment.id.clone());
                 }
-                Err(rest::Failed::Refused(error)) => {
-                    self.rest_refused(&error).await;
-                    let error = format!("{error:#}");
+                Err(failed @ (rest::Failed::Refused(_) | rest::Failed::Unreachable(_))) => {
+                    self.rest_failed(&failed).await;
+                    let error = failed.to_string();
                     out.failed.push(fail(error.clone()));
                     refused = Some(error);
                 }

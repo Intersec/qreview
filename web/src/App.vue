@@ -43,7 +43,6 @@ const {
   release,
   version,
   build,
-  posted,
   readingOlder,
   currentSha,
   onMerge,
@@ -217,6 +216,7 @@ function undoClean() {
 
 provide(THREADS, {
   repliesOf: review.repliesOf,
+  postedRepliesOf: review.postedRepliesOf,
   reply: review.reply,
   ask: review.askAgent,
   setDone: review.setDone,
@@ -816,7 +816,7 @@ onBeforeUnmount(() => {
             :current-sha="currentSha"
             :sets="patchSets"
             :placement="review.placement"
-            :posted="posted.comments"
+            :posted="review.postedRoots"
             :posted-placement="review.postedPlacement"
             :posted-stranded="postedStranded"
             :read-only="readingOlder"

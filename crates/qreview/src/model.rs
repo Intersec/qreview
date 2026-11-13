@@ -254,7 +254,7 @@ pub struct WordSpan {
 
 /// A remark already posted on Gerrit.
 ///
-/// Read only, always: qreview never writes to the server. The ssh answer
+/// The id is the id of Gerrit when REST gives the remark. The ssh answer
 /// carries no id, so this one is made from the patch set and the place, and
 /// it is stable as long as the server answers the same thing.
 #[derive(Clone, Debug, Serialize)]
@@ -268,6 +268,14 @@ pub struct PostedComment {
     pub file: String,
     /// Absent on a remark about the whole file.
     pub line: Option<usize>,
+    /// The id of the remark that opens its thread. Its own id when it opens
+    /// one, and always over ssh, which gives no reply link.
+    pub thread: String,
+    pub in_reply_to: Option<String>,
+    /// Absent over ssh, which gives no state.
+    pub unresolved: Option<bool>,
+    /// When it was written, as Gerrit says it. Absent over ssh.
+    pub updated: Option<String>,
 }
 
 /// Who wrote the lines of the file on the left of a diff.

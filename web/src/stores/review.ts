@@ -511,9 +511,20 @@ export const useReview = defineStore('review', () => {
     return posted.value.placed.find((p) => p.id === id);
   }
 
+  /// The remarks of Gerrit that open a thread. A reply stands in the card
+  /// of its thread, not on a line of its own.
+  const postedRoots = computed(() => posted.value.comments.filter((c) => c.thread === c.id));
+
+  /// The replies of a thread of Gerrit, oldest first.
+  function postedRepliesOf(thread: string): PostedComment[] {
+    return posted.value.comments
+      .filter((c) => c.thread === thread && c.id !== thread)
+      .sort((a, b) => (a.updated ?? '').localeCompare(b.updated ?? ''));
+  }
+
   /// The remarks Gerrit holds whose line this version no longer has.
   function postedStranded(): PostedComment[] {
-    return posted.value.comments.filter((c) => postedPlacement(c.id)?.lost);
+    return postedRoots.value.filter((c) => postedPlacement(c.id)?.lost);
   }
 
   /// The comments whose line this version does not have any more. They are
@@ -1100,6 +1111,8 @@ export const useReview = defineStore('review', () => {
     reading,
     posted,
     postedPlacement,
+    postedRoots,
+    postedRepliesOf,
     postedStranded,
     addComment,
     editComment,
