@@ -1548,6 +1548,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `POST /api/changes/:key/comments` | Create a remark, or a reply when the body names a `parent`. `"author": "agent"` writes as the agent, and a reply may carry `"done": true` or `"blocked": true`. `"ask": true` asks the agent about the thread once it is saved. `"gerrit": { "resolve": false }` stages it for Gerrit. A `parent` of `gerrit:<id>` replies to a thread of Gerrit. See sections 5.8 and 6.8 |
 | `POST /api/changes/:key/comments/:id/ask` | Ask the agent to answer the thread of a comment. See section 5.5 |
 | `PATCH /api/changes/:key/comments/:id` | Change the body, or check or clear `done` on a thread. `"gerrit": { "resolve": … }` stages the remark, and `"gerrit": null` takes it back. A sent remark refuses both |
+| `GET /api/gerrit/threads` | The threads of Gerrit on each change of the series that REST answers for: `[{ key, threads: [{ id, patchSet, file, line, unresolved, done, comments, replies }] }]`. `comments` are those of Gerrit, `replies` those written here, and `done` says that one of them resolves the thread. See section 6.8 |
 | `POST /api/changes/:key/gerrit/send` | Send the staged remarks of the change as drafts. Body: `{ "ids": [id] }`, every staged remark when it is absent. Answers `{ "sent": [id], "failed": [{ "id", "error" }] }`. Refused on the Unix socket. See sections 5.8 and 6.7 |
 | `POST /api/series/gerrit/send` | The same for every change of the series |
 | `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |

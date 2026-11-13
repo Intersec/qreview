@@ -6,56 +6,17 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { openChange, openFile } from './act.ts';
+import { GERRIT_THREADS } from './fixture.ts';
 import { start, type Running } from './server.ts';
 
 let server: Running;
 
-const comments = {
-  'src/net.blk': [
-    {
-      id: 'ask1',
-      patch_set: 2,
-      line: 3,
-      author: { name: 'Jane Reviewer' },
-      message: 'Where does this loop stop?',
-      unresolved: true,
-      updated: '2026-11-01 10:00:00.000000000',
-    },
-    {
-      id: 'ask2',
-      in_reply_to: 'ask1',
-      patch_set: 2,
-      line: 3,
-      author: { name: 'Test Author' },
-      message: 'At the first error.',
-      unresolved: true,
-      updated: '2026-11-01 11:00:00.000000000',
-    },
-    {
-      id: 'ok1',
-      patch_set: 2,
-      line: 1,
-      author: { name: 'Jane Reviewer' },
-      message: 'Rename this function.',
-      unresolved: false,
-      updated: '2026-11-01 09:00:00.000000000',
-    },
-    {
-      id: 'old1',
-      patch_set: 2,
-      side: 'PARENT',
-      line: 3,
-      author: { name: 'Jane Reviewer' },
-      message: 'This return was the only exit.',
-      unresolved: true,
-      updated: '2026-11-01 09:30:00.000000000',
-    },
-  ],
-};
-
 test.beforeAll(async () => {
   server = await start({ gerrit: true });
-  writeFileSync(join(server.fixture.bin!, 'comments.json'), `)]}'\n${JSON.stringify(comments)}\n`);
+  writeFileSync(
+    join(server.fixture.bin!, 'comments.json'),
+    `)]}'\n${JSON.stringify(GERRIT_THREADS)}\n`,
+  );
 });
 test.afterAll(() => server?.stop());
 

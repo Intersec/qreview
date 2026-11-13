@@ -108,6 +108,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true));
             <li v-if="series" class="fix-change">{{ group.subject }}</li>
             <li v-for="remark in group.remarks" :key="remark.comment.id">
               <code>{{ place(remark.comment) }}</code>
+              <span v-if="remark.comment.parent" class="send-set">reply</span>
               <span class="send-set">patch set {{ remark.comment.gerrit?.patchSet }}</span>
               {{ firstLine(remark.comment) }}
               <p v-if="failed.has(remark.comment.id)" class="send-failed" role="alert">

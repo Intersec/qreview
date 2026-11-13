@@ -205,6 +205,14 @@ pub async fn reply(
     done: bool,
     blocked: bool,
 ) -> Result<Value> {
+    if let Some(id) = id.strip_prefix(GERRIT) {
+        if done {
+            bail!(
+                "a thread of Gerrit is done when a reply resolves it there. Run `qreview stage gerrit:{id} --resolve --body Done`"
+            );
+        }
+        return on_gerrit(client, id, body, None, blocked).await;
+    }
     let key = key_of(client, id).await?;
     let mut new = json!({
         "scope": "change",
@@ -228,10 +236,8 @@ pub async fn reply(
 /// qreview. The new remark is what the author of the change reads. See
 /// section 5.8 of the design.
 pub async fn stage(client: &Client, id: &str, body: &str, resolve: bool) -> Result<Value> {
-    if id.starts_with("gerrit:") {
-        bail!(
-            "{id}: this release reads no thread of Gerrit. Stage a remark on a thread of qreview"
-        );
+    if let Some(id) = id.strip_prefix(GERRIT) {
+        return on_gerrit(client, id, body, Some(resolve), false).await;
     }
     if resolve {
         bail!("--resolve answers a thread of Gerrit, and {id} is a thread of qreview");
@@ -284,6 +290,56 @@ pub async fn stage(client: &Client, id: &str, body: &str, resolve: bool) -> Resu
     client
         .post(&format!("/api/changes/{}/comments", segment(&key)), &new)
         .await
+}
+
+/// How a thread of Gerrit is named on the command line.
+const GERRIT: &str = "gerrit:";
+
+/// Reply to the thread of Gerrit that holds the comment `id`. With a
+/// stage, the reply goes out in the thread at the next Send of the user.
+async fn on_gerrit(
+    client: &Client,
+    id: &str,
+    body: &str,
+    stage: Option<bool>,
+    blocked: bool,
+) -> Result<Value> {
+    let (key, thread) = gerrit_thread_of(client, id).await?;
+    let mut new = json!({
+        "scope": "line",
+        "parent": format!("{GERRIT}{thread}"),
+        "author": "agent",
+        "body": body,
+        "blocked": blocked,
+    });
+    if let Some(resolve) = stage {
+        new["gerrit"] = json!({ "resolve": resolve });
+    }
+
+    client
+        .post(&format!("/api/changes/{}/comments", segment(&key)), &new)
+        .await
+}
+
+/// The change, and the thread, that hold a comment of Gerrit.
+async fn gerrit_thread_of(client: &Client, id: &str) -> Result<(String, String)> {
+    let all = client.get("/api/gerrit/threads").await?;
+
+    for change in all.as_array().into_iter().flatten() {
+        for thread in change["threads"].as_array().into_iter().flatten() {
+            let holds = thread["comments"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|c| c["id"].as_str() == Some(id));
+            if let (true, Some(key), Some(root)) =
+                (holds, change["key"].as_str(), thread["id"].as_str())
+            {
+                return Ok((key.to_owned(), root.to_owned()));
+            }
+        }
+    }
+    bail!("no thread of Gerrit holds {id}. If Gerrit answers, run `qreview refresh` and try again")
 }
 
 /// The change that holds a comment, and every comment of that change.
