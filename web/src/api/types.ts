@@ -430,8 +430,17 @@ export interface GerritThread {
 /** The threads of Gerrit of one change. */
 export interface ChangeThreads {
   key: string;
+  /// The page of the change on Gerrit.
+  url: string;
+  /// Gerrit holds the version that the change carries now.
+  pushed: boolean;
+  /// The ids of the drafts of the reader. Null without an authorization.
+  drafts: string[] | null;
   threads: GerritThread[];
 }
+
+/// Where a remark sent to Gerrit is now. See section 5.8 of the design.
+export type SentState = 'draft' | 'published' | 'deleted';
 
 /** What Gerrit already holds, placed in the patch set being read. */
 export interface Posted {

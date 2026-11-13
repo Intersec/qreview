@@ -221,6 +221,8 @@ provide(THREADS, {
   askGerrit: review.askGerrit,
   setGerritDone: review.setGerritDone,
   remove: review.deleteComment,
+  sentState: (comment: Comment) => review.sentState(changeKey.value ?? '', comment),
+  gerritUrl: computed(() => review.gerritUrl),
   reply: review.reply,
   ask: review.askAgent,
   setDone: review.setDone,
@@ -885,6 +887,11 @@ onBeforeUnmount(() => {
       :failed="sendFailed"
       :sending="sendBusy"
       :subject-of="subjectOf"
+      :unpushed="
+        review.unpushed([
+          ...new Set((sending === 'series' ? stagedSeries : stagedHere).map((t) => t.key)),
+        ])
+      "
       @send="sendToGerrit"
       @close="sending = null"
     />

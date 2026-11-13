@@ -92,7 +92,7 @@ test('the agent answers a thread of Gerrit, and only the user sends', async ({ p
   expect(staged.gerrit).toMatchObject({ state: 'staged', resolve: true });
   await expect(thread(page)).toHaveClass(/talk-folded/);
   await expect(page.getByRole('button', { name: 'Send to Gerrit · 1' })).toBeVisible();
-  expect(sent()).not.toContain('/drafts');
+  expect(sent()).not.toContain('request = "PUT"');
 });
 
 test('Ask agent hands the thread of Gerrit to the agent, reviewers named', async ({ page }) => {

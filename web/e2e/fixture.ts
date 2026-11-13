@@ -190,6 +190,7 @@ function fakeGerrit(base: string, repo: string): { bin: string; served: string }
   // holds the password, in another.
   const curl = join(bin, 'curl');
   const log = JSON.stringify(join(bin, 'curl.log'));
+  const ids = JSON.stringify(join(bin, 'drafts.ids'));
   writeFileSync(join(bin, 'self.json'), `)]}'\n{"name":"Test Reviewer"}\n`);
   writeFileSync(
     curl,
@@ -204,7 +205,10 @@ function fakeGerrit(base: string, repo: string): { bin: string; served: string }
       `  *accounts/self*) cat ${JSON.stringify(join(bin, 'self.json'))}; printf 200 ;;`,
       // The threads of the change, when a test wrote them.
       `  */comments\\"*) if [ -f ${JSON.stringify(join(bin, 'comments.json'))} ]; then cat ${JSON.stringify(join(bin, 'comments.json'))}; printf 200; else echo "Not found"; printf 404; fi ;;`,
-      `  */drafts*) echo ")]}'"; echo "{\\"id\\":\\"draft-$(grep -c '^--$' ${log})\\"}"; printf 201 ;;`,
+      // The drafts of the reader: each one written is kept until a test
+      // deletes it from drafts.ids, as a reader would on Gerrit.
+      `  */drafts\\"*GET*) echo ")]}'"; printf '{"a":['; sed 's/.*/{"id":"&"}/' ${ids} 2>/dev/null | paste -sd, -; printf ']}\\n'; printf 200 ;;`,
+      `  */drafts*) id="draft-$(grep -c '^--$' ${log})"; echo "$id" >> ${ids}; echo ")]}'"; echo "{\\"id\\":\\"$id\\"}"; printf 201 ;;`,
       '  *) echo "Not found"; printf 404 ;;',
       'esac',
       '',
