@@ -1061,21 +1061,33 @@ struct ExportQuery {
     scope: Option<String>,
     #[serde(default)]
     key: Option<String>,
+    /// The JSON of `qreview export --json`, for the commands of the agent
+    /// on the server of a change of Gerrit.
+    #[serde(default)]
+    json: bool,
 }
 
 async fn export(
     State(state): State<AppState>,
     Query(query): Query<ExportQuery>,
-) -> Result<String, ApiError> {
-    let session = state.session.read().await;
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
 
-    match (query.scope.as_deref(), query.key) {
-        (Some("change"), Some(key)) => Ok(crate::export::change(&session, &key).await?),
-        (Some("change"), None) => Err(ApiError::bad_request(
-            "a change export needs the key of the change".to_owned(),
-        )),
-        _ => Ok(crate::export::series(&session).await?),
+    let session = state.session.read().await;
+    if query.json {
+        let value = crate::export::json(&session, query.key.as_deref()).await?;
+        return Ok(Json(value).into_response());
     }
+    let text = match (query.scope.as_deref(), query.key) {
+        (Some("change"), Some(key)) => crate::export::change(&session, &key).await?,
+        (Some("change"), None) => {
+            return Err(ApiError::bad_request(
+                "a change export needs the key of the change".to_owned(),
+            ));
+        }
+        _ => crate::export::series(&session).await?,
+    };
+    Ok(text.into_response())
 }
 
 async fn config(State(state): State<AppState>) -> Json<crate::config::Config> {

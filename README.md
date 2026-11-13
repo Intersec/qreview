@@ -41,6 +41,7 @@ qreview                                          # the current series
 qreview af448g1                                  # one commit
 qreview af448g1..HEAD                            # a range
 qreview af448g1 --prev 4888eaa8 --prev 774faaa9  # with older patch sets
+qreview https://review.example.com/c/myproject/+/12321  # a change of Gerrit
 qreview export                                   # the comments, as Markdown
 qreview list                                     # what this repository holds
 ```
@@ -244,6 +245,23 @@ port, and the project from the remote URL, and the target branch from
 
 A line of the blame opens the change of its commit on Gerrit, when the server
 holds that commit.
+
+### Review a change from its address
+
+```sh
+qreview https://review.example.com/c/myproject/+/12321     # the newest patch set
+qreview https://review.example.com/c/myproject/+/12321/3   # patch set 3
+```
+
+qreview asks Gerrit about the change, fetches the patch set with
+`git fetch origin <ref>`, and reviews it with no checkout and no branch.
+The base is the merge base with the branch of the change. The change must
+belong to the project of `origin`.
+
+Run it in the worktree of the project: the review runs on the server of
+that worktree, and the commands of an agent reach it as usual. If a
+server already runs there, qreview prints its URL: stop it first to open
+the change.
 
 ### Send remarks to Gerrit
 

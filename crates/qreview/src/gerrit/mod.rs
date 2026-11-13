@@ -8,6 +8,7 @@
 pub mod answer;
 pub mod coords;
 pub mod draft;
+pub mod open;
 pub mod posted;
 pub mod rest;
 pub mod threads;

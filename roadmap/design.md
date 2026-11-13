@@ -717,7 +717,6 @@ $XDG_STATE_HOME/qreview/           (default ~/.local/state/qreview)
     <repo-id>/
       repo.json                    remote URL, last known path, tool version
       server-<worktree-id>.json    where the server of a worktree listens (section 11)
-      server-<worktree-id>-c<n>.json  where the server of change <n> of Gerrit listens (section 11)
       lock                         held for each read and write of a change file
       changes/
         I8f3a...c21.json           one file per change
@@ -1456,7 +1455,7 @@ The command reviews a change of Gerrit, with no checkout and no branch:
 
 Gerrit is optional everywhere else, but not here: without an answer there is nothing to review. A query that fails, or finds no such change, stops the command with the error.
 
-The review runs a server of its own, beside the server of the worktree (section 11).
+The review runs on the server of the worktree, as any other range does (section 11). The reader runs it in the worktree of the project of the change, since the fetch goes there.
 
 ## 7. Languages and colors
 
@@ -1562,7 +1561,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `POST /api/changes/:key/fix` | Ask the agent to fix the change. See section 5.7 |
 | `POST /api/changes/:key/clean` | Delete the done threads of the change |
 | `POST /api/changes/:key/patchsets/fetch` | Fetch one Gerrit patch set |
-| `GET /api/export?scope=change&key=...` | The export text |
+| `GET /api/export?scope=change&key=...` | The export text. `json=true` gives the JSON of section 9 instead |
 | `GET /api/config` | The three layers, folded |
 | `PUT /api/config` | Write what the panel changed, and read them back |
 
@@ -2097,9 +2096,7 @@ worktree, it prints that URL and stops, and opens no second tab: an agent
 that starts qreview twice gets the review that is open. Reviewing another
 range in the same worktree means stopping that server first.
 
-**The server of a change of Gerrit.** `qreview <gerrit-url>` (section 6.9) runs beside the server of the worktree, because the reader reviews a colleague while the review of their own series stays open. It writes `server-<worktree-id>-c<number>.json`, and listens on `<repo-id>-<worktree-id>-c<number>.sock`, with the number of the change. The rules above hold for each file alone: a second `qreview` on the same address prints the URL of the first one.
-
-The commands of the agent take `--change <number>` to reach that server. Without it, they reach the server of the worktree. The procedure of the agent (`qreview skill`) says so.
+**The review of a change of Gerrit** (section 6.9) runs on the server of the worktree, like any range. A second `qreview <gerrit-url>` in that worktree prints the URL of the server that runs, and says to stop it first. `qreview export` asks the server that runs for the export, with `GET /api/export`, since only that server knows a series that it fetched: `json=true` gives the JSON of `export --json`. Without a server, the export reads the store.
 
 Two servers can then write one store. Each read of a change file and the
 write that follows it hold a lock on the file `lock` in the directory of
