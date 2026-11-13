@@ -127,11 +127,21 @@ async fn agent_command(cli: &cli::Cli, cwd: &std::path::Path) -> Result<Option<i
     };
 
     match &cli.command {
-        Some(cli::Command::Comment { place, body, key }) => {
+        Some(cli::Command::Comment {
+            place,
+            body,
+            key,
+            gerrit,
+        }) => {
             let client = agent::connect(cwd).await?;
             let place = agent::parse_place(place)?;
             let body = agent::body_of(body)?;
-            print(&agent::comment(&client, &place, &body, key.as_deref()).await?);
+            print(&agent::comment(&client, &place, &body, key.as_deref(), *gerrit).await?);
+        }
+        Some(cli::Command::Stage { id, body, resolve }) => {
+            let client = agent::connect(cwd).await?;
+            let body = agent::body_of(body)?;
+            print(&agent::stage(&client, id, &body, *resolve).await?);
         }
         Some(cli::Command::Reply {
             id,
