@@ -32,10 +32,7 @@ pub async fn change(session: &Session, key: &str) -> Result<String> {
 
     let _ = writeln!(out, "## Review: {}, {}", place(session).await, head.what());
     let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "I reviewed this commit and left the comments below. Please address them."
-    );
+    let _ = writeln!(out, "{}", head.ask());
     if !head.comments.is_empty() {
         let _ = writeln!(out, "{RULE}");
     }
@@ -86,21 +83,31 @@ pub async fn series(session: &Session) -> Result<String> {
         return change(session, &key).await;
     }
 
+    let heads = reviewed;
     let mut out = String::new();
     let _ = writeln!(
         out,
         "## Review: {}, {} commits",
         place(session).await,
-        reviewed.len()
+        heads.len()
     );
     let _ = writeln!(out);
+    // A series of one kind asks once. A mixed one asks under each heading.
+    let mixed = heads.iter().any(|h| h.own) && heads.iter().any(|h| !h.own);
     let _ = writeln!(
         out,
-        "I reviewed this series and left the comments below. Please address them."
+        "{}",
+        match (mixed, heads[0].own) {
+            (true, _) => "I left the comments below on this series.",
+            (false, true) =>
+                "I reviewed this series and left the comments below. Please address them.",
+            (false, false) =>
+                "I am reviewing this series and left the comments below. Help me review it:\n\
+                 answer each comment, and do not change the code.",
+        }
     );
     let _ = writeln!(out, "{RULE}");
 
-    let heads = reviewed;
     if heads.iter().any(Head::talks) {
         let _ = writeln!(out, "{THREADS}");
     }
@@ -110,6 +117,10 @@ pub async fn series(session: &Session) -> Result<String> {
     for head in &heads {
         let _ = writeln!(out);
         let _ = writeln!(out, "### {} — {}", head.name(), head.subject);
+        if mixed {
+            let _ = writeln!(out);
+            let _ = writeln!(out, "{}", head.ask_in_series());
+        }
         out.push_str(&body(session, head).await);
     }
     Ok(out)
@@ -136,6 +147,10 @@ struct Head {
     /// What Gerrit says of each thread of Gerrit among the comments, by the
     /// id the export gives it, `gerrit:<id>`.
     gerrit: std::collections::HashMap<String, FromGerrit>,
+    /// False on the change of a colleague, which the reader does not amend.
+    /// See section 5.9 of the design.
+    own: bool,
+    author: String,
 }
 
 /// A thread of Gerrit in the export: who opened it, on which patch set,
@@ -151,6 +166,31 @@ struct FromGerrit {
 const REVIEWERS: &str = "Some comments come from reviewers on Gerrit, and name them.";
 
 impl Head {
+    /// What the opening of the export of one change asks.
+    fn ask(&self) -> String {
+        match self.own {
+            true => "I reviewed this commit and left the comments below. Please address them."
+                .to_owned(),
+            false => format!(
+                "I am reviewing this change by {} and left the comments below. Help me\n\
+                 review it: answer each comment, and do not change the code.",
+                self.author
+            ),
+        }
+    }
+
+    /// What a change asks under its heading, in a series of both kinds.
+    fn ask_in_series(&self) -> String {
+        match self.own {
+            true => "This change is mine. Please address these comments.".to_owned(),
+            false => format!(
+                "This change is by {}. Help me review it: answer each comment, and do\n\
+                 not change the code.",
+                self.author
+            ),
+        }
+    }
+
     /// What the opening line calls the thing being reviewed.
     fn what(&self) -> String {
         match self.worktree {
@@ -192,13 +232,10 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
     let Some(commit) = session.commit_of(key) else {
         anyhow::bail!("no change {key} in the series");
     };
-    let subject = session
-        .series
-        .changes
-        .iter()
-        .find(|c| c.key == key)
-        .map(|c| c.subject.clone())
-        .unwrap_or_default();
+    let summary = session.series.changes.iter().find(|c| c.key == key);
+    let subject = summary.map(|c| c.subject.clone()).unwrap_or_default();
+    let own = summary.is_none_or(|c| c.own);
+    let author = summary.map(|c| c.author.clone()).unwrap_or_default();
 
     let file = session.comments(key, &subject)?;
     let sets = session.patch_sets(key).await.unwrap_or_default();
@@ -217,8 +254,13 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
     let done = remarks()
         .filter(|c| c.done && comments::of_version(c, &commit))
         .count();
+    // On the change of a colleague, a remark starts staged for Gerrit, and
+    // the agent helps word it: it is still part of the review.
     let mut comments: Vec<Comment> = remarks()
-        .filter(|c| comments::is_open(c, &commit))
+        .filter(|c| {
+            comments::is_open(c, &commit)
+                || (!own && comments::is_staged(c) && !c.done && comments::of_version(c, &commit))
+        })
         .cloned()
         .collect();
     let mut replies: std::collections::HashMap<String, Vec<Comment>> =
@@ -322,6 +364,8 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
         patch_set,
         worktree,
         gerrit,
+        own,
+        author,
     })
 }
 
@@ -501,6 +545,7 @@ pub async fn json(session: &Session, key: Option<&str>) -> Result<serde_json::Va
             "subject": head.subject,
             "commit": head.commit,
             "patchSet": head.patch_set,
+            "own": head.own,
             "threads": threads,
         }));
     }
@@ -938,6 +983,110 @@ mod tests {
         let text = change(&session, "Iretry").await.unwrap();
 
         insta::assert_snapshot!(stable(&text));
+    }
+
+    /// Two changes: one of the reader, then one of a colleague on top.
+    async fn mixed() -> Repo {
+        build_repo(&[
+            commit("base").file("a.c", "int a;\n"),
+            commit("mine").change_id("Imine").file("a.c", "int b;\n"),
+            commit("theirs")
+                .change_id("Itheirs")
+                .file("a.c", "int c;\n")
+                .author("Other Person", "other@example.com"),
+        ])
+        .await
+    }
+
+    async fn mixed_session(repo: &Repo) -> Session {
+        let base = repo.git(&["rev-parse", "HEAD~2"]).await;
+        let opts = SeriesOptions {
+            gerrit: false,
+            base: Some(base.trim().to_owned()),
+            ..SeriesOptions::new()
+        };
+        Session::with(
+            repo.path(),
+            &opts,
+            Languages::new(),
+            std::sync::Arc::new(crate::highlight::Highlighter::new()),
+            Some(Store::at(repo.path().join(".qreview-test").as_path())),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_change_of_a_colleague_asks_for_help_and_no_fix() {
+        let repo = mixed().await;
+        let session = mixed_session(&repo).await;
+        session
+            .add_comment("Itheirs", line_comment("a.c", 1, "Why c?"))
+            .await
+            .unwrap();
+
+        let text = change(&session, "Itheirs").await.unwrap();
+        assert!(
+            text.contains(
+                "I am reviewing this change by Other Person and left the comments below. Help me\n\
+                 review it: answer each comment, and do not change the code."
+            ),
+            "{text}"
+        );
+        assert!(!text.contains("Please address"), "{text}");
+
+        let json = json(&session, None).await.unwrap();
+        assert_eq!(json["changes"][0]["own"], false, "{json}");
+    }
+
+    #[tokio::test]
+    async fn a_remark_staged_on_the_change_of_a_colleague_stays_in_the_export() {
+        let repo = mixed().await;
+        let session = mixed_session(&repo).await;
+        session
+            .add_comment("Itheirs", line_comment("a.c", 1, "Why c?"))
+            .await
+            .unwrap();
+        // The page stages a remark there by default.
+        let mut file = session.store.load("Itheirs", "").unwrap();
+        file.comments[0].gerrit = Some(crate::store::model::Gerrit {
+            state: crate::store::model::Outbox::Staged,
+            patch_set: 1,
+            resolve: false,
+            id: None,
+            sent_at: None,
+        });
+        session.store.save(&file).unwrap();
+
+        let text = change(&session, "Itheirs").await.unwrap();
+        assert!(text.contains("Why c?"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_series_of_both_kinds_asks_under_each_heading() {
+        let repo = mixed().await;
+        let session = mixed_session(&repo).await;
+        for key in ["Imine", "Itheirs"] {
+            session
+                .add_comment(key, line_comment("a.c", 1, "A remark."))
+                .await
+                .unwrap();
+        }
+
+        let text = series(&session).await.unwrap();
+        assert!(
+            text.contains("I left the comments below on this series."),
+            "{text}"
+        );
+        let mine = text.find("This change is mine. Please address these comments.");
+        let theirs = text.find("This change is by Other Person. Help me review it");
+        assert!(mine.is_some() && theirs.is_some(), "{text}");
+        // Oldest first: the change of the reader comes before the other.
+        assert!(mine < theirs, "{text}");
+
+        let json = json(&session, None).await.unwrap();
+        assert_eq!(json["changes"][0]["own"], true, "{json}");
+        assert_eq!(json["changes"][1]["own"], false, "{json}");
     }
 
     #[tokio::test]

@@ -84,6 +84,16 @@ pub struct Session {
     /// The ids of the drafts of the reader on each change, or `None` when
     /// REST gave nothing. Asked once per change, until a refresh or a send.
     gerrit_drafts: tokio::sync::Mutex<std::collections::HashMap<u64, Option<Vec<String>>>>,
+    /// `git config user.email`, read once. `None` makes every change the
+    /// reader's own.
+    user_email: Option<String>,
+}
+
+/// The address of the reader, or `None` when git has none.
+async fn user_email(git: &Git) -> Option<String> {
+    let email = git.text(&["config", "user.email"]).await.ok()?;
+    let email = email.trim();
+    (!email.is_empty()).then(|| email.to_owned())
 }
 
 /// What the REST API of Gerrit allows this run. See section 6.6 of the
@@ -259,8 +269,11 @@ impl Session {
             rest: tokio::sync::Mutex::new(None),
             gerrit_threads: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             gerrit_drafts: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            user_email: None,
         };
+        session.user_email = user_email(&session.git).await;
         session.make_keys_unique();
+        session.mark_own();
         session.link_versions().await;
         session.count_comments();
         session.count_patch_sets().await;
@@ -336,6 +349,7 @@ impl Session {
         self.plan = plan;
         self.extends.push(count);
         self.make_keys_unique();
+        self.mark_own();
         self.link_versions().await;
         self.count_comments();
         self.count_patch_sets().await;
@@ -405,6 +419,7 @@ impl Session {
         }
 
         self.make_keys_unique();
+        self.mark_own();
         self.link_versions().await;
         self.count_comments();
         self.count_patch_sets().await;
@@ -1194,6 +1209,17 @@ impl Session {
                 change.key = format!("sha-{}", change.commit);
                 seen.insert(change.key.clone());
             }
+        }
+    }
+
+    /// Tell the changes of a colleague from the reader's own, section 5.9 of
+    /// the design. The work that is not committed is always the reader's.
+    fn mark_own(&mut self) {
+        let Some(mine) = &self.user_email else {
+            return;
+        };
+        for change in &mut self.series.changes {
+            change.own = change.worktree || change.email.is_empty() || &change.email == mine;
         }
     }
 
@@ -2357,6 +2383,27 @@ mod tests {
             kept.iter().all(|entry| entry.language.is_empty()),
             "the kept list must carry nothing a reader added: {kept:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_change_written_by_somebody_else_is_not_the_readers_own() {
+        let repo = build_repo(&[
+            commit("mine").file("a.txt", "1\n"),
+            commit("theirs")
+                .file("a.txt", "2\n")
+                .author("Other Person", "other@example.com"),
+        ])
+        .await;
+
+        let session = Session::open(repo.path(), &Options::new(), Languages::new())
+            .await
+            .unwrap();
+
+        let head = &session.series.changes[0];
+        assert_eq!(head.subject, "theirs");
+        assert!(!head.own, "{head:?}");
+        let mine = session.series.changes.iter().find(|c| c.subject == "mine");
+        assert!(mine.is_none_or(|c| c.own), "{mine:?}");
     }
 
     #[tokio::test]

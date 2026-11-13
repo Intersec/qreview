@@ -209,6 +209,8 @@ The user asked for a fix of every change of the series: deal with every
 open thread of the series.
 
 1. `qreview export --json` lists the open threads of each change.
+   Skip a change with `"own": false`: it belongs to a colleague (see "A
+   change of a colleague").
 2. Sort them as in "Fix a change".
 3. For each commit that has a thread to fix, note its sha, make its fixes,
    and stage only those edits. Then run `git commit --fixup=<sha>`. The top
@@ -220,6 +222,17 @@ open thread of the series.
    one `qreview migrate` for each pair that changed, with the `--done` ids
    and the `--blocked` questions of that commit only.
 6. Wait again, **only once the whole fix is over**, as in "Fix a change".
+
+## A change of a colleague
+
+A change whose `own` is false in `qreview export --json` belongs to a
+colleague. The user reviews it, and never amends it:
+
+- Change no code and no commit for it, even in a fix.
+- Answer each thread with `qreview reply`: explain the code, or word the
+  remark for the colleague.
+- When the user asks you to put a remark on Gerrit, stage it as in "Put a
+  remark on Gerrit".
 
 ## Review on your own
 
