@@ -1179,7 +1179,7 @@ Settled while building Send, on 2026-11-13: Send shows only when a remark is sta
 
 Settled while reading the threads, on 2026-11-13: `GET /api/changes/:key/posted` gives the published remarks only, with no `draft: true`. A draft of the reader that qreview sent is already a remark of the store, and showing it twice would count it twice.
 
-`qreview <gerrit-url>` fetches a change and opens its review. The worktree then runs one server for each review, not one server in all. Sections 6.9 and 11 hold the rules.
+`qreview <gerrit-url>` fetches a change and opens its review, on the server of the worktree. Sections 6.9 and 11 hold the rules.
 
 **Why REST for the threads and the drafts.** The ssh query gives no comment id, no thread link and no resolved state. Without the id, a reply opens a new thread beside the thread of the reviewer and resolves nothing. `gerrit review --json` over ssh can post, but it publishes at once: it cannot write a draft.
 

@@ -25,8 +25,9 @@ Outside a fix: no edit, no `git commit`, no amend, no rebase, no
 
 If the `origin` remote of the repository is a Gerrit server, the user
 starts the server in their own terminal, not you: Gerrit may ask them to
-log in there. Ask them to run `qreview`. Go on when
-`qreview wait --timeout 1` exits with code 1 and JSON.
+log in there. Ask them to run `qreview`, or `qreview <gerrit-url>` for a
+change of Gerrit. Go on when `qreview wait --timeout 1` exits with code
+1 and JSON.
 
 If your commands run in a sandbox, the user starts the server, not you. A
 server started inside the sandbox cannot save comments, and the browser of
@@ -44,6 +45,8 @@ directory of the worktree from a devcontainer, with nothing to configure.
      answers.
    - `qreview <rev>` or `qreview <revA>..<revB>` reviews another range.
      To change the range, the user stops the old server first.
+   - `qreview <gerrit-url>` fetches a change of Gerrit and reviews it on
+     the server of the worktree. See "A change of a colleague".
 2. Read the open threads: `qreview export --json`.
 3. Start the loop below.
 
@@ -233,6 +236,9 @@ colleague. The user reviews it, and never amends it:
   remark for the colleague.
 - When the user asks you to put a remark on Gerrit, stage it as in "Put a
   remark on Gerrit".
+
+When the user opened the change with `qreview <gerrit-url>`, its review
+runs on the server of the worktree: the commands reach it as usual.
 
 ## Review on your own
 
