@@ -285,7 +285,10 @@ pub struct GerritThread {
     /// The id of the comment that opens it, which `gerrit:<id>` names.
     pub id: String,
     pub patch_set: usize,
+    /// The revision of that patch set.
+    pub commit: String,
     pub file: String,
+    pub side: crate::store::model::Side,
     pub line: Option<usize>,
     /// Its newest comment on Gerrit waits for an answer.
     pub unresolved: bool,

@@ -409,6 +409,30 @@ export interface PostedComment {
   updated: string | null;
 }
 
+/** A thread of Gerrit on a change, with the replies written here. */
+export interface GerritThread {
+  /// The id of the comment that opens it, which `gerrit:<id>` names.
+  id: string;
+  patchSet: number;
+  /// The revision of that patch set.
+  commit: string;
+  file: string;
+  side: Side;
+  line: number | null;
+  /// Its newest comment on Gerrit waits for an answer.
+  unresolved: boolean;
+  /// A reply written here resolves it, staged or sent.
+  done: boolean;
+  comments: PostedComment[];
+  replies: Comment[];
+}
+
+/** The threads of Gerrit of one change. */
+export interface ChangeThreads {
+  key: string;
+  threads: GerritThread[];
+}
+
 /** What Gerrit already holds, placed in the patch set being read. */
 export interface Posted {
   comments: PostedComment[];

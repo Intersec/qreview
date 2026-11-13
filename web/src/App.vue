@@ -218,6 +218,7 @@ provide(THREADS, {
   repliesOf: review.repliesOf,
   postedRepliesOf: review.postedRepliesOf,
   replyOnGerrit: review.replyOnGerrit,
+  askGerrit: review.askGerrit,
   setGerritDone: review.setGerritDone,
   remove: review.deleteComment,
   reply: review.reply,

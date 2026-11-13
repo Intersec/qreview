@@ -94,3 +94,19 @@ test('the agent answers a thread of Gerrit, and only the user sends', async ({ p
   await expect(page.getByRole('button', { name: 'Send to Gerrit · 1' })).toBeVisible();
   expect(sent()).not.toContain('/drafts');
 });
+
+test('Ask agent hands the thread of Gerrit to the agent, reviewers named', async ({ page }) => {
+  await thread(page).getByRole('button', { name: 'Ask agent' }).click();
+  await expect(thread(page).getByText('Asked')).toBeVisible();
+
+  const asked = JSON.parse(server.agent(['wait', '--after', '0', '--timeout', '5'])) as {
+    events: { kind: string; id: string; thread: { name?: string; body: string }[] }[];
+  };
+  const ask = asked.events.find((e) => e.kind === 'ask');
+  expect(ask?.id).toBe('gerrit:ask1');
+  expect(ask?.thread.map((c) => c.body)).toEqual([
+    'Where does this loop stop?',
+    'At the first error.',
+  ]);
+  expect(ask?.thread[0]?.name).toBe('Jane Reviewer');
+});

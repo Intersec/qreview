@@ -9,7 +9,7 @@ import { Catchup } from '@/diff/catchup';
 import { COMMIT_MSG } from '@/diff/paths';
 import { moveDrafts } from '@/diff/drafts';
 import { askLeave, tell } from '@/notify';
-import { GERRIT_PARENT, awaitsAgent, isBlocked, repliesBy } from '@/diff/threads';
+import { GERRIT_PARENT, awaitsAgent, isBlocked, repliesBy, resolvesHere } from '@/diff/threads';
 import { isCurrent, open, rounds } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
@@ -17,6 +17,8 @@ import type {
   Anchor,
   Blame,
   ChangeComments,
+  ChangeThreads,
+  GerritThread,
   Comment,
   Config,
   EditComment,
@@ -55,6 +57,37 @@ function touchesTheDiff(patch: object): boolean {
   const diff = (patch as { diff?: Record<string, unknown> }).diff;
 
   return diff !== undefined && SERVER_SIDE.some((name) => name in diff);
+}
+
+/// A thread of Gerrit as a remark, so that every count and the dialog of
+/// Fix read it as they read a remark of the reader. Its id is `gerrit:<id>`.
+function asRemark(thread: GerritThread): Comment {
+  const root = thread.comments.find((c) => c.id === thread.id) ?? thread.comments[0];
+  return {
+    id: `${GERRIT_PARENT}${thread.id}`,
+    patchSet: thread.patchSet,
+    commit: thread.commit,
+    createdAt: root?.updated ?? '',
+    updatedAt: root?.updated ?? '',
+    scope: thread.line === null ? 'file' : 'line',
+    body: root?.body ?? '',
+    anchor: {
+      file: thread.file,
+      side: thread.side,
+      startLine: thread.line,
+      endLine: thread.line,
+      startChar: null,
+      endChar: null,
+      blob: null,
+      lineHash: null,
+      context: [],
+    },
+    author: 'reader',
+    parent: null,
+    done: false,
+    blocked: false,
+    gerrit: null,
+  };
 }
 
 export const useReview = defineStore('review', () => {
@@ -134,14 +167,67 @@ export const useReview = defineStore('review', () => {
   /// Only the remarks of the version under review are counted, because only
   /// those are exported. A round before this one left remarks the reader has
   /// dealt with, and counting them says there is work where there is none.
-  const total = computed(() => written.value.reduce((sum, change) => sum + open(change).length, 0));
+  /// The threads of Gerrit of every change, when REST answers. Read after
+  /// the page, as the status of Gerrit is, and again after a refresh.
+  const gerritThreads = ref<ChangeThreads[]>([]);
+  async function readGerritThreads() {
+    try {
+      gerritThreads.value = await api.gerritThreads();
+    } catch {
+      gerritThreads.value = [];
+    }
+  }
+
+  /// The threads of Gerrit that wait for an answer, change by change, as
+  /// remarks: they are work, as a remark of the reader is. A reply written
+  /// here that resolves one makes it done. See section 6.8 of the design.
+  const openGerrit = computed(() => {
+    const out = new Map<string, Comment[]>();
+    for (const change of gerritThreads.value) {
+      const local = written.value.find((c) => c.key === change.key)?.comments ?? [];
+      const answers = repliesBy(local);
+      out.set(
+        change.key,
+        change.threads
+          .filter(
+            (t) => t.unresolved && !resolvesHere(answers.get(`${GERRIT_PARENT}${t.id}`) ?? []),
+          )
+          .map(asRemark),
+      );
+    }
+    return out;
+  });
+
+  /// The open threads of a change: the remarks here, and those of Gerrit.
+  function openOf(change: ChangeComments): Comment[] {
+    return [...open(change), ...(openGerrit.value.get(change.key) ?? [])];
+  }
+
+  /// Every change that holds a thread, here or on Gerrit. A change with
+  /// threads on Gerrit alone has no file in the store.
+  const withThreads = computed<ChangeComments[]>(() => [
+    ...written.value,
+    ...gerritThreads.value
+      .filter((change) => !written.value.some((c) => c.key === change.key))
+      .map((change) => ({
+        key: change.key,
+        subject: series.value?.changes.find((c) => c.key === change.key)?.subject ?? '',
+        commit: '',
+        comments: [],
+        versions: [],
+      })),
+  ]);
+
+  const total = computed(() =>
+    withThreads.value.reduce((sum, change) => sum + openOf(change).length, 0),
+  );
   /// How many comments sit in each file of the change being read. Out of
   /// the same list as every other count on the screen.
   const inFile = computed(() => {
     const counts = new Map<string, number>();
-    const here = written.value.find((change) => change.key === changeKey.value);
+    const here = withThreads.value.find((change) => change.key === changeKey.value);
 
-    for (const comment of here ? open(here) : []) {
+    for (const comment of here ? openOf(here) : []) {
       const file = comment.anchor?.file;
       if (file) {
         counts.set(file, (counts.get(file) ?? 0) + 1);
@@ -152,8 +238,8 @@ export const useReview = defineStore('review', () => {
 
   const countOf = computed(() => {
     const counts = new Map<string, number>();
-    for (const change of written.value) {
-      counts.set(change.key, open(change).length);
+    for (const change of withThreads.value) {
+      counts.set(change.key, openOf(change).length);
     }
     return counts;
   });
@@ -204,6 +290,7 @@ export const useReview = defineStore('review', () => {
 
       void readWritten();
       void readGerritStatus();
+      void readGerritThreads();
       // After the page, never before it: a reader came to read a diff.
       void api
         .update()
@@ -326,6 +413,7 @@ export const useReview = defineStore('review', () => {
       series.value = body.series;
       void readWritten();
       void readGerritStatus();
+      void readGerritThreads();
       // The server asks Gerrit again after a refresh, so the page does too:
       // a commit pushed since then has a page now.
       askedGerrit = new Set();
@@ -692,6 +780,16 @@ export const useReview = defineStore('review', () => {
     });
   }
 
+  /// Ask the agent about a thread of Gerrit.
+  async function askGerrit(thread: string) {
+    askLeave();
+    asking.value = true;
+    const key = changeKey.value;
+    if (key) {
+      await guard(() => api.ask(key, `${GERRIT_PARENT}${thread}`));
+    }
+  }
+
   /// The Done box of a thread of Gerrit: a staged reply `Done` that
   /// resolves it, as the Done button of Gerrit writes. Clearing the box
   /// takes back that reply while it is only staged. A reply that somebody
@@ -781,8 +879,8 @@ export const useReview = defineStore('review', () => {
   const here = computed(() => written.value.find((change) => change.key === changeKey.value));
   /// The open threads of every change: what Fix the series hands over.
   const openSeries = computed(() =>
-    written.value.flatMap((change) =>
-      open(change).map((comment) => ({ key: change.key, comment })),
+    withThreads.value.flatMap((change) =>
+      openOf(change).map((comment) => ({ key: change.key, comment })),
     ),
   );
   /// The open threads of the change on the screen: what Fix this change
@@ -837,6 +935,7 @@ export const useReview = defineStore('review', () => {
     });
     // A refused authorization changes what the run allows.
     await readGerritStatus();
+    await readGerritThreads();
     return out;
   }
 
@@ -1166,7 +1265,9 @@ export const useReview = defineStore('review', () => {
     setGerrit,
     stagedSeries,
     stagedHere,
+    gerritThreads,
     replyOnGerrit,
+    askGerrit,
     setGerritDone,
     gerritStatus,
     readGerritStatus,
