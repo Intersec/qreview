@@ -1788,6 +1788,15 @@ a.change-id:hover {
   font-size: 11px;
   color: var(--ink-faint);
 }
+/* The template drops the spaces between its tags, so the gap is set here. */
+.clean-keys {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.clean-hint {
+  margin-left: auto;
+}
 /* The Undo of Clean, at the foot of the window, above the panes. */
 .undo-note {
   position: fixed;

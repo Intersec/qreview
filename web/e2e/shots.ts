@@ -305,6 +305,17 @@ for (const scheme of ['light', 'dark'] as const) {
     } else {
       complaints.push('the dialog of Fix the series did not open');
     }
+
+    // The dialog that asks before Clean. The agent marked its remark done,
+    // so Clean has a thread to list.
+    await page.getByRole('button', { name: /^Clean/ }).click();
+    const clean = page.getByRole('dialog', { name: 'Clean this change' });
+    if (await clean.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await page.screenshot({ path: join(OUT, `${scheme}-clean.png`) });
+      await page.keyboard.press('Escape');
+    } else {
+      complaints.push('the dialog of Clean did not open');
+    }
   } else {
     complaints.push('no remark to start a conversation on');
   }

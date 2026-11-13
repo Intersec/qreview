@@ -53,10 +53,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true));
           <code>{{ place(comment) }}</code> {{ firstLine(comment) }}
         </li>
       </ul>
-      <p class="fix-keys">
+      <p class="fix-keys clean-keys">
         <button type="button" class="action" @click="emit('clean')">Delete</button>
         <button type="button" class="action" @click="emit('close')">Cancel</button>
-        <kbd>Enter</kbd> deletes · <kbd>Esc</kbd> closes
+        <span class="clean-hint"><kbd>Enter</kbd> deletes · <kbd>Esc</kbd> closes</span>
       </p>
     </div>
   </div>
