@@ -8,5 +8,5 @@ a part of a line: {"line":2,"message":"Say why.","path":"a.c","range":{"end_char
 the old side: {"line":1,"message":"Say why.","path":"a.c","side":"PARENT","unresolved":true}
 the file: {"message":"Say why.","path":"a.c","unresolved":true}
 a line of the message: {"line":7,"message":"Say why.","path":"/COMMIT_MSG","unresolved":true}
-the message: {"message":"Say why.","path":"/PATCHSET_LEVEL","unresolved":true}
+the message: {"message":"Say why.","path":"/COMMIT_MSG","unresolved":true}
 the change: {"message":"Say why.","path":"/PATCHSET_LEVEL","unresolved":true}
