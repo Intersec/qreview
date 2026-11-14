@@ -1590,7 +1590,7 @@ impl Session {
                 Some(thread) => Some(self.newest_of_thread(&change, thread).await),
                 None => None,
             };
-            let body = gerrit::draft::input(
+            let mut body = gerrit::draft::input(
                 &self.git,
                 &comment,
                 &set.revision,
@@ -1598,6 +1598,11 @@ impl Session {
                 in_reply_to.as_deref(),
             )
             .await;
+            if let Some(thread) = comments::gerrit_parent(&comment)
+                && let Some(root) = self.root_path(&change, thread).await
+            {
+                gerrit::draft::at_root(&mut body, &root);
+            }
             let route = format!(
                 "changes/{}~{}/revisions/{}/drafts",
                 rest::encode(&change.project),
@@ -1694,6 +1699,16 @@ impl Session {
             });
         }
         Some(out)
+    }
+
+    /// The file of the comment that opens a thread of Gerrit, as Gerrit
+    /// gave it.
+    async fn root_path(&self, change: &gerrit::Change, thread: &str) -> Option<String> {
+        self.gerrit_threads(change)
+            .await?
+            .into_iter()
+            .find(|c| c.id == thread)
+            .map(|c| c.path)
     }
 
     /// The newest comment of a thread of Gerrit, which a reply answers so

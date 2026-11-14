@@ -1211,6 +1211,12 @@ Section 9 said that a series of both kinds asks per change, and said nothing of 
 
 - Asking per change in every series: a series of one kind would repeat one sentence under every heading.
 
+## 2026-11-14 — A remark on the whole commit message stays on it
+
+A remark about the whole commit message went out as `/PATCHSET_LEVEL`, so Gerrit showed it as a remark about the change, in the Reply box. The reader wanted it on `/COMMIT_MSG`, beside the message.
+
+**Decision.** A remark about the whole message goes to `/COMMIT_MSG` with no line, as a remark on a file. Only a remark with no anchor still goes to `/PATCHSET_LEVEL`. Section 6.7 of the design holds the rule.
+
 ## 2026-11-17 — The server says how to reach it in the git directory
 
 An agent in a devcontainer cannot reach the server on the machine. The container has its own network, its own `/tmp` and its own `~/.local/state`. It shares the project only, at the same path. The study "qreview in a Devcontainer" compared five ways in.

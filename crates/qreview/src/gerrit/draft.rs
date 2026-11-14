@@ -13,6 +13,21 @@ use crate::store::model::{Comment, Side};
 /// The path Gerrit gives a remark about the whole change.
 pub const PATCHSET_LEVEL: &str = "/PATCHSET_LEVEL";
 
+/// Put a reply on the file of the comment that opens its thread, as Gerrit
+/// gave it. A remark about the whole change shows on the commit message
+/// here, and must go back to `/PATCHSET_LEVEL`.
+pub fn at_root(body: &mut Value, root_path: &str) {
+    let Some(out) = body.as_object_mut() else {
+        return;
+    };
+    out.insert("path".to_owned(), json!(root_path));
+    if root_path == PATCHSET_LEVEL {
+        for field in ["line", "range", "side"] {
+            out.remove(field);
+        }
+    }
+}
+
 /// The `CommentInput` of a remark written on `rev`, which is read against
 /// `base`. `in_reply_to` is the newest comment of the thread of Gerrit that
 /// a reply answers.
@@ -37,14 +52,9 @@ pub async fn input(
     };
     let message = commitmsg::is(&anchor.file);
     let (Some(start), Some(end)) = (anchor.start_line, anchor.end_line) else {
-        // A remark about the message as a whole is a remark about the change:
-        // Gerrit has no file-level remark on `/COMMIT_MSG` in its Reply box.
-        let path = if message {
-            PATCHSET_LEVEL
-        } else {
-            &anchor.file
-        };
-        out.insert("path".to_owned(), json!(path));
+        // A remark about the message as a whole stays on `/COMMIT_MSG`, where
+        // Gerrit shows it beside the message.
+        out.insert("path".to_owned(), json!(anchor.file));
         return Value::Object(out);
     };
 
@@ -191,6 +201,20 @@ mod tests {
             out.push_str(&format!("{name}: {value}\n"));
         }
         insta::assert_snapshot!(out);
+    }
+
+    #[tokio::test]
+    async fn a_reply_to_a_remark_about_the_change_goes_back_to_it() {
+        let (_repo, git, head, parent) = repo().await;
+        // Shown on the whole message, where qreview puts a remark of the
+        // Reply box of Gerrit.
+        let reply = remark("/COMMIT_MSG", Side::New, None);
+        let mut value = input(&git, &reply, &head, &parent, Some("w1")).await;
+
+        at_root(&mut value, PATCHSET_LEVEL);
+        assert_eq!(value["path"], PATCHSET_LEVEL);
+        assert_eq!(value["in_reply_to"], "w1");
+        assert!(value.get("line").is_none());
     }
 
     #[tokio::test]

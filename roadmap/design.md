@@ -1389,7 +1389,7 @@ PUT /a/changes/myproject~12321/revisions/<revision>/drafts
 
 | Field | From |
 |---|---|
-| `path` | The file of the anchor. The commit message is `/COMMIT_MSG`. A remark about the whole message is `/PATCHSET_LEVEL` |
+| `path` | The file of the anchor. The commit message is `/COMMIT_MSG`, and a remark about the whole message is a remark on that file. A remark with no anchor is `/PATCHSET_LEVEL` |
 | `side` | `PARENT` for the `old` side, absent for `new` |
 | `parent` | On a merge, the number of the parent of the left column. Absent for the auto-merge |
 | `line` | `endLine`. Absent on a remark about a file |
