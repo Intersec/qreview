@@ -105,24 +105,36 @@ Rules:
 
 ## Put a remark on Gerrit
 
-The user may ask you to put a remark on Gerrit, where the author of the
-change reads it. Usually they ask in a thread: they wrote a remark, you
-talked it over, and they say "put it on Gerrit" or "word it for the
-author". Then write the remark for the author:
+The user sends remarks to Gerrit from qreview, where the author of the
+change reads them. One thread of qreview becomes one remark on Gerrit,
+and its text is the **newest reply** of the thread. The usual path:
 
-```sh
-qreview stage <id> --body "<the remark, for the author of the change>"
-```
+1. The user writes a remark, and asks you about it (Save & ask).
+2. You answer, and the two of you talk in the thread.
+3. The user asks you to put it on Gerrit: "put it on Gerrit", "format it
+   for Gerrit", "word it for the author". Run:
 
-- `stage` writes a new remark at the place of the thread `<id>`, staged for
-  Gerrit. The thread itself stays in qreview: the author never reads it.
+   ```sh
+   qreview stage <id> --body "<the remark, for the author of the change>"
+   ```
+
+   `stage` marks the thread For Gerrit, and writes your text as its
+   newest reply. The card shows that reply with the tag "for Gerrit".
+4. The user reads it, edits it if needed, and clicks Send.
+
+Rules:
+
 - Write the body to the author of the change, not to the user. Leave out
   your talk with the user, and do not mention qreview or yourself.
-- Then reply in the thread with one line, such as "Staged for Gerrit." The
-  user reads the staged remark, edits it if needed, and sends it.
+- After `stage`, write no other reply in that thread: a newer reply would
+  become the text that goes out. If the user asks something more there,
+  answer, then run `stage` again with the whole text for the author, so
+  that it is the newest reply again.
+- Never answer "Staged for Gerrit." or the like in the thread. The tag on
+  the card already says it.
 - When you review a change on your own and the user asked for the remarks
   to go to Gerrit, write them with `qreview comment <place> --gerrit`.
-- Stage only what the user asked for. Without a request, a remark stays in
+- Stage only what the user asked for. Without a request, a thread stays in
   qreview.
 
 **You never send anything to Gerrit.** No command does: the user sends from
@@ -232,8 +244,8 @@ A change whose `own` is false in `qreview export --json` belongs to a
 colleague. The user reviews it, and never amends it:
 
 - Change no code and no commit for it, even in a fix.
-- Answer each thread with `qreview reply`: explain the code, or word the
-  remark for the colleague.
+- Answer each thread with `qreview reply`: explain the code, and help
+  the user word the remark.
 - When the user asks you to put a remark on Gerrit, stage it as in "Put a
   remark on Gerrit".
 
@@ -268,7 +280,7 @@ Then wait for the replies of the user with the loop above.
 | `qreview wait [--after <n>] [--timeout <s>]` | Block until the user asks, and print it as JSON. No time limit by default |
 | `qreview reply <id> --body <text> [--done] [--blocked]` | Reply to a thread |
 | `qreview comment <file>[:<side>:<line>[-<end>]] --body <text> [--key <id>] [--gerrit]` | Write a remark, staged for Gerrit with `--gerrit` |
-| `qreview stage <id> --body <text>` | Write the remark for Gerrit at the place of a thread, staged |
+| `qreview stage <id> --body <text>` | Stage a thread for Gerrit, with the text for the author as its newest reply |
 | `qreview stage gerrit:<id> --body <text> [--resolve]` | Write a reply in a thread of Gerrit, staged, and resolve it with `--resolve` |
 | `qreview migrate --from <old> [--to <new>] [--done <ids>] [--blocked <id>=<text>]` | Declare a new version after an amend, and move its threads |
 | `qreview refresh` | Read the repository again |

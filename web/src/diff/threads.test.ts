@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isBlocked, repliesBy } from './threads';
+import { isBlocked, lastWord, repliesBy, resolvesHere } from './threads';
 import type { Comment } from '@/api/types';
 
 function comment(id: string, extra: Partial<Comment> = {}): Comment {
@@ -49,5 +49,40 @@ describe('isBlocked', () => {
 
   it('does not wait on a thread with no reply', () => {
     expect(isBlocked([])).toBe(false);
+  });
+});
+
+describe('lastWord', () => {
+  it('is the newest reply of the thread, or the remark alone', () => {
+    const remark = comment('a', { body: '/review' });
+    const replies = [
+      comment('2', { parent: 'a', body: 'final' }),
+      comment('1', { parent: 'a', body: 'draft' }),
+    ];
+
+    expect(lastWord(remark, [remark])).toBe('/review');
+    expect(lastWord(remark, [remark, ...replies])).toBe('final');
+    expect(lastWord(replies[1]!, [remark, ...replies])).toBe('draft');
+  });
+});
+
+describe('resolvesHere', () => {
+  const mark = (state: 'staged' | 'sent') => ({
+    state,
+    patchSet: 1,
+    resolve: true,
+    id: 'd1',
+    sentAt: null,
+  });
+
+  it('counts a resolving reply until Gerrit holds it, or lost it', () => {
+    const staged = comment('1', { parent: 'gerrit:g1', gerrit: mark('staged') });
+    const sent = comment('2', { parent: 'gerrit:g1', gerrit: mark('sent') });
+
+    expect(resolvesHere([staged], () => 'published')).toBe(true);
+    expect(resolvesHere([sent], () => 'draft')).toBe(true);
+    expect(resolvesHere([sent], () => null)).toBe(true);
+    expect(resolvesHere([sent], () => 'published')).toBe(false);
+    expect(resolvesHere([sent], () => 'deleted')).toBe(false);
   });
 });

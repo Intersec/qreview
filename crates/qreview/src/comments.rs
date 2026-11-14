@@ -281,7 +281,9 @@ impl Target<'_> {
         let at = thread_of(file, parent)?;
         let remark = &mut file.comments[at];
 
-        if !of_version(remark, self.rev) {
+        // A staged remark stays on its patch set after an amend, and its
+        // newest reply is the text it sends.
+        if !of_version(remark, self.rev) && !is_staged(remark) {
             bail!("this thread belongs to an earlier version, and its round is over");
         }
         if new.blocked && new.author != Author::Agent {
@@ -464,6 +466,20 @@ pub fn mark_sent(store: &Store, key: &str, sent: &[(String, Option<String>)]) ->
         }
     }
     store.save(&file)
+}
+
+/// The text that a staged comment sends to Gerrit: the newest reply of its
+/// thread, or its own body. The reader often asks the agent to write the
+/// remark, and the answer is what the author of the change must read.
+pub fn last_word<'a>(comment: &'a Comment, all: &'a [Comment]) -> &'a str {
+    if !comment.is_remark() {
+        return &comment.body;
+    }
+    // A reply joins the store after the comments it answers.
+    all.iter()
+        .rev()
+        .find(|c| c.parent.as_deref() == Some(comment.id.as_str()))
+        .map_or(&comment.body, |reply| &reply.body)
 }
 
 /// True when the remark, or the reply to a thread of Gerrit, waits for the
@@ -1135,6 +1151,49 @@ mod tests {
         let written = f.target_on(Some(3)).add(staged("rename b")).await.unwrap();
 
         assert!(!is_open(&written, &f.rev));
+    }
+
+    #[tokio::test]
+    async fn a_staged_thread_sends_its_newest_reply() {
+        let f = fixture().await;
+        let first = f.target_on(Some(3)).add(remark("/review")).await.unwrap();
+        let comments = f.file().comments;
+        assert_eq!(last_word(&comments[0], &comments), "/review");
+
+        for (author, body) in [(Author::Agent, "draft"), (Author::Agent, "final")] {
+            f.target_on(Some(3))
+                .add(reply(&first.id, author, body))
+                .await
+                .unwrap();
+        }
+        let comments = f.file().comments;
+        assert_eq!(last_word(&comments[0], &comments), "final");
+        assert_eq!(last_word(&comments[1], &comments), "draft");
+    }
+
+    #[tokio::test]
+    async fn a_staged_thread_takes_a_reply_after_an_amend() {
+        let f = fixture().await;
+        let first = f.target_on(Some(3)).add(staged("/review")).await.unwrap();
+        let amended = Target {
+            rev: &f.base,
+            ..f.target_on(None)
+        };
+
+        let answer = amended
+            .add(reply(
+                &first.id,
+                Author::Agent,
+                "Name it after what it does.",
+            ))
+            .await
+            .unwrap();
+        let comments = f.file().comments;
+        assert_eq!(answer.parent.as_deref(), Some(first.id.as_str()));
+        assert_eq!(
+            last_word(&comments[0], &comments),
+            "Name it after what it does."
+        );
     }
 
     #[tokio::test]

@@ -1217,6 +1217,17 @@ A remark about the whole commit message went out as `/PATCHSET_LEVEL`, so Gerrit
 
 **Decision.** A remark about the whole message goes to `/COMMIT_MSG` with no line, as a remark on a file. Only a remark with no anchor still goes to `/PATCHSET_LEVEL`. Section 6.7 of the design holds the rule.
 
+## 2026-11-14 — A staged thread sends its last word
+
+The reader wrote a remark that asked the agent for a review, the agent answered, and the reader checked For Gerrit. The body of the remark went out, and the answer stayed here. The reader wanted the answer.
+
+**Decision.** A staged remark sends the newest reply of its thread, or its own body when it has no reply. The page tags the reply that goes out. `qreview stage <id>` stages the thread itself, and writes the text of the agent as its newest reply, so one thread is one remark on Gerrit. For Gerrit starts clear in every box, also on the change of a colleague: the usual path is a remark, Save & ask, the talk, and then "put it on Gerrit". A staged remark stays on its patch set after an amend, so its thread still takes a reply on an earlier version, the one exception to section 5.7. Section 5.8 of the design holds the rule.
+
+**Rejected:**
+
+- **Moving the mark to the reply.** A reply in qreview has no place of its own, and every route that stages, counts and migrates reads the mark on the remark.
+- **Copying the answer into the body of the remark.** The question of the reader would be lost.
+
 ## 2026-11-17 — The server says how to reach it in the git directory
 
 An agent in a devcontainer cannot reach the server on the machine. The container has its own network, its own `/tmp` and its own `~/.local/state`. It shares the project only, at the same path. The study "qreview in a Devcontainer" compared five ways in.

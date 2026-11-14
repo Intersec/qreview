@@ -361,6 +361,38 @@ describe('a remark for Gerrit', () => {
     expect(boxes(wrapper)).toEqual(['For Gerrit']);
   });
 
+  it('says which reply goes to Gerrit: the newest', () => {
+    const remark = comment('a', { gerrit: mark('staged') });
+    const replies = [
+      comment('bb', { parent: 'a', author: 'agent' }),
+      comment('ccc', { parent: 'a', author: 'agent' }),
+    ];
+    const { wrapper } = card(remark, replies, false, {}, ref(null), ref(null), true);
+
+    const tagged = wrapper
+      .findAll('.talk-reply')
+      .map((reply) => reply.find('.talk-tag-gerrit').exists());
+    expect(tagged).toEqual([false, true]);
+  });
+
+  it('lets the reader edit the reply of the agent that goes to Gerrit', () => {
+    const remark = comment('a', { gerrit: mark('staged') });
+    const replies = [comment('bb', { parent: 'a', author: 'agent' })];
+    const { wrapper } = card(remark, replies, false, {}, ref(null), ref(null), true);
+
+    const reply = wrapper.get('.talk-reply');
+    expect(reply.findAll('.action').map((b) => b.text())).toEqual(['Edit']);
+  });
+
+  it('keeps that reply read only while an older patch set is on the screen', async () => {
+    const remark = comment('a', { gerrit: mark('staged') });
+    const replies = [comment('bb', { parent: 'a', author: 'agent' })];
+    const { wrapper } = card(remark, replies, false, {}, ref(null), ref(null), true);
+    await wrapper.setProps({ readOnly: true });
+
+    expect(wrapper.get('.talk-reply').findAll('.action')).toHaveLength(0);
+  });
+
   it('is read only once it is a draft on Gerrit', () => {
     const { wrapper } = gerritCard(comment('a', { gerrit: mark('sent') }));
 

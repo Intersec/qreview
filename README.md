@@ -267,14 +267,16 @@ the change.
 
 On a version that Gerrit holds, check **For Gerrit** on a remark. The remark
 is staged: it stays in qreview, and the agent does not count it as work. Click
-**Send to Gerrit**, read the list, and press Enter. Each remark becomes a
-draft on Gerrit. Only you see a draft, until you publish it in Gerrit. The
-replies of a thread never leave qreview.
+**Send to Gerrit**, read the list, and press Enter. Each staged thread becomes
+one draft on Gerrit, with the newest message of the thread as its text: your
+remark when nobody answered, else the newest reply. The older replies stay in
+qreview. Only you see a draft, until you publish it in Gerrit.
 
-The agent can word a remark for you. Ask it in the thread, for example "put
-this on Gerrit". It writes a new remark at the same place, staged, with the
-text for the author of the change. The agent never sends: you read the
-remark, edit it if needed, and click Send.
+The agent can word a remark for you. Write the remark, click **Save & ask**,
+and talk it over in the thread. Then ask "put this on Gerrit". The agent
+stages the thread, and writes the text for the author of the change as its
+newest reply. The card tags it "for Gerrit". The agent never sends: you read
+the text, edit it if needed, and click Send.
 
 Sending needs access to the REST API of Gerrit. qreview stores no secret:
 a command of yours gives the `Authorization` header. Name it in

@@ -114,3 +114,13 @@ export function resolvesHere(
     return reply.gerrit?.resolve === true && left !== 'published' && left !== 'deleted';
   });
 }
+
+/// The text that a staged comment sends to Gerrit: the newest reply of its
+/// thread, or its own body. The server sends the same.
+export function lastWord(staged: Comment, comments: Comment[]): string {
+  if (staged.parent !== null) {
+    return staged.body;
+  }
+  const replies = repliesBy(comments).get(staged.id) ?? [];
+  return replies[replies.length - 1]?.body ?? staged.body;
+}
