@@ -1003,7 +1003,7 @@ changes and deletes remarks in peace, and a remark costs the agent nothing
 until it is asked about.
 
 **A previous thread is read, and never written on**, the rule of section
-5.4. It takes no reply and no change of `done`.
+5.4. It takes no reply and no change of `done`. A remark staged for Gerrit is the exception: it stays on its patch set after an amend, and its thread takes a reply, because the newest reply is the text that goes out (section 5.8).
 
 **A word that the agent answered is read, and never rewritten.** A remark
 or a reply of the reader has no Edit once an answer of the agent stands
@@ -1161,15 +1161,17 @@ A remark stays in qreview unless somebody marks it for Gerrit. A marked remark c
 
 **Who marks a remark.** The reader checks **For Gerrit** in the box, or on a remark of their own. The agent writes a staged remark with `qreview comment --gerrit` or `qreview stage` (section 11). The agent never sends: only the reader clicks Send. No command of the agent sends, and the send route refuses a request that comes on the Unix socket. This is a convention and not a lock, because the agent holds the session token. The draft is the lock: a remark sent by mistake reaches nobody until the reader publishes it in Gerrit.
 
-**What goes out is the body of the remark, and nothing else.** Its replies stay in qreview, so the conversation with the agent never reaches the colleague. A reply to a thread of Gerrit goes out as a reply in that thread, by the rules of section 6.8.
+**What goes out is the last word of the thread, and nothing else.** That is the newest reply, or the body of the remark when it has no reply. The reader often asks the agent to word the remark, and the answer is the text for the colleague. The older replies stay in qreview, so the rest of the conversation with the agent never reaches the colleague. The page tags the reply that goes out. A reply to a thread of Gerrit goes out as a reply in that thread, by the rules of section 6.8.
 
 The usual path, when the reader wants the agent to word a remark:
 
 1. The reader writes a remark and asks the agent about it.
 2. The agent answers, and the two talk in the thread.
 3. The reader asks the agent to put the remark on Gerrit.
-4. The agent runs `qreview stage <id>`. This writes a new remark at the place of the thread, staged, with the text for the colleague.
+4. The agent runs `qreview stage <id>`. This stages the thread, and writes the text for the colleague as its newest reply. One thread is one remark on Gerrit.
 5. The reader reads it, edits it if needed, and clicks Send.
+
+A reply of the agent after that would become the text. So the agent writes no other reply in a staged thread, and runs `stage` again when the text changes.
 
 **A remark goes to the patch set it was written on.** Its `commit` must be the revision of a patch set that Gerrit holds, and `gerrit.patchSet` names that patch set. On a version that is **Local** (section 6.1), For Gerrit is disabled, and says to push the version first.
 
@@ -1394,8 +1396,8 @@ PUT /a/changes/myproject~12321/revisions/<revision>/drafts
 | `parent` | On a merge, the number of the parent of the left column. Absent for the auto-merge |
 | `line` | `endLine`. Absent on a remark about a file |
 | `range` | `startLine`, `endLine`, and the characters when the remark has some. Absent on a single whole line |
-| `message` | The body |
-| `in_reply_to` | On a reply to a thread of Gerrit, the id of the last comment of that thread when the reader sends (section 6.8) |
+| `message` | The newest reply of the thread, or the body of the remark when it has none |
+| `in_reply_to` | On a reply to a thread of Gerrit, the id of the last comment of that thread when the reader sends (section 6.8). The reply takes the `path` of the comment that opens the thread, so a reply to a remark about the change goes to `/PATCHSET_LEVEL` |
 | `unresolved` | `true` on a remark. On a reply, the opposite of `gerrit.resolve` |
 
 A line of the commit message moves down by the header that Gerrit adds, the reverse of section 6.3. A remark on the left column of a diff between two patch sets has no place in Gerrit as qreview stores it, so For Gerrit is disabled there.
@@ -2036,7 +2038,7 @@ that runs on the repository:
 qreview comment <place> --body <text> [--key <id>] [--gerrit]
                               write a remark on the newest version
 qreview stage <id> --body <text> [--resolve]
-                              write the remark for Gerrit of a thread
+                              stage a thread, with its text for Gerrit as its newest reply
 qreview reply <id> --body <text> [--done] [--blocked]
                               reply to a thread
 qreview wait [--after <n>] [--timeout <s>]

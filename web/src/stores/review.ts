@@ -9,7 +9,14 @@ import { Catchup } from '@/diff/catchup';
 import { COMMIT_MSG } from '@/diff/paths';
 import { moveDrafts } from '@/diff/drafts';
 import { askLeave, tell } from '@/notify';
-import { GERRIT_PARENT, awaitsAgent, isBlocked, repliesBy, resolvesHere } from '@/diff/threads';
+import {
+  GERRIT_PARENT,
+  awaitsAgent,
+  isBlocked,
+  lastWord,
+  repliesBy,
+  resolvesHere,
+} from '@/diff/threads';
 import { isCurrent, open, rounds } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
@@ -959,7 +966,11 @@ export const useReview = defineStore('review', () => {
             (comment.parent === null || comment.parent.startsWith(GERRIT_PARENT)) &&
             comment.gerrit?.state === 'staged',
         )
-        .map((comment) => ({ key: change.key, comment })),
+        // The dialog shows the text that goes out.
+        .map((comment) => ({
+          key: change.key,
+          comment: { ...comment, body: lastWord(comment, change.comments) },
+        })),
     ),
   );
   const stagedHere = computed(() => stagedSeries.value.filter((t) => t.key === changeKey.value));

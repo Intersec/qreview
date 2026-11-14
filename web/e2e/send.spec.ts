@@ -87,18 +87,45 @@ test('the agent stages the remark that the user asked for, and only the user sen
   const open = JSON.parse(server.agent(['export', '--json'])) as unknown;
   const id = JSON.stringify(open).match(/"id":"([^"]+)"/)?.[1];
   expect(id).toBeTruthy();
-  const staged = JSON.parse(
+  const reply = JSON.parse(
     server.agent(['stage', id!, '--body', 'Could this function be named after what it does?']),
-  ) as { gerrit: { state: string } };
-  expect(staged.gerrit.state).toBe('staged');
+  ) as { parent: string };
+  expect(reply.parent).toBe(id);
 
-  // The thread with the agent stays, and the remark for the author sits on
-  // the same line, staged.
-  await expect(card(page, 'this name is bad')).toBeVisible();
-  const remark = card(page, 'Could this function be named');
-  await expect(remark.locator('.talk-tag-gerrit')).toHaveText('for Gerrit');
+  // One thread, staged, whose newest reply is the text for the author.
+  const thread = card(page, 'this name is bad');
+  await expect(thread.locator('.talk-tag-gerrit').first()).toHaveText('for Gerrit');
+  await expect(
+    thread
+      .locator('.talk-reply', { hasText: 'Could this function be named' })
+      .locator('.talk-tag-gerrit'),
+  ).toHaveText('for Gerrit');
   await expect(page.getByRole('button', { name: 'Send to Gerrit · 1' })).toBeVisible();
   expect(logged('curl.log')).not.toContain('request = "PUT"');
+});
+
+test('a staged thread sends its newest reply, which the agent words', async ({ page }) => {
+  const remark = JSON.parse(
+    server.agent(['comment', 'src/net.blk:new:1', '--gerrit', '--body', 'word this for Bob']),
+  ) as { id: string };
+  const reply = JSON.parse(
+    server.agent(['stage', remark.id, '--body', 'Could this loop stop after three tries?']),
+  ) as { parent: string };
+  expect(reply.parent).toBe(remark.id);
+
+  await page.reload();
+  await openChange(page, /net: retry the read/);
+  await openFile(page, 'net.blk');
+  await page.getByRole('button', { name: 'Send to Gerrit · 1' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Send this change to Gerrit' });
+  await expect(dialog).toContainText('Could this loop stop');
+  await expect(dialog).not.toContainText('word this for Bob');
+  await page.keyboard.press('Enter');
+  await expect(dialog).toHaveCount(0);
+
+  const given = logged('curl.log');
+  expect(given).toContain('Could this loop stop after three tries?');
+  expect(given).not.toContain('word this for Bob');
 });
 
 /// Write a remark on the first line, stage it, and send it.
