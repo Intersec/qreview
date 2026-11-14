@@ -1550,13 +1550,15 @@ impl Session {
             .gerrit_change(key)
             .await
             .context("Gerrit does not know this change")?;
-        let staged: Vec<Comment> = self
-            .store
-            .load(key, "")?
-            .comments
-            .into_iter()
-            .filter(comments::is_staged)
+        let all = self.store.load(key, "")?.comments;
+        let staged: Vec<Comment> = all
+            .iter()
+            .filter(|c| comments::is_staged(c))
             .filter(|c| only.is_none_or(|ids| ids.contains(&c.id)))
+            .map(|c| Comment {
+                body: comments::last_word(c, &all).to_owned(),
+                ..c.clone()
+            })
             .collect();
 
         let mut out = Sent::default();

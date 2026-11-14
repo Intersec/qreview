@@ -253,6 +253,22 @@ pub async fn stage(client: &Client, id: &str, body: &str, resolve: bool) -> Resu
         None => comment,
     };
 
+    if root["gerrit"]["state"].as_str() == Some("sent") {
+        bail!("the thread {id} is a draft on Gerrit already. Change it there");
+    }
+    let route = format!("/api/changes/{}/comments", segment(&key));
+    let reply = json!({
+        "scope": root["scope"],
+        "parent": root["id"],
+        "author": "agent",
+        "body": body,
+    });
+    // A staged thread stays on its patch set after an amend, so its version
+    // does not matter: the reply is the new text.
+    if root["gerrit"]["state"].as_str() == Some("staged") {
+        return client.post(&route, &reply).await;
+    }
+
     let session = client.get("/api/session").await?;
     let current = session["series"]["changes"]
         .as_array()
@@ -267,29 +283,17 @@ pub async fn stage(client: &Client, id: &str, body: &str, resolve: bool) -> Resu
         );
     }
 
-    let mut new = json!({
-        "scope": root["scope"],
-        "author": "agent",
-        "body": body,
-        "gerrit": {},
-    });
-    let anchor = &root["anchor"];
-    if anchor.is_object() {
-        for field in [
-            "file",
-            "side",
-            "startLine",
-            "endLine",
-            "startChar",
-            "endChar",
-        ] {
-            new[field] = anchor[field].clone();
-        }
-    }
-
+    // One thread is one remark on Gerrit: the thread is staged, and its
+    // newest reply is the text that goes out. Staged first, so a version
+    // that Gerrit does not hold writes no reply.
+    let root_id = root["id"].as_str().unwrap_or_default();
     client
-        .post(&format!("/api/changes/{}/comments", segment(&key)), &new)
-        .await
+        .patch(
+            &format!("{route}/{}", segment(root_id)),
+            &json!({ "gerrit": {} }),
+        )
+        .await?;
+    client.post(&route, &reply).await
 }
 
 /// How a thread of Gerrit is named on the command line.

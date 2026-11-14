@@ -108,6 +108,14 @@ const stageable = computed(
     (props.comment.gerrit?.state === 'staged' || threads.onGerrit?.value === true),
 );
 
+/// The reply that a staged thread sends: its newest one. The reader often
+/// asks the agent to word the remark, and the answer is what goes out.
+const outgoing = computed(() =>
+  props.comment.gerrit?.state === 'staged'
+    ? replies.value[replies.value.length - 1]?.id
+    : undefined,
+);
+
 async function toggleGerrit(event: Event) {
   await threads?.setGerrit?.(props.comment.id, (event.target as HTMLInputElement).checked);
 }
@@ -218,7 +226,11 @@ function saveEdit(id: string, body: string) {
         <span
           v-if="comment.gerrit?.state === 'staged'"
           class="talk-tag talk-tag-gerrit"
-          title="This remark goes to Gerrit when you click Send"
+          :title="
+            outgoing
+              ? 'The newest reply of this thread goes to Gerrit when you click Send'
+              : 'This remark goes to Gerrit when you click Send'
+          "
           >for Gerrit</span
         >
         <span
@@ -289,10 +301,22 @@ function saveEdit(id: string, body: string) {
           <span v-if="answer.blocked && answer.author === 'agent'" class="talk-tag talk-tag-waiting"
             >question</span
           >
+          <span
+            v-if="answer.id === outgoing"
+            class="talk-tag talk-tag-gerrit"
+            title="This reply goes to Gerrit when you click Send"
+            >for Gerrit</span
+          >
           <template v-if="mine(answer) && !editing && !replying">
             <span class="spacer"></span>
             <button type="button" class="action" @click="editingId = answer.id">Edit</button>
             <button type="button" class="action" @click="emit('remove', answer.id)">Delete</button>
+          </template>
+          <!-- The text that goes to Gerrit, whoever wrote it: the reader reads
+               it, and edits it if needed, before Send. -->
+          <template v-else-if="answer.id === outgoing && !readOnly && !editing && !replying">
+            <span class="spacer"></span>
+            <button type="button" class="action" @click="editingId = answer.id">Edit</button>
           </template>
         </p>
         <CommentBox
@@ -326,7 +350,7 @@ function saveEdit(id: string, body: string) {
         <label
           v-if="stageable"
           class="talk-done-box"
-          title="Send this remark to Gerrit as a draft. Its replies stay here"
+          title="Send this thread to Gerrit as a draft: its newest reply, or the remark when it has none"
         >
           <input
             type="checkbox"
