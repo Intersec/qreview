@@ -2049,3 +2049,92 @@ button.agent-working {
 .talk-moved:focus-visible {
   background: var(--agent-edge);
 }
+
+/* What the server waits on, such as a query to Gerrit. Quiet, with the pulse
+   of the agent, so a slow link reads as work and not as a broken page. */
+.server-waits {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 360px;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-quiet);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.server-waits::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-quiet);
+  animation: agent-pulse 1.2s ease-in-out infinite;
+}
+.server-waits-what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+button.version {
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+button.version:hover {
+  text-decoration: underline;
+}
+.trace-panel {
+  width: min(70rem, 92vw);
+  max-width: none;
+}
+.trace-waiting {
+  margin: 0 0 6px;
+  padding-left: 1.2em;
+  color: var(--ink-quiet);
+  font-size: 12px;
+}
+.trace-body {
+  height: 60vh;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--pane);
+  font-family: var(--code-font);
+  font-size: 11px;
+}
+.trace-line {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  white-space: pre;
+}
+.trace-at,
+.trace-ms {
+  flex: none;
+  text-align: right;
+  color: var(--ink-faint);
+}
+.trace-at {
+  width: 6em;
+}
+.trace-ms {
+  width: 7em;
+}
+.trace-ms.is-slow {
+  color: var(--waiting-ink);
+  font-weight: 600;
+}
+.trace-what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
