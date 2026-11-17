@@ -33,12 +33,21 @@ export function rounds<T extends { comments: Comment[]; commit: string }>(
   return { current, previous };
 }
 
-/// The threads of the current version that are not done: what every count
-/// on the screen counts, and what the export holds.
+/// The threads of the current version that are not done: the work of the
+/// agent, which the export, Copy and Fix count.
 ///
 /// A remark for Gerrit is a message to a colleague, and no work.
 export function open<T extends { comments: Comment[]; commit: string }>(change: T): Comment[] {
   return rounds(change).current.filter((comment) => !comment.done && !comment.gerrit);
+}
+
+/// The threads of the current version that the reader has still to handle:
+/// the open ones, and those staged for Gerrit until they are sent. The list
+/// To handle and the counts on the files and the changes show these.
+export function toHandle<T extends { comments: Comment[]; commit: string }>(change: T): Comment[] {
+  return rounds(change).current.filter(
+    (comment) => !comment.done && comment.gerrit?.state !== 'sent',
+  );
 }
 
 /// The previous remarks of a change, in groups, one per version they were
