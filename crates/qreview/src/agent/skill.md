@@ -135,10 +135,10 @@ Rules:
   that it is the newest reply again.
 - Never answer "Staged for Gerrit." or the like in the thread. The tag on
   the card already says it.
-- When you review a change on your own and the user asked for the remarks
-  to go to Gerrit, write them with `qreview comment <place> --gerrit`.
-- Stage only what the user asked for. Without a request, a thread stays in
-  qreview.
+- On a change of the user, stage only what the user asked for. Without a
+  request, a thread stays in qreview.
+- On a change of a colleague, a remark is for the author: stage it without
+  a request. See "A change of a colleague".
 
 **You never send anything to Gerrit.** No command does: the user sends from
 the page, and Gerrit keeps each remark as a draft that only the user sees
@@ -261,10 +261,22 @@ A change whose `own` is false in `qreview export --json` belongs to a
 colleague. The user reviews it, and never amends it:
 
 - Change no code and no commit for it, even in a fix.
-- Answer each thread with `qreview reply`: explain the code, and help
-  the user word the remark.
-- When the user asks you to put a remark on Gerrit, stage it as in "Put a
-  remark on Gerrit".
+- A remark of the user on it is meant for the author. When your answer
+  leads to a remark for the author, stage it at once, in the same turn. Do
+  not ask whether it goes to Gerrit: the user reads it, and sends or
+  edits it.
+  1. If you have something to tell the user first, such as what you
+     checked or why the remark holds, write it with `qreview reply`.
+  2. Then run `qreview stage <id> --body "<the remark, for the author>"`,
+     as in "Put a remark on Gerrit". Do not also copy the remark in the
+     reply.
+- If the user only asks you a question about the code, and no remark for
+  the author comes out of it, answer with `qreview reply` and stage
+  nothing.
+- When you review such a change on your own, `qreview comment` stages
+  each remark for Gerrit, without `--gerrit`: each remark is for the
+  author. This holds when another skill writes the review too. Where Gerrit
+  does not hold the version, the remark stays in qreview.
 
 When the user opened the change with `qreview <gerrit-url>`, its review
 runs on the server of the worktree: the commands reach it as usual.
@@ -285,6 +297,8 @@ qreview comment src/net.c --body "A remark about the whole file."
 - The change is the newest commit of the series that touches the file. Name
   another one with `--key <Change-Id>`.
 - Each command prints the comment it wrote, with its `id`.
+- On a change of a colleague, each remark is staged for Gerrit (see "A
+  change of a colleague").
 
 Then wait for the replies of the user with the loop above.
 
@@ -296,7 +310,7 @@ Then wait for the replies of the user with the loop above.
 | `qreview export --json` | The open threads, each comment with its `id` |
 | `qreview wait [--after <n>] [--timeout <s>]` | Block until the user asks, and print it as JSON. No time limit by default |
 | `qreview reply <id> --body <text> [--done] [--blocked]` | Reply to a thread |
-| `qreview comment <file>[:<side>:<line>[-<end>]] --body <text> [--key <id>] [--gerrit]` | Write a remark, staged for Gerrit with `--gerrit` |
+| `qreview comment <file>[:<side>:<line>[-<end>]] --body <text> [--key <id>] [--gerrit]` | Write a remark, staged for Gerrit with `--gerrit`, and always on the change of a colleague |
 | `qreview stage <id> --body <text>` | Stage a thread for Gerrit, with the text for the author as its newest reply |
 | `qreview stage gerrit:<id> --body <text> [--resolve]` | Write a reply in a thread of Gerrit, staged, and resolve it with `--resolve` |
 | `qreview migrate --from <old> [--to <new>] [--done <ids>] [--blocked <id>=<text>]` | Declare a new version after an amend, and move its threads |

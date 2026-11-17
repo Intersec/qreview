@@ -1203,7 +1203,7 @@ A change is the reader's own when the author email of its commit equals `git con
 - **Ask agent** stays. The agent helps the reader read the code and word a remark.
 - The export asks for help with a review, not for a fix (section 9). It also holds the remarks staged for Gerrit and not sent: the agent helps word them.
 
-For Gerrit starts clear in every box, as on a change of the reader: a remark is talk with the agent until the reader says that it goes to Gerrit.
+For Gerrit starts clear in every box, as on a change of the reader: the reader decides what goes to Gerrit. The agent stages without a request on such a change, though. A remark of the reader on the change of a colleague is meant for its author, so when the agent answers it with a remark for the author, it stages that remark (`qreview stage`). Its own remarks on such a change are staged too: `qreview comment` stages them without `--gerrit`, and writes a plain remark where Gerrit does not hold the version. Nothing leaves before the reader clicks Send.
 
 Without `user.email`, every change is the reader's own.
 
@@ -1977,7 +1977,7 @@ read from the right. `--key` names the change; without it, the change is
 the newest one of the series that touches the file. A body of `-` is read
 from standard input, so a long answer needs no quoting.
 
-`--gerrit` stages the remark for Gerrit (section 5.8). `stage` writes a staged remark at the place of the thread `<id>`, for the text that the reader asked the agent to word. The thread must sit on the newest version of its change: on an older one, its place may not exist any more, and `stage` refuses and names `comment --gerrit`. When `<id>` is `gerrit:<id>`, a thread of Gerrit, it writes a staged reply in that thread, and `--resolve` resolves it (section 6.8). `reply` takes a `gerrit:<id>` too, for a reply that stays in qreview. No command sends: the reader does, in the page.
+`--gerrit` stages the remark for Gerrit (section 5.8). On the change of a colleague, `comment` stages without the flag, and falls back to a plain remark where Gerrit does not hold the version (section 5.9). `stage` writes a staged remark at the place of the thread `<id>`, for the text that the reader asked the agent to word. The thread must sit on the newest version of its change: on an older one, its place may not exist any more, and `stage` refuses and names `comment --gerrit`. When `<id>` is `gerrit:<id>`, a thread of Gerrit, it writes a staged reply in that thread, and `--resolve` resolves it (section 6.8). `reply` takes a `gerrit:<id>` too, for a reply that stays in qreview. No command sends: the reader does, in the page.
 
 `comment`, `reply` and `stage` print the comment they wrote, its `id` included.
 `wait` prints `{ "events": [...], "next": <n> }`. It returns on a request

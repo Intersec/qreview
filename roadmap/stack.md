@@ -1267,3 +1267,13 @@ The skill `apply-review`, which answers a Gerrit review without qreview, asks th
 
 - **Apply on every remark.** The remarks of the reader already go to the agent through Ask agent and Fix; a third button on each card is noise.
 
+## 2026-11-17 — The agent stages a remark on the change of a colleague
+
+In a review of the change of a colleague, the reader wrote "This is a review, propose a better sentence". The agent answered with the sentence and a remark worded for the author, then asked "Tell me if you want it marked for Gerrit". The reader had to answer "Do a comment to be sent through qreview". The procedure said to stage only on a request, which fits the series of the reader, where a remark is talk with the agent. On the change of a colleague, a remark of the reader is meant for the author.
+
+**Decision.** On a change whose `own` is false, the agent stages each remark for the author that comes out of its answer, in the same turn, with `qreview stage`. Its talk with the reader goes first, in a plain reply. A question about the code that gives no remark for the author stages nothing. The agent's own review of such a change is staged too, by `qreview comment` itself: the agent ran `/is-review` with its own instruction, which left out `--gerrit`, so a rule in the procedure alone does not hold. Where Gerrit does not hold the version, `comment` writes a plain remark. For Gerrit still starts clear in the box of the reader, and only Send makes a draft on Gerrit.
+
+**Rejected:**
+
+- **For Gerrit ticked by default on the change of a colleague.** The reader often writes a remark to ask the agent first; the text that goes out is the agent's wording, not the first remark.
+

@@ -341,11 +341,15 @@ fn thread_of(file: &ChangeFile, id: &str) -> Result<usize> {
         .with_context(|| format!("comment {id} answers {root}, which is gone"))
 }
 
+/// The start of the refusal to stage on a version that Gerrit does not hold.
+/// The agent reads it to fall back to a plain remark.
+pub const NOT_ON_GERRIT: &str = "Gerrit does not hold this version";
+
 /// The mark of a remark staged for Gerrit, on the patch set `on_gerrit`.
 fn staged(on_gerrit: Option<usize>, stage: Stage) -> Result<Gerrit> {
-    let patch_set = on_gerrit.context(
-        "Gerrit does not hold this version, so a remark on it cannot go there. Push it first",
-    )?;
+    let patch_set = on_gerrit.with_context(|| {
+        format!("{NOT_ON_GERRIT}, so a remark on it cannot go there. Push it first")
+    })?;
 
     Ok(Gerrit {
         state: Outbox::Staged,
