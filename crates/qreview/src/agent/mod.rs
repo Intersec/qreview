@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use address::Address;
 use client::Client;
 
+use crate::comments::NOT_ON_GERRIT;
 use crate::git::exec::Git;
 use crate::store::Store;
 
@@ -142,6 +143,11 @@ pub fn parse_place(text: &str) -> Result<Place> {
 }
 
 /// Write a remark as the agent.
+///
+/// On the change of a colleague, a remark is for its author, so it is
+/// staged for Gerrit unasked. The agent forgets a flag, mostly when another
+/// skill writes the review. Where Gerrit does not hold the version, the
+/// remark stays in qreview.
 pub async fn comment(
     client: &Client,
     place: &Place,
@@ -149,10 +155,16 @@ pub async fn comment(
     key: Option<&str>,
     gerrit: bool,
 ) -> Result<Value> {
+    let session = client.get("/api/session").await?;
     let key = match key {
         Some(key) => key.to_owned(),
-        None => change_with(client, &place.file).await?,
+        None => change_with(client, &session, &place.file).await?,
     };
+    let colleague = session["series"]["changes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|change| change["key"].as_str() == Some(&key) && change["own"] == json!(false));
     let mut new = json!({ "body": body, "author": "agent", "file": place.file });
     match &place.lines {
         Some((side, from, to)) => {
@@ -163,18 +175,20 @@ pub async fn comment(
         }
         None => new["scope"] = json!("file"),
     }
-    if gerrit {
-        new["gerrit"] = json!({});
+    let path = format!("/api/changes/{}/comments", segment(&key));
+    if gerrit || colleague {
+        let mut staged = new.clone();
+        staged["gerrit"] = json!({});
+        match client.post(&path, &staged).await {
+            Err(error) if !gerrit && error.to_string().starts_with(NOT_ON_GERRIT) => {}
+            written => return written,
+        }
     }
-
-    client
-        .post(&format!("/api/changes/{}/comments", segment(&key)), &new)
-        .await
+    client.post(&path, &new).await
 }
 
 /// The newest change of the series that touches the file.
-async fn change_with(client: &Client, file: &str) -> Result<String> {
-    let session = client.get("/api/session").await?;
+async fn change_with(client: &Client, session: &Value, file: &str) -> Result<String> {
     let changes = session["series"]["changes"]
         .as_array()
         .cloned()

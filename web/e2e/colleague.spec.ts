@@ -40,3 +40,31 @@ test('the export asks for help with the review, not for a fix', () => {
   expect(json.changes.length).toBeGreaterThan(0);
   expect(json.changes.every((change) => change.own === false)).toBe(true);
 });
+
+test('a remark of the agent on it is staged for Gerrit without the flag', async ({ page }) => {
+  const remark = JSON.parse(
+    server.agent(['comment', 'src/net.blk:new:1', '--body', 'Why a loop?']),
+  ) as {
+    gerrit?: { state: string };
+  };
+  expect(remark.gerrit?.state).toBe('staged');
+
+  await page.reload();
+  await openChange(page, /net: retry the read/);
+  await openFile(page, 'net.blk');
+  await expect(page.getByRole('button', { name: 'Send to Gerrit · 1' })).toBeVisible();
+});
+
+test('without Gerrit, a remark of the agent on it stays in qreview', async () => {
+  server.stop();
+  const fixture = build();
+  execFileSync('git', ['config', 'user.email', 'reader@example.com'], { cwd: fixture.repo });
+  server = await start({ on: fixture });
+
+  const remark = JSON.parse(
+    server.agent(['comment', 'src/net.blk:new:1', '--body', 'Why a loop?']),
+  ) as {
+    gerrit?: unknown;
+  };
+  expect(remark.gerrit ?? null).toBeNull();
+});

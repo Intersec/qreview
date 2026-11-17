@@ -72,6 +72,8 @@ pub enum Command {
         #[arg(long, value_name = "CHANGE-ID")]
         key: Option<String>,
         /// Stage the remark for Gerrit. The user sends it from the page.
+        /// On the change of a colleague, it is staged without the flag
+        /// wherever Gerrit holds the version.
         #[arg(long)]
         gerrit: bool,
     },
