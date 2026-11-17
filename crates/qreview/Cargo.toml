@@ -38,6 +38,8 @@ asciidoc-html5 = "=0.2.3"
 ammonia = "4"
 # Without the defaults, as ammonia takes it: they would add phf and cssparser-macros.
 cssparser = { version = "0.38", default-features = false }
+# Already in the tree through axum: the Gerrit calls of the changes run side by side.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 insta = "1"
