@@ -187,7 +187,10 @@ and sends nothing. The buttons are greyed out while no agent runs
 **A change of a colleague**, one whose author email is not your
 `user.email`, has no Fix this change, and Fix the series skips it: you
 review it, you do not amend it. Ask agent still works, and the export
-asks the agent for help with the review rather than a fix.
+asks the agent for help with the review rather than a fix. A remark on
+such a change is for its author: when the agent answers it with a remark
+for the author, it stages that remark For Gerrit without a request. You
+read it, and click Send.
 
 While the agent works on a fix, the page says **Agent working…** and holds
 its writes, then shows the whole fix at once when the agent waits again. A
