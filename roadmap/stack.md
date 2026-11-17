@@ -1155,3 +1155,15 @@ Nothing in the storage format or the export moves.
 The server sees no change. The `wait` still asks `/api/events` again every 30 seconds inside one process, so the agent counts as listening as before.
 
 Nothing in the storage format or the export moves.
+
+## 2026-11-17 — The server says how to reach it in the git directory
+
+An agent in a devcontainer cannot reach the server on the machine. The container has its own network, its own `/tmp` and its own `~/.local/state`. It shares the project only, at the same path. The study "qreview in a Devcontainer" compared five ways in.
+
+**Decision.** Option E of that study, on by default. The server makes `<git-dir>/qreview/`, private to the user, with a second socket and a copy of its address. The commands look there first. This breaks the rule that the server writes nothing into the repository, for that one directory, which it removes at stop. The rule is updated in `CLAUDE.md` and section 1 of the design. Section 11 holds the rest.
+
+**Rejected:**
+
+- **An opt-in `--share` flag.** Every devcontainer would need it, and a forgotten flag looks like a server that does not run.
+- **Mounting the store and the socket directory into each container.** It hands every container the tokens and the comments of every repository.
+- **The loopback port through the network of the container.** A hole in its firewall to every service on the loopback of the machine.

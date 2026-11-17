@@ -98,10 +98,11 @@ Two rules that no tool enforces:
 ## Rules that hold from the first line
 
 - **The server never writes to the working tree.** It reads with `git`. It
-  writes two things and nothing else: a `git fetch`, when the user asks for a
-  Gerrit patch set, and the objects that hold the work which is not committed.
-  No ref, no file of the tree, ever. A task that needs more is a
-  stop-and-report.
+  writes three things and nothing else: a `git fetch`, when the user asks for
+  a Gerrit patch set, the objects that hold the work which is not committed,
+  and `<git-dir>/qreview/`, the socket and the address for an agent in a
+  container, removed at stop. No ref, no file of the tree, ever. A task that
+  needs more is a stop-and-report.
 - **The server binds `127.0.0.1` only**, with a session token. No other
   interface, ever. Beside it, a Unix socket in a directory only the user can
   enter, for an agent in a sandbox, with the same token.

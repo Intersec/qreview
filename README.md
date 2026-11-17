@@ -204,6 +204,13 @@ inside the sandbox cannot save comments, and your browser cannot reach it.
 The agent commands reach your server through its Unix socket under `/tmp`,
 which the sandbox shares with your machine: nothing to configure.
 
+The same holds for an agent in a devcontainer that shares the project at
+the same path. Start `qreview` on your machine, in the worktree. The server
+also listens on a socket in `.git/qreview/`, beside a copy of its address,
+and the agent commands in the container find it there. The directory is
+private to you, and goes away when the server stops. Keep the qreview of
+the container at the release of your machine.
+
 ## Build from source
 
 Rust and Node, both pinned in `.tool-versions` for

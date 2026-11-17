@@ -6,6 +6,7 @@
 
 pub mod address;
 pub mod client;
+pub mod shared;
 pub mod socket;
 
 use std::path::{Path, PathBuf};
@@ -37,6 +38,9 @@ pub struct Home {
     pub dir: PathBuf,
     pub repo: String,
     pub worktree: String,
+    /// The git directory of the worktree, where the server also says how
+    /// to reach it. See `shared`.
+    pub git_dir: Option<PathBuf>,
 }
 
 /// The home of the worktree that holds `cwd`.
@@ -44,10 +48,17 @@ pub async fn home(cwd: &Path) -> Result<Home> {
     let git = Git::discover(cwd).await?;
     let repo = crate::repo::info(&git).await?;
 
+    let git_dir = git
+        .text(&["rev-parse", "--absolute-git-dir"])
+        .await
+        .ok()
+        .map(|dir| PathBuf::from(dir.trim()));
+
     Ok(Home {
         dir: Store::open(&repo.id)?.dir().to_path_buf(),
         worktree: crate::repo::worktree_id(git.root()),
         repo: repo.id,
+        git_dir,
     })
 }
 
@@ -56,9 +67,16 @@ pub async fn home(cwd: &Path) -> Result<Home> {
 /// A file whose server does not answer was left by a crash, and is no
 /// server at all.
 pub async fn running(home: &Home) -> Option<Client> {
-    let client = Client::new(address::read(home)?);
-
-    client.get("/api/events").await.ok().map(|_| client)
+    // The git directory first: in a container, it is the only one shared
+    // with the machine of the server.
+    let copy = home.git_dir.as_deref().and_then(shared::read);
+    for found in copy.into_iter().chain(address::read(home)) {
+        let client = Client::new(found);
+        if client.get("/api/events").await.is_ok() {
+            return Some(client);
+        }
+    }
+    None
 }
 
 /// The server of the worktree, or an error that says what to run.
@@ -410,6 +428,20 @@ pub fn announce(home: &Home, port: u16, token: &str, socket: Option<&Path>) -> R
     address::write(home, &address)?;
 
     Ok(address)
+}
+
+/// Write the copy of the address in the git directory, naming the socket
+/// there. None when the worktree has no git directory to write.
+pub fn announce_shared(home: &Home, address: &Address, socket: &Path) -> Result<Option<Address>> {
+    let Some(git_dir) = &home.git_dir else {
+        return Ok(None);
+    };
+    let copy = Address {
+        socket: Some(socket.display().to_string()),
+        ..address.clone()
+    };
+    shared::write(git_dir, &copy)?;
+    Ok(Some(copy))
 }
 
 #[cfg(test)]

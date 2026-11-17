@@ -39,7 +39,7 @@ fn path_in(root: &Path, home: &Home) -> Result<PathBuf> {
 /// Anybody can create a name under `/tmp`. A directory that another user
 /// made, or that others can enter, could hand the token to them, so it is
 /// refused rather than used.
-fn private_dir(dir: &Path, uid: u32) -> Result<()> {
+pub(super) fn private_dir(dir: &Path, uid: u32) -> Result<()> {
     match fs::DirBuilder::new().mode(0o700).create(dir) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -136,6 +136,7 @@ mod tests {
             dir: PathBuf::from("/home/u/.local/state/qreview/repos/4f59"),
             repo: "4f59".to_owned(),
             worktree: "a1b2".to_owned(),
+            git_dir: None,
         };
 
         let path = path_in(root.path(), &home).unwrap();
