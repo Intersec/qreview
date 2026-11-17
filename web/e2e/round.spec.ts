@@ -63,6 +63,8 @@ test('the version that was reviewed comes back as a patch set', async ({ page })
   // not on the screen. The pane still lists them, under the version they
   // were written on.
   await expect(card(page, 'This line says nothing.')).toHaveCount(0);
+  // They wait a click away, under the work left.
+  await page.locator('.comment-list .list-more').click();
   await expect(page.locator('.comment-list .list-previous')).toContainText('previous');
   await expect(page.locator('.comment-list .list-row.is-previous')).toContainText(
     'This line says nothing.',
@@ -129,7 +131,8 @@ test('the pane counts the current remarks and lists the previous ones apart', as
 
   // The round before is not counted, and it is not hidden either.
   const pane = page.locator('.comment-list');
-  await expect(pane.locator('.list-head')).toContainText('Comments · 0');
+  await expect(pane.locator('.list-head')).toContainText('To handle · 0');
+  await pane.locator('.list-more').click();
   // The group is headed by the version its remarks were written on.
   const head = pane.locator('.list-previous');
   await expect(head).toHaveCount(1);
@@ -140,7 +143,7 @@ test('the pane counts the current remarks and lists the previous ones apart', as
 
   // And a remark of this round is counted, above the ones from before.
   await remark(page, '5', 'Written in the second round.');
-  await expect(pane.locator('.list-head')).toContainText('Comments · 1');
+  await expect(pane.locator('.list-head')).toContainText('To handle · 1');
   await expect(pane.locator('.list-row:not(.is-previous)')).toHaveCount(1);
 });
 
@@ -178,6 +181,7 @@ test('a previous remark on a file that the next version dropped opens its versio
   await page.goto(server.url);
   await openChange(page, /docs: rename the document/);
 
+  await page.locator('.comment-list .list-more').click();
   await page
     .locator('.comment-list .list-row.is-previous', { hasText: 'This line says nothing.' })
     .click();
@@ -213,6 +217,7 @@ test('a remark of the version read against opens on its line, from the pane', as
   await page.locator('#base-of').selectOption('ps:1');
   await openFile(page, 'new-name.md');
 
+  await page.locator('.comment-list .list-more').click();
   await page
     .locator('.comment-list .list-row.is-previous', { hasText: 'Say which words.' })
     .click();

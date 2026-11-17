@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCurrent, open, previousGroups, rounds } from './versions';
+import { isCurrent, open, previousGroups, rounds, toHandle } from './versions';
 import type { Comment } from '@/api/types';
 
 function remark(id: string, commit: string): Comment {
@@ -46,6 +46,28 @@ describe('rounds', () => {
 
     expect(current.map((c) => c.id)).toEqual(['a', 'c']);
     expect(previous.map((c) => c.id)).toEqual(['b']);
+  });
+});
+
+describe('toHandle', () => {
+  it('keeps a remark staged for Gerrit until it is sent, which open leaves out', () => {
+    const mark = (state: 'staged' | 'sent') => ({
+      state,
+      patchSet: 1,
+      resolve: false,
+      id: null,
+      sentAt: null,
+    });
+    const staged = { ...remark('staged', 'now'), gerrit: mark('staged') };
+    const sent = { ...remark('sent', 'now'), gerrit: mark('sent') };
+    const done = { ...remark('done', 'now'), done: true };
+    const change = {
+      commit: 'now',
+      comments: [remark('open', 'now'), staged, sent, done, remark('before', 'old')],
+    };
+
+    expect(toHandle(change).map((c) => c.id)).toEqual(['open', 'staged']);
+    expect(open(change).map((c) => c.id)).toEqual(['open']);
   });
 });
 

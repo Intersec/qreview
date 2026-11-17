@@ -1345,3 +1345,10 @@ Each file names the palette that it follows and its license in its header commen
 **Cost.** Each bundled token is now a contract twice: with the user files and with the bundled files. A renamed token must be renamed in each bundled file, and the test of the parse catches one that is forgotten. The answers of the session grow by about 20 small maps.
 
 Nothing in the storage format or the export moves.
+
+## 2026-11-17 — The threads of Gerrit that wait come first
+
+The first review of comments from Gerrit showed the problem. Two reviewers left a thread and a -1 on a change. The list of comments did not show the thread, and it showed the done remarks of the review instead. The row of the change said `· 1 ✎`, and nothing told that the one was a reviewer.
+
+**Decision.** The list of comments becomes the list of what is left to handle, titled **To handle**. It opens with the threads of Gerrit that wait, and counts them. The open remarks follow, those staged for Send included. The done, the sent and the previous remarks wait behind one click: the rule "a remark is never hidden" holds. The row of a change counts the threads of Gerrit apart. The `✎` counts on the changes and the files count what To handle lists, so a remark staged for Send counts there. Copy and Fix count the work of the agent alone. Section 6.8 of the design holds it.
+

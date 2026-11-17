@@ -67,3 +67,17 @@ test('a thread that waits is work: the counts and the export hold it', async ({ 
   expect(text).toContain('Reply from Test Author on Gerrit: At the first error.');
   expect(text).not.toContain('Rename this function.');
 });
+
+test('the threads that wait come first in the pane, and the series row counts them', async ({
+  page,
+}) => {
+  const pane = page.locator('.comment-list');
+  const first = pane.locator('.list-group').first();
+  await expect(first.locator('.tag-gerrit')).toHaveText('Gerrit');
+  await expect(first.locator('.list-row')).toHaveCount(2);
+  await expect(first).toContainText('Where does this loop stop?');
+  await expect(first).not.toContainText('Rename this function.');
+
+  const row = page.locator('nav li', { hasText: 'net: retry the read' });
+  await expect(row.locator('.count-gerrit')).toHaveText('· 2 Gerrit');
+});

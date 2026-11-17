@@ -17,8 +17,15 @@ defineProps<{
   batch: number;
   /// True while the file list of the open change is being read.
   loadingFiles: boolean;
-  /// How many comments each change of the series carries.
+  /// How many threads to handle each change of the series carries, those
+  /// of Gerrit and those staged for Send included.
   counts: Map<string, number>;
+  /// How many of them are threads of reviewers on Gerrit.
+  gerritCounts: Map<string, number>;
+  /// The threads of reviewers that wait, change by change.
+  gerritWaiting: { key: string; subject: string; threads: Comment[] }[];
+  /// True while the threads of Gerrit are read.
+  gerritReading: boolean;
   /// Every comment of the session, change by change.
   written: ChangeComments[];
   /// How many comments sit in each file of the change being read.
@@ -110,8 +117,18 @@ defineExpose({ focusFilter: () => inChange.value[0]?.focusFilter() });
                 <span v-if="change.patchSetCount > 1">
                   · {{ change.patchSetCount }} patch sets
                 </span>
-                <span v-if="counts.get(change.key)" class="count"
-                  >· {{ counts.get(change.key) }} ✎</span
+                <span
+                  v-if="gerritCounts.get(change.key)"
+                  class="count count-gerrit"
+                  title="Threads of reviewers on Gerrit that wait for an answer"
+                  >· {{ gerritCounts.get(change.key) }} Gerrit</span
+                >
+                <span
+                  v-if="(counts.get(change.key) ?? 0) - (gerritCounts.get(change.key) ?? 0) > 0"
+                  class="count"
+                  title="Remarks of this review to handle"
+                  >·
+                  {{ (counts.get(change.key) ?? 0) - (gerritCounts.get(change.key) ?? 0) }} ✎</span
                 >
                 <span
                   v-if="threads?.blockedChanges.value.has(change.key)"
@@ -140,7 +157,7 @@ defineExpose({ focusFilter: () => inChange.value[0]?.focusFilter() });
     </div>
 
     <PaneSplit
-      v-if="written.length > 0"
+      v-if="written.length > 0 || gerritWaiting.length > 0"
       direction="horizontal"
       label="Make the list of comments taller or shorter"
       @move="taller"
@@ -152,6 +169,8 @@ defineExpose({ focusFilter: () => inChange.value[0]?.focusFilter() });
     <CommentList
       :height="listHeight"
       :written="written"
+      :gerrit="gerritWaiting"
+      :gerrit-reading="gerritReading"
       :open-key="selected"
       @go="(key, remark) => emit('go', key, remark)"
     />

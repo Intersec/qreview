@@ -17,7 +17,7 @@ import {
   repliesBy,
   resolvesHere,
 } from '@/diff/threads';
-import { isCurrent, open, rounds } from '@/diff/versions';
+import { isCurrent, open, rounds, toHandle } from '@/diff/versions';
 import type { Place } from '@/place';
 import type {
   AgentTask,
@@ -178,11 +178,17 @@ export const useReview = defineStore('review', () => {
   /// The threads of Gerrit of every change, when REST answers. Read after
   /// the page, as the status of Gerrit is, and again after a refresh.
   const gerritThreads = ref<ChangeThreads[]>([]);
+  /// True while the threads of Gerrit are read: on a slow link, the list
+  /// of what is left to handle says that more may come.
+  const gerritReading = ref(false);
   async function readGerritThreads() {
+    gerritReading.value = true;
     try {
       gerritThreads.value = await api.gerritThreads();
     } catch {
       gerritThreads.value = [];
+    } finally {
+      gerritReading.value = false;
     }
   }
 
@@ -233,6 +239,12 @@ export const useReview = defineStore('review', () => {
     return [...open(change), ...(openGerrit.value.get(change.key) ?? [])];
   }
 
+  /// What the reader has still to handle in a change: the open threads,
+  /// and the remarks staged for Gerrit that wait for Send.
+  function listedOf(change: ChangeComments): Comment[] {
+    return [...toHandle(change), ...(openGerrit.value.get(change.key) ?? [])];
+  }
+
   /// Every change that holds a thread, here or on Gerrit. A change with
   /// threads on Gerrit alone has no file in the store.
   const withThreads = computed<ChangeComments[]>(() => [
@@ -251,13 +263,13 @@ export const useReview = defineStore('review', () => {
   const total = computed(() =>
     withThreads.value.reduce((sum, change) => sum + openOf(change).length, 0),
   );
-  /// How many comments sit in each file of the change being read. Out of
-  /// the same list as every other count on the screen.
+  /// How many comments to handle sit in each file of the change being
+  /// read. Out of the same list as To handle.
   const inFile = computed(() => {
     const counts = new Map<string, number>();
     const here = withThreads.value.find((change) => change.key === changeKey.value);
 
-    for (const comment of here ? openOf(here) : []) {
+    for (const comment of here ? listedOf(here) : []) {
       const file = comment.anchor?.file;
       if (file) {
         counts.set(file, (counts.get(file) ?? 0) + 1);
@@ -273,6 +285,30 @@ export const useReview = defineStore('review', () => {
     }
     return counts;
   });
+  /// How many comments to handle each change carries, as To handle lists
+  /// them. A remark staged for Gerrit counts here, and not in countOf: it
+  /// waits for Send, and the agent has nothing to fix in it.
+  const listedCount = computed(() => {
+    const counts = new Map<string, number>();
+    for (const change of withThreads.value) {
+      counts.set(change.key, listedOf(change).length);
+    }
+    return counts;
+  });
+
+  /// The threads of reviewers that wait, change by change, in the order of
+  /// the comment list: newest change first. They come first there, since
+  /// a reviewer waits on them.
+  const gerritWaiting = computed(() =>
+    [...withThreads.value]
+      .reverse()
+      .map((change) => ({
+        key: change.key,
+        subject: change.subject,
+        threads: openGerrit.value.get(change.key) ?? [],
+      }))
+      .filter((change) => change.threads.length > 0),
+  );
 
   /// How many commits one click of the boundary card asks for.
   const batchSize = computed(() => config.value?.series.batchSize ?? 5);
@@ -1385,6 +1421,10 @@ export const useReview = defineStore('review', () => {
     release,
     total,
     countOf,
+    listedCount,
+    openGerrit,
+    gerritWaiting,
+    gerritReading,
     batchSize,
     inFile,
     place,
