@@ -226,6 +226,7 @@ async fn ssh(coords: &Coordinates, args: &[&str], limit: Duration) -> Result<Str
         .env("GIT_TERMINAL_PROMPT", "0");
 
     let started = crate::trace::start();
+    let _busy = crate::trace::wait(format!("Gerrit: ssh query to {}", coords.host));
     let answered = tokio::time::timeout(limit, command.output()).await;
     crate::trace::since(started, || {
         format!("ssh {} {}", coords.host, args.join(" "))

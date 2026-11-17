@@ -26,6 +26,8 @@ import type {
   Sent,
   Series,
   SessionBody,
+  Activity,
+  TraceLines,
 } from './types';
 
 export class ApiError extends Error {
@@ -257,6 +259,8 @@ export const api = {
     }),
 
   gerritStatus: () => call<GerritStatus>('/api/gerrit/status'),
+  activity: () => call<Activity>('/api/activity'),
+  trace: (after: number) => call<TraceLines>(`/api/trace?after=${after}`),
   gerritThreads: () => call<ChangeThreads[]>('/api/gerrit/threads'),
 
   /// Send the staged remarks of a change to Gerrit as drafts, or of the

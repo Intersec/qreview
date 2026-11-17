@@ -1367,7 +1367,7 @@ The command prints one JSON object:
 
 The organization supplies the command. It can run a flow of OIDC with a refresh token, or ask a central service. `examples/gerrit-auth-basic.sh` asks the user name and the HTTP password of Gerrit in the terminal.
 
-**When it runs.** At the first REST call of the run, and not before: a series with no Gerrit asks nothing. The reader runs `qreview` in a terminal, so the command gets that terminal, and `QREVIEW_INTERACTIVE=1`. It may ask a user name and a password there, or open a browser for OIDC, and it has 5 minutes. With no terminal, the command gets no standard input and 15 seconds: it answers from what it keeps, or fails, and the page shows the first line of its error output. In both cases `QREVIEW_GERRIT_URL` holds the address of the API. The standard output of the command never reaches a message: it holds the secret.
+**When it runs.** At the first REST call of the run, and not before: a series with no Gerrit asks nothing. The reader runs `qreview` in a terminal, so the command gets that terminal, and `QREVIEW_INTERACTIVE=1`. It may ask a user name and a password there, or open a browser for OIDC, and it has 5 minutes. Meanwhile the chip of the slow calls says that the server waits for a login in the terminal (section 11). With no terminal, the command gets no standard input and 15 seconds: it answers from what it keeps, or fails, and the page shows the first line of its error output. In both cases `QREVIEW_GERRIT_URL` holds the address of the API. The standard output of the command never reaches a message: it holds the secret.
 
 **Only the user names the command.** A `.qreview.json` that sets `gerrit.auth` is refused, and the server does not start. Otherwise a repository that someone cloned would choose a program that the server runs.
 
@@ -1530,6 +1530,8 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | Method and route | What it does |
 |---|---|
 | `GET /api/session` | The repository, the first batch of the series, the tool version and the commit it was built from |
+| `GET /api/activity` | What the server waits on now: `{ "waiting": [{ "what", "ms" }] }`, the slow calls in flight, oldest first. It takes no lock of the session. See section 11 |
+| `GET /api/trace?after=<n>` | The lines of the trace after line `n`: `{ "lines": [{ "n", "at", "ms", "what" }], "next" }`. The server keeps the last 2000. See section 11 |
 | `GET /api/gerrit/status` | What the REST API allows this run: `{ "rest": "ok" \| "anonymous" \| "refused" \| "unreachable" \| "off", "reason", "base" }`. A route of its own, so the session answers without running `gerrit.auth.command`. See section 6.6 |
 | `POST /api/session/refresh` | Resolve the series again, and answer with what git holds now |
 | `POST /api/series/extend` | Load the next batch. Body: `{ "count": 5, "parent": 1 }` |
@@ -2029,6 +2031,8 @@ diff parse, and every HTTP request with the status it answered. Each line
 carries the time since the process started and what the work cost, so a slow
 read is measured and not guessed. Standard output stays clean, because
 `export` writes there. The token never appears in a line, and neither does the authorization of Gerrit.
+
+The server keeps the last 2000 lines in memory in any case, `--trace` or not. The **Trace** window of the page, which the version in the top bar opens, shows them and the new ones as they come, without a restart. The slow calls, those that cross the network (a query of Gerrit over ssh or REST, a `git fetch`), also say when they start. While one runs for more than 300 ms, a quiet chip in the top bar names it and how long it has waited, so a slow link reads as work and not as a broken page. The requests of the Trace window and of the chip make no line.
 
 ## 12. Build and distribution
 

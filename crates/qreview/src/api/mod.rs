@@ -115,6 +115,8 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/blame", get(blame))
         .route("/api/gerrit/commits", post(gerrit_commits))
         .route("/api/gerrit/status", get(gerrit_status))
+        .route("/api/activity", get(activity))
+        .route("/api/trace", get(trace_lines))
         .route("/api/gerrit/threads", get(gerrit_threads))
         .route("/api/changes/{key}/gerrit/send", post(send_drafts))
         .route("/api/series/gerrit/send", post(send_series_drafts))
@@ -174,12 +176,17 @@ async fn timed(
     request: axum::extract::Request,
     next: middleware::Next,
 ) -> Response {
-    let started = crate::trace::start();
+    // The Trace window and the status of the page ask every second: a line
+    // for each would bury the work they show.
+    let path = request.uri().path();
+    let watching = path == "/api/trace" || path == "/api/activity";
+    let started = crate::trace::start().filter(|_| !watching);
     let what = started.map(|_| format!("{} {}", request.method(), without_token(request.uri())));
 
     // A wait on the events is held for half a minute and does no work. It
-    // must not keep the read-ahead from its quiet moment.
-    let waits = request.uri().path() == "/api/events";
+    // must not keep the read-ahead from its quiet moment, nor does a look
+    // at the trace.
+    let waits = path == "/api/events" || watching;
     let _in_hand = (!waits).then(|| InHand::new(state));
     let response = next.run(request).await;
 
@@ -864,6 +871,24 @@ struct GerritStatus {
     reason: Option<String>,
     /// The address of the server, when one is known.
     base: Option<String>,
+}
+
+/// What the server waits on now: the slow calls in flight, oldest first.
+/// It takes no lock of the session, so it answers while a read holds it.
+async fn activity() -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "waiting": crate::trace::waiting_now() }))
+}
+
+#[derive(Deserialize)]
+struct TraceQuery {
+    #[serde(default)]
+    after: u64,
+}
+
+/// The lines of the trace after a number, for the Trace window.
+async fn trace_lines(Query(query): Query<TraceQuery>) -> Json<serde_json::Value> {
+    let (lines, next) = crate::trace::lines_after(query.after);
+    Json(serde_json::json!({ "lines": lines, "next": next }))
 }
 
 async fn gerrit_status(State(state): State<AppState>) -> Json<GerritStatus> {

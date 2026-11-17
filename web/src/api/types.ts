@@ -497,3 +497,31 @@ export interface BlameRange {
   /// Where `start` stands in the commit that wrote it.
   origin: number;
 }
+
+/** A slow call of the server in flight, such as a query to Gerrit. */
+export interface Waiting {
+  what: string;
+  /// How long it has run, in milliseconds.
+  ms: number;
+}
+
+/** What the server waits on now. */
+export interface Activity {
+  waiting: Waiting[];
+}
+
+/** One line of the trace of the server. */
+export interface TraceLine {
+  n: number;
+  /// Seconds since the start of the run.
+  at: number;
+  /// What the work cost, in milliseconds. Null for an event.
+  ms: number | null;
+  what: string;
+}
+
+/** The lines of the trace after a number. */
+export interface TraceLines {
+  lines: TraceLine[];
+  next: number;
+}
