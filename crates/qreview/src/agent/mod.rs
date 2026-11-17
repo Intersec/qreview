@@ -453,8 +453,16 @@ pub async fn wait(
     };
 
     loop {
+        // The server holds a wait for half a minute: a shorter time limit
+        // says how long it may hold this one.
+        let held = deadline
+            .map(|deadline| {
+                let left = deadline.saturating_duration_since(Instant::now());
+                format!("&wait={}", left.as_millis())
+            })
+            .unwrap_or_default();
         let Ok(batch) = client
-            .get(&format!("/api/events?after={after}&who=agent"))
+            .get(&format!("/api/events?after={after}&who=agent{held}"))
             .await
         else {
             let back = reach(home, deadline).await?;

@@ -1419,6 +1419,9 @@ struct EventsQuery {
     who: Option<String>,
     /// The `state` of the last answer that the party got.
     state: Option<String>,
+    /// How long to hold the wait, in milliseconds, when the party has less
+    /// time than the server would hold it: `qreview wait --timeout 1`.
+    wait: Option<u64>,
 }
 
 /// How long a wait on the events is held before it answers empty. Short
@@ -1435,7 +1438,13 @@ async fn events(State(state): State<AppState>, Query(query): Query<EventsQuery>)
 
     let batch = state
         .events
-        .after(query.after, EVENTS_WAIT, query.state.as_deref())
+        .after(
+            query.after,
+            query.wait.map_or(EVENTS_WAIT, |ms| {
+                EVENTS_WAIT.min(std::time::Duration::from_millis(ms))
+            }),
+            query.state.as_deref(),
+        )
         .await;
     // Reached only when the agent did not hang up, which drops this future.
     if let Some(agent) = &mut agent {
@@ -4309,5 +4318,23 @@ mod tests {
         assert_eq!(batch["events"][0]["kind"], "fix");
         assert_eq!(batch["events"][0]["key"], "I8f3ac21");
         assert_eq!(batch["events"][0]["id"], "gerrit:g1");
+    }
+
+    #[tokio::test]
+    async fn a_wait_with_a_time_limit_is_held_no_longer() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        let server = app(state);
+        let started = std::time::Instant::now();
+
+        let (status, batch) = json(
+            server,
+            get_with_cookie("/api/events?after=0&who=agent&wait=100", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(batch["events"], serde_json::json!([]));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 }
