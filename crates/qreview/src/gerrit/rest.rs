@@ -82,6 +82,11 @@ impl Auth {
         {
             return Ok(kept.authorization.clone());
         }
+        // The page shows what the server waits on: the reader looks there,
+        // and the question is in the terminal.
+        let _busy = self
+            .interactive
+            .then(|| crate::trace::wait("Gerrit: log in, in the terminal of qreview"));
         let given = run_command(&self.command, base, self.interactive).await?;
         let authorization = given.authorization.clone();
         *held = Some(given);
@@ -304,6 +309,7 @@ impl Rest {
             .kill_on_drop(true);
 
         let started = crate::trace::start();
+        let _busy = crate::trace::wait(format!("Gerrit: {method} {route}"));
         let answered = tokio::time::timeout(TIMEOUT + Duration::from_secs(1), async {
             let mut child = command.spawn().context("cannot run curl")?;
             let mut stdin = child.stdin.take().context("curl has no standard input")?;

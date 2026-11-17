@@ -6,6 +6,8 @@ import { questions, turnMark } from './notify';
 import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
 import CleanDialog from './components/CleanDialog.vue';
+import TraceDialog from './components/TraceDialog.vue';
+import { api } from './api/client';
 import FixDialog from './components/FixDialog.vue';
 import SendDialog from './components/SendDialog.vue';
 import PreferencesDialog from './components/PreferencesDialog.vue';
@@ -21,7 +23,7 @@ import { any as anyDraft } from './diff/drafts';
 import { describe as describeTask } from './activity';
 import { show as showSignal, signalOf } from './favicon';
 import { applyTheme } from './colors';
-import type { Anchor, Comment } from './api/types';
+import type { Anchor, Comment, Waiting } from './api/types';
 import type { BlameLine } from './diff/blame';
 
 const review = useReview();
@@ -599,16 +601,40 @@ watch(
   { immediate: true },
 );
 
+/// What the server waits on now, such as a query to Gerrit: on a slow link,
+/// a page that only waits looks broken.
+const waiting = ref<Waiting[]>([]);
+/// The Trace window: the lines of `--trace`, without a restart.
+const tracing = ref(false);
+let watchServer: ReturnType<typeof setInterval> | undefined;
+async function readActivity() {
+  if (document.visibilityState !== 'visible' || stopped.value) {
+    return;
+  }
+  try {
+    waiting.value = (await api.activity()).waiting;
+  } catch {
+    waiting.value = [];
+  }
+}
+/// The call that has waited the longest. A short one would only flicker.
+const slowest = computed(() => {
+  const first = waiting.value[0];
+  return first && first.ms >= 300 ? first : null;
+});
+
 onMounted(() => {
   void goTo(null, review.load(parse(location.hash)));
   window.addEventListener('keydown', onKey);
   void review.listen();
   window.addEventListener('popstate', onPop);
+  watchServer = setInterval(() => void readActivity(), 1000);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('popstate', onPop);
+  clearInterval(watchServer);
 });
 </script>
 
@@ -735,7 +761,28 @@ onBeforeUnmount(() => {
           ⚙
         </button>
         <span v-if="copied" role="status" class="copied">copied</span>
-        <span class="quiet version" :title="`qreview ${build}`">{{ version }}</span>
+        <button
+          v-if="slowest"
+          type="button"
+          class="server-waits"
+          role="status"
+          :title="`${waiting.map((call) => call.what).join('\n')}\n\nOpen the trace`"
+          @click="tracing = true"
+        >
+          <span class="server-waits-what">{{ slowest.what }}</span>
+          · {{ (slowest.ms / 1000).toFixed(0) }}s<span v-if="waiting.length > 1">
+            +{{ waiting.length - 1 }}</span
+          >
+        </button>
+        <button
+          type="button"
+          class="quiet version"
+          :title="`qreview ${build}`"
+          aria-label="Open the trace"
+          @click="tracing = true"
+        >
+          {{ version }}
+        </button>
         <a
           v-if="release?.newer"
           class="newer"
@@ -912,6 +959,7 @@ onBeforeUnmount(() => {
       @close="sending = null"
     />
 
+    <TraceDialog v-if="tracing" @close="tracing = false" />
     <CleanDialog
       v-if="confirmingClean"
       :done="doneHere"

@@ -1805,6 +1805,7 @@ impl Session {
             .clone()
             .with_context(|| format!("patch set {number} is not on Gerrit"))?;
 
+        let _busy = crate::trace::wait(format!("Gerrit: git fetch {git_ref}"));
         self.git.text(&["fetch", "origin", &git_ref]).await?;
 
         let info = commit::info(&self.git, &set.commit).await?;
@@ -2003,9 +2004,10 @@ impl Session {
             .gerrit_change(key)
             .await
             .context("Gerrit does not know this change")?;
-        let found = self.gerrit_threads(&change).await.context(
-            "Gerrit gave no thread: its REST API does not answer",
-        )?;
+        let found = self
+            .gerrit_threads(&change)
+            .await
+            .context("Gerrit gave no thread: its REST API does not answer")?;
         let roots = threads::roots(&found);
         let root = roots
             .get(id)

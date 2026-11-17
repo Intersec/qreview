@@ -1352,3 +1352,14 @@ The first review of comments from Gerrit showed the problem. Two reviewers left 
 
 **Decision.** The list of comments becomes the list of what is left to handle, titled **To handle**. It opens with the threads of Gerrit that wait, and counts them. The open remarks follow, those staged for Send included. The done, the sent and the previous remarks wait behind one click: the rule "a remark is never hidden" holds. The row of a change counts the threads of Gerrit apart. The `✎` counts on the changes and the files count what To handle lists, so a remark staged for Send counts there. Copy and Fix count the work of the agent alone. Section 6.8 of the design holds it.
 
+## 2026-11-17 — The page says what the server waits on, and shows the trace
+
+On a slow link, the first read of the threads of Gerrit took 19 seconds, and the page showed nothing in that time. Only a run with `--trace` told why, and a reader does not restart a review to learn it.
+
+**Decision.** The server keeps the last 2000 lines of the trace in memory, `--trace` or not, and the slow calls say when they start. The page shows a quiet chip in the top bar while a slow call runs for more than 300 ms, and a Trace window, opened from the version, streams the lines. Two routes serve them, `GET /api/activity` and `GET /api/trace`. A line costs a string, which is nothing beside the child process that it describes. Section 11 of the design holds it.
+
+**Rejected:**
+
+- **Lines only with `--trace`.** The reader who needs them is the one who did not start with it.
+- **A message per slow call through the events.** The events are for the agent and the reader; a poll of one cheap route each second carries no state to keep in step.
+
