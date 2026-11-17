@@ -78,6 +78,7 @@ impl Client {
         // The socket first: it is the way in from a sandbox, where the port
         // is in another network.
         if let Some(socket) = &self.address.socket
+            && let Ok(socket) = super::shared::reachable(std::path::Path::new(socket))
             && let Ok(mut stream) = UnixStream::connect(socket).await
         {
             return talk(&mut stream, &request).await;

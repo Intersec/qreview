@@ -28,8 +28,8 @@ server started inside the sandbox cannot save comments, and the browser of
 the user cannot reach it. You know you are in one when `qreview` prints
 `Read-only file system` about a `server-<id>.json` file: stop that server,
 and ask the user to run `qreview` in their own terminal. Your commands then
-reach their server through its Unix socket under `/tmp`, with nothing to
-configure.
+reach their server through its Unix socket under `/tmp`, or in the git
+directory of the worktree from a devcontainer, with nothing to configure.
 
 1. Run `qreview` in the background, from the worktree. It opens the review
    in the browser of the user and prints its address.

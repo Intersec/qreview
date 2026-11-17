@@ -39,7 +39,12 @@ fn path_in(home: &Home) -> PathBuf {
 pub fn write(home: &Home, address: &Address) -> Result<()> {
     let dir = &home.dir;
     fs::create_dir_all(dir).with_context(|| format!("cannot make {}", dir.display()))?;
-    let path = path_in(home);
+    write_at(&path_in(home), address)
+}
+
+/// Write an address at `path`, readable by its owner alone.
+pub fn write_at(path: &Path, address: &Address) -> Result<()> {
+    let path = path.to_path_buf();
     let temp = path.with_extension("json.tmp");
 
     let mut handle = open_private(&temp)?;
@@ -94,6 +99,7 @@ mod tests {
             dir: dir.path().to_path_buf(),
             repo: "4f59".to_owned(),
             worktree: worktree.to_owned(),
+            git_dir: None,
         }
     }
 

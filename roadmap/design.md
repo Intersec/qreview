@@ -55,8 +55,9 @@ The token is asked for there as on the port. The browser uses the port.
 The server never writes to the working tree. It never reads it either. Every
 commit, tree, and blob comes from the object database, so a series under
 review does not have to be the checkout, and a dirty worktree changes nothing.
-The only write is `git fetch`, and only when the user asks for a Gerrit patch
-set.
+The only writes are `git fetch`, only when the user asks for a Gerrit patch
+set, and `<git-dir>/qreview/`, where the server says how to reach it while it
+runs (section 11).
 
 ## 2. Layout
 
@@ -1750,7 +1751,9 @@ repository, with mode `0600`:
 
 It removes the file, and the socket, when it stops. The commands above
 read the file of their worktree to find the server, and try the socket
-before the port. None of them starts a server, and each says to run
+before the port.
+
+**The git directory.** A devcontainer shares the project with the machine, at the same path, but not `/tmp` nor the store. So the server also makes `<git-dir>/qreview/`, with mode `0700`, in the git directory of the worktree (`git rev-parse --absolute-git-dir`, which a linked worktree has of its own). It listens there on `agent.sock`, and writes `server.json`, the same address with that socket, with mode `0600`. It removes both when it stops. The commands read that copy first, then the file of the store. A socket path longer than a Unix socket takes is bound and reached relative to the working directory. Only this repository is exposed, and only while the server runs: any process that reads the repository can drive the review, as the page does, including a fetch of a patch set from Gerrit with the key of the user. A directory that is not the user's, or that others can enter, is refused. The server goes on without it, and says so. None of them starts a server, and each says to run
 `qreview` when no server answers. A file whose server does not answer is a
 stale one, left by a crash, and is ignored.
 
