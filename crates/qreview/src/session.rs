@@ -84,6 +84,8 @@ pub struct Session {
     /// The ids of the drafts of the reader on each change, or `None` when
     /// REST gave nothing. Asked once per change, until a refresh or a send.
     gerrit_drafts: tokio::sync::Mutex<std::collections::HashMap<u64, Option<Vec<String>>>>,
+    /// Bumped by each send: a list read before it is not kept after it.
+    drafts_generation: std::sync::atomic::AtomicU64,
     /// `git config user.email`, read once. `None` makes every change the
     /// reader's own.
     user_email: Option<String>,
@@ -269,6 +271,7 @@ impl Session {
             rest: tokio::sync::Mutex::new(None),
             gerrit_threads: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             gerrit_drafts: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            drafts_generation: std::sync::atomic::AtomicU64::new(0),
             user_email: None,
         };
         session.user_email = user_email(&session.git).await;
@@ -1462,12 +1465,14 @@ impl Session {
     /// The ids of the drafts of the reader on a change. `None` without an
     /// authorization, or when REST gives nothing: then nobody knows.
     pub async fn gerrit_drafts(&self, change: &gerrit::Change) -> Option<Vec<String>> {
-        // Held across the call: a send that empties the cache meanwhile
-        // waits, so a list read before its drafts is never kept after it.
-        let mut cache = self.gerrit_drafts.lock().await;
-        if let Some(known) = cache.get(&change.number) {
+        use std::sync::atomic::Ordering;
+
+        if let Some(known) = self.gerrit_drafts.lock().await.get(&change.number) {
             return known.clone();
         }
+        // A send that ends during the call makes this list old: it is then
+        // answered, and not kept.
+        let generation = self.drafts_generation.load(Ordering::SeqCst);
         let state = self.gerrit_rest().await;
         let client = match (state.client, state.status) {
             (Some(client), RestStatus::Ok) => client,
@@ -1485,7 +1490,10 @@ impl Session {
                 None
             }
         };
-        cache.insert(change.number, found.clone());
+        let mut cache = self.gerrit_drafts.lock().await;
+        if self.drafts_generation.load(Ordering::SeqCst) == generation {
+            cache.insert(change.number, found.clone());
+        }
         found
     }
 
@@ -1629,7 +1637,10 @@ impl Session {
 
         comments::mark_sent(&self.store, key, &sent)?;
         // The drafts changed: the next read asks Gerrit again.
-        self.gerrit_drafts.lock().await.remove(&change.number);
+        let mut drafts = self.gerrit_drafts.lock().await;
+        self.drafts_generation
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        drafts.remove(&change.number);
         Ok(out)
     }
 
@@ -1864,7 +1875,7 @@ impl Session {
     /// asked for together. Every change asked about is written into the
     /// answers, the ones the server never heard of as `None`, so nothing
     /// below asks a second time.
-    async fn prime_gerrit(&self, keys: &[String]) {
+    pub async fn prime_gerrit(&self, keys: &[String]) {
         let Some(coords) = self.gerrit.as_ref() else {
             return;
         };

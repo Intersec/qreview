@@ -1043,6 +1043,7 @@ dependencies = [
  "axum",
  "clap",
  "cssparser",
+ "futures-util",
  "getrandom 0.4.3",
  "hex",
  "insta",
