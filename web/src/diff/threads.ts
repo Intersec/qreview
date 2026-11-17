@@ -20,6 +20,11 @@ export interface Threads {
   ): Promise<void>;
   /// Ask the agent about a thread of Gerrit.
   askGerrit?(thread: string): Promise<void>;
+  /// Ask the agent to fix what a thread of Gerrit asks for.
+  applyGerrit?(thread: string): Promise<void>;
+  /// True when Apply can reach an agent: one listens and works on nothing,
+  /// and the change is the reader's own.
+  canApply?: ComputedRef<boolean>;
   /// Check or clear the Done box of a thread of Gerrit.
   setGerritDone?(thread: string, done: boolean): Promise<void>;
   /// Where a remark of the change on screen, sent to Gerrit, is now.

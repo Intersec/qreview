@@ -90,6 +90,14 @@ async function askAgent() {
   await threads?.askGerrit?.(props.comment.id);
 }
 
+/// Apply hands the thread to the agent as a fix of its own, so the button
+/// goes once the agent takes it.
+const applied = ref(false);
+async function apply() {
+  applied.value = true;
+  await threads?.applyGerrit?.(props.comment.id);
+}
+
 async function toggleDone(event: Event) {
   await threads?.setGerritDone?.(props.comment.id, (event.target as HTMLInputElement).checked);
 }
@@ -222,6 +230,15 @@ async function toggleDone(event: Event) {
           @click="askAgent"
         >
           Ask agent
+        </button>
+        <button
+          v-if="!done && !applied && threads?.canApply?.value"
+          type="button"
+          class="action"
+          title="Ask the agent to make the change that this thread asks for, and to stage a reply that resolves it"
+          @click="apply"
+        >
+          Apply
         </button>
         <button type="button" class="action" @click="replying = true">Reply</button>
       </div>

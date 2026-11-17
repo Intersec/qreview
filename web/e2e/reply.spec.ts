@@ -110,3 +110,18 @@ test('Ask agent hands the thread of Gerrit to the agent, reviewers named', async
   ]);
   expect(ask?.thread[0]?.name).toBe('Jane Reviewer');
 });
+
+test('Apply hands the agent the fix of that thread alone', async ({ page }) => {
+  // A wait of the agent, so the server counts one as listening. A number
+  // the server never gave answers at once.
+  await page.request.get(new URL('/api/events?after=999999999&who=agent', server.url).href);
+  await expect(page.getByText('Agent connected')).toBeVisible();
+  await thread(page).getByRole('button', { name: 'Apply' }).click();
+
+  const asked = JSON.parse(server.agent(['wait', '--after', '0', '--timeout', '5'])) as {
+    events: { kind: string; key: string; id: string; thread: { body: string }[] }[];
+  };
+  const fix = asked.events.find((e) => e.kind === 'fix');
+  expect(fix?.id).toBe('gerrit:ask1');
+  expect(fix?.thread[0]?.body).toBe('Where does this loop stop?');
+});

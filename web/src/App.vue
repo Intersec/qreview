@@ -228,6 +228,8 @@ provide(THREADS, {
   postedRepliesOf: review.postedRepliesOf,
   replyOnGerrit: review.replyOnGerrit,
   askGerrit: review.askGerrit,
+  applyGerrit: review.applyGerrit,
+  canApply: computed(() => agent.value && !working.value && !colleague.value),
   setGerritDone: review.setGerritDone,
   remove: review.deleteComment,
   sentState: (comment: Comment) => review.sentState(changeKey.value ?? '', comment),

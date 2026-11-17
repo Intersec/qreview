@@ -247,11 +247,17 @@ export const api = {
     }),
 
   /// Ask the agent to fix the change, or the whole series with no key.
-  fix: (key?: string) =>
-    fetch(key ? `/api/changes/${encodeURIComponent(key)}/fix` : '/api/series/fix', {
-      method: 'POST',
-      credentials: 'same-origin',
-    }).then(async (response) => {
+  /// With a thread, the agent fixes that thread alone: the Apply of it.
+  fix: (key?: string, thread?: string) =>
+    fetch(
+      key
+        ? `/api/changes/${encodeURIComponent(key)}/fix${thread ? `?thread=${encodeURIComponent(thread)}` : ''}`
+        : '/api/series/fix',
+      {
+        method: 'POST',
+        credentials: 'same-origin',
+      },
+    ).then(async (response) => {
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         throw new ApiError(body?.error?.code ?? 'failed', body?.error?.message ?? 'failed');

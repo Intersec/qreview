@@ -70,7 +70,10 @@ Repeat until the user says the review is over:
      answers `"reset": true`.
    - An event of kind `fix`: the user pressed **Fix this change** on the
      change `key`. See "Fix a change". If `key` is empty, the user pressed
-     **Fix the series**. See "Fix the series".
+     **Fix the series**. See "Fix the series". If the event names a thread
+     in `id` and carries it in `thread`, the user pressed **Apply** on that
+     thread of Gerrit: fix that thread alone, as "Fix a change" says, and
+     leave every other thread as it is.
 3. Answer the thread. See "Answer a remark". Change nothing. If `thread` is empty, or a
    reply fails with `no comment`, the user deleted the thread: skip it, and
    do not look into why.
@@ -156,7 +159,21 @@ user: it is in the export, and in a fix.
   --body "<text>"`. Write to the reviewer. The user sends it.
 - **Close it in a fix**: for a thread whose request you carried out, run
   `qreview stage gerrit:<id> --resolve --body "Done"`, not `--done`. Gerrit
-  then shows the thread resolved, once the user sends.
+  then shows the thread resolved, once the user sends. Say more in one
+  short sentence only when "Done" alone does not show what you did:
+  "Done, also in X and Y." or "Done: the helper is in the change before
+  this one." Name only what this version fixes.
+- **Fix the pattern, not only the line.** A reviewer names one place but
+  means the problem. Search the series for the other sites of the same
+  problem, by the pattern and not only by the name of the line. Fix the
+  sites of this commit with it. In "Fix the series", fix each site in the
+  commit that holds it. In "Fix a change", list in your reply the sites of
+  other commits, and fix none of them. A site in code that the series does
+  not touch is older than the review: list it, and do not fix it.
+- **When the user does not want the change**, they say why. Stage that
+  reason for the reviewer with `qreview stage gerrit:<id> --body
+  "<reason>"`, worded for the reviewer. Add `--resolve` only when the user
+  asks for it.
 - A thread of Gerrit takes no `--done` and no `--blocked` in `migrate`.
   Its place stays on the patch set it was posted on.
 
