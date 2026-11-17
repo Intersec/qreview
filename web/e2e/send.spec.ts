@@ -37,6 +37,16 @@ test('a staged remark becomes a draft on Gerrit, and the password stays off the 
   await page.locator('form.talk-box').getByLabel('For Gerrit').check();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
 
+  // Until Send, the remark is to handle, and the counts say so. The agent
+  // has nothing to fix in it.
+  const file = page.locator('.file-row', { hasText: 'net.blk' });
+  await expect(file).toContainText('1 ✎');
+  await expect(page.locator('.change-row', { hasText: 'net: retry the read' })).toContainText(
+    '1 ✎',
+  );
+  await expect(page.locator('.comment-list')).toContainText('To handle · 1');
+  await expect(page.getByRole('button', { name: /^Copy this change/ })).toBeDisabled();
+
   await page.getByRole('button', { name: 'Send to Gerrit · 1' }).click();
   const dialog = page.getByRole('dialog', { name: 'Send this change to Gerrit' });
   await expect(dialog).toContainText('patch set 2');
@@ -47,6 +57,7 @@ test('a staged remark becomes a draft on Gerrit, and the password stays off the 
   const sent = card(page, 'Please name this function');
   await expect(sent.locator('.talk-tag-gerrit')).toHaveText('draft on Gerrit');
   await expect(page.getByRole('button', { name: /^Send to Gerrit/ })).toHaveCount(0);
+  await expect(file).not.toContainText('✎');
 
   const given = logged('curl.log');
   expect(given).toContain('request = "PUT"');

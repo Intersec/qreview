@@ -38,6 +38,10 @@ const {
   written,
   total,
   countOf,
+  listedCount,
+  openGerrit,
+  gerritWaiting,
+  gerritReading,
   batchSize,
   inFile,
   release,
@@ -242,6 +246,10 @@ provide(THREADS, {
 const comments = computed(() => review.comments());
 /// How many comments the change on the screen carries.
 const here = computed(() => (changeKey.value ? (countOf.value.get(changeKey.value) ?? 0) : 0));
+/// How many threads of reviewers wait in each change.
+const gerritCounts = computed(
+  () => new Map([...openGerrit.value].map(([key, threads]) => [key, threads.length])),
+);
 /// The two settings the browser owns rather than the server.
 const codeStyle = computed(() => ({
   '--code-size': `${config.value?.diff.fontSize ?? 12}px`,
@@ -770,7 +778,10 @@ onBeforeUnmount(() => {
         :busy="busy"
         :batch="batchSize"
         :loading-files="loadingFiles"
-        :counts="countOf"
+        :counts="listedCount"
+        :gerrit-counts="gerritCounts"
+        :gerrit-waiting="gerritWaiting"
+        :gerrit-reading="gerritReading"
         :written="written"
         :in-file="inFile"
         @open-change="goToChange"

@@ -1105,6 +1105,33 @@ tr.talk td {
 .list-row.is-previous {
   opacity: 0.62;
 }
+.list-row.is-done {
+  opacity: 0.62;
+  text-decoration: line-through;
+}
+/* The threads of reviewers: the work that someone waits on. */
+.tag-gerrit {
+  background: var(--pick);
+  color: var(--pick-edge);
+  font-weight: 600;
+}
+.list-reading {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+.list-more {
+  display: block;
+  width: 100%;
+  padding: 4px 10px;
+  text-align: left;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.list-more:hover {
+  color: var(--ink);
+}
 .talk-stranded {
   border-style: dashed;
 }
@@ -1222,6 +1249,10 @@ tr.talk td {
 }
 .count {
   margin-left: 4px;
+}
+.count-gerrit {
+  color: var(--pick-edge);
+  font-weight: 600;
 }
 
 .files {

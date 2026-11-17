@@ -52,7 +52,7 @@ test('the list names the place and the first line of each remark', async ({ page
   await remark(page, 0, 'The loop never ends.\nA second line nobody reads here.');
 
   const list = page.locator('.comment-list');
-  await expect(list).toContainText('Comments · 1');
+  await expect(list).toContainText('To handle · 1');
   await expect(list.locator('.list-row')).toHaveCount(1);
   await expect(list.locator('.list-place')).toHaveText('net.blk:1');
   await expect(list.locator('.list-gist')).toHaveText('The loop never ends.');
