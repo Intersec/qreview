@@ -872,6 +872,16 @@ export const useReview = defineStore('review', () => {
     }
   }
 
+  /// Apply a thread of Gerrit: the agent fixes what it asks, and stages a
+  /// reply that resolves it. The fix of that thread alone.
+  async function applyGerrit(thread: string) {
+    askLeave();
+    const key = changeKey.value;
+    if (key) {
+      await guard(() => api.fix(key, `${GERRIT_PARENT}${thread}`));
+    }
+  }
+
   /// The Done box of a thread of Gerrit: a staged reply `Done` that
   /// resolves it, as the Done button of Gerrit writes. Clearing the box
   /// takes back that reply while it is only staged. A reply that somebody
@@ -1375,6 +1385,7 @@ export const useReview = defineStore('review', () => {
     unpushed,
     replyOnGerrit,
     askGerrit,
+    applyGerrit,
     setGerritDone,
     gerritStatus,
     readGerritStatus,

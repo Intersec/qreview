@@ -1421,6 +1421,8 @@ Each comment carries an `id`, `in_reply_to`, `unresolved`, a side, a line or a r
 
 **An unresolved thread is work.** It counts on every patch set, the way Gerrit counts it: on the series, on the files, in the export, and in the dialog of Fix. A resolved thread is shown grey and folded, like a done thread, and counted nowhere.
 
+**Apply** on a thread that waits, on a change of the reader with an agent that listens, asks the agent to fix that thread alone: the decision per comment of a reader who answers a review. The agent fixes the request at every site of the pattern in the commit, stages a reply that resolves the thread, and says in it the other sites it fixed. A reader who does not want the change writes why, and the agent stages that reason for the reviewer.
+
 A reviewer waits on such a thread, so it comes first. The list of comments opens with the threads of Gerrit that wait, change by change, and a click opens one on the patch set it was posted on. The row of a change in the series says how many wait, apart from the open remarks of the review: `· 2 Gerrit · 1 ✎`. The list of comments is the list of what is left to handle, titled **To handle**: under the threads of Gerrit, the open remarks of the review, those staged for Send included. The done remarks, the remarks sent as drafts and the previous remarks wait behind one click, so the list hides no remark. The `✎` count on the row of a change and on a file counts what this list holds there, so a remark staged for Send counts until it is sent. Copy and Fix count only the work of the agent, without the staged remarks.
 
 **A thread of Gerrit takes replies in qreview.** The reader and the agent reply as on a local thread. The store does not hold the thread, so the reply carries `parent: "gerrit:<id>"`, the id of the first comment, and a copy of the anchor of the thread on its patch set. A plain reply stays in qreview: it is the conversation of the reader with the agent. A reply For Gerrit goes out in the thread. It goes to the patch set of the thread, not to the newest version, because Gerrit keeps a thread on one patch set. `gerrit.resolve` says whether it resolves the thread.
@@ -1564,7 +1566,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. See section 8.3 |
 | `POST /api/migrate` | Link a new version to its previous one and move its threads. Body: `{ "from", "to", "done": [ids], "blocked": [{ "id", "body" }] }`. See section 5.6 |
 | `POST /api/map` | Where places of one version stand in the next. Body: `{ "from", "to", "places": [{ "file", "side", "line" }] }`. Answers `{ "places": [...] }`, `null` for a file the new version deleted. See section 5.6 |
-| `POST /api/changes/:key/fix` | Ask the agent to fix the change. See section 5.7 |
+| `POST /api/changes/:key/fix?thread=gerrit:<id>` | Ask the agent to fix the change. With `thread`, the fix of that thread alone: the Apply of a thread of Gerrit. The event `fix` then names it in `id`. See sections 5.7 and 6.8 |
 | `POST /api/changes/:key/clean` | Delete the done threads of the change |
 | `POST /api/changes/:key/patchsets/fetch` | Fetch one Gerrit patch set |
 | `GET /api/export?scope=change&key=...` | The export text. `json=true` gives the JSON of section 9 instead |

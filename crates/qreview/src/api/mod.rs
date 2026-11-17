@@ -1499,9 +1499,17 @@ async fn events(State(state): State<AppState>, Query(query): Query<EventsQuery>)
 }
 
 /// Ask the agent to fix the change. See section 5.7.
+#[derive(Deserialize, Default)]
+struct FixQuery {
+    /// One thread to fix, such as `gerrit:<id>`: the Apply of a thread.
+    #[serde(default)]
+    thread: Option<String>,
+}
+
 async fn fix(
     State(state): State<AppState>,
     Path(key): Path<String>,
+    Query(query): Query<FixQuery>,
 ) -> Result<StatusCode, ApiError> {
     let session = state.session.read().await;
     let Some(change) = session.series.changes.iter().find(|c| c.key == key) else {
@@ -1516,16 +1524,16 @@ async fn fix(
         )));
     }
     drop(session);
-    hand_fix(&state, &key)
+    hand_fix(&state, &key, query.thread.as_deref())
 }
 
 /// Ask the agent to fix every change of the series. See section 5.7.
 async fn fix_series(State(state): State<AppState>) -> Result<StatusCode, ApiError> {
     // An empty key names the whole series, as on a refresh.
-    hand_fix(&state, "")
+    hand_fix(&state, "", None)
 }
 
-fn hand_fix(state: &AppState, key: &str) -> Result<StatusCode, ApiError> {
+fn hand_fix(state: &AppState, key: &str, thread: Option<&str>) -> Result<StatusCode, ApiError> {
     if !state.events.agent_listens() {
         return Err(ApiError {
             status: StatusCode::CONFLICT,
@@ -1533,7 +1541,7 @@ fn hand_fix(state: &AppState, key: &str) -> Result<StatusCode, ApiError> {
             message: "no agent listens. Start one with `qreview wait`".to_owned(),
         });
     }
-    state.events.push(Kind::Fix, Author::Reader, key, None);
+    state.events.push(Kind::Fix, Author::Reader, key, thread);
 
     Ok(StatusCode::ACCEPTED)
 }
@@ -4385,5 +4393,25 @@ mod tests {
         assert_eq!(batch["events"][0]["key"], "");
         assert_eq!(batch["task"]["kind"], "fix");
         assert_eq!(batch["task"]["key"], "");
+    }
+
+    #[tokio::test]
+    async fn apply_hands_the_agent_one_thread_to_fix() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        drop(state.events.agent_waits());
+        let server = app(state.clone());
+
+        let (status, _) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/fix?thread=gerrit:g1", ""),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+
+        let (_, batch) = json(server, get_with_cookie("/api/events?after=0", TOKEN)).await;
+        assert_eq!(batch["events"][0]["kind"], "fix");
+        assert_eq!(batch["events"][0]["key"], "I8f3ac21");
+        assert_eq!(batch["events"][0]["id"], "gerrit:g1");
     }
 }

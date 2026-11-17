@@ -1363,3 +1363,13 @@ On a slow link, the first read of the threads of Gerrit took 19 seconds, and the
 - **Lines only with `--trace`.** The reader who needs them is the one who did not start with it.
 - **A message per slow call through the events.** The events are for the agent and the reader; a poll of one cheap route each second carries no state to keep in step.
 
+## 2026-11-17 — Apply a thread of Gerrit
+
+The skill `apply-review`, which answers a Gerrit review without qreview, asks the reader for each comment whether to apply it, fixes the problem at every site of the pattern and not only on the line, and replies "Done, also in X and Y." Fix in qreview applied every clear request of a change at once, and closed each thread with a bare "Done".
+
+**Decision.** A thread of Gerrit that waits, on a change of the reader, gets an **Apply** button beside Ask agent. It sends the event `fix` of the change with the id of the thread, and the agent fixes that thread alone. The procedure of the agent says to fix the pattern in the commit, to list the sites of other commits and of older code, to say the other sites in the reply, and to stage the reason of a reader who does not want the change. Fix this change and Fix the series stay for a reader who agrees with the whole review.
+
+**Rejected:**
+
+- **Apply on every remark.** The remarks of the reader already go to the agent through Ask agent and Fix; a third button on each card is noise.
+
