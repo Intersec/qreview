@@ -893,25 +893,50 @@ struct ChangeThreads {
 /// The threads of Gerrit on every change of the series that REST answers
 /// for. A change it gives nothing for is left out. See section 6.8.
 async fn gerrit_threads(State(state): State<AppState>) -> Json<Vec<ChangeThreads>> {
+    use futures_util::stream::{self, StreamExt};
+
     let session = state.session.read().await;
-    let mut out = Vec::new();
-    for change in &session.series.changes {
-        let Some(threads) = session.gerrit_threads_of(&change.key).await else {
-            continue;
-        };
-        let Some(answer) = session.gerrit_change(&change.key).await else {
-            continue;
-        };
-        out.push(ChangeThreads {
-            key: change.key.clone(),
-            url: answer.url.clone(),
-            pushed: session.gerrit_pushed(&change.key).await,
-            drafts: session.gerrit_drafts(&answer).await,
-            threads,
-        });
-    }
+    let session = &*session;
+    // One query for every change that Gerrit was not asked about yet: one
+    // at a time, each one costs a round trip over ssh.
+    let keys: Vec<String> = session
+        .series
+        .changes
+        .iter()
+        .map(|c| c.key.clone())
+        .collect();
+    session.prime_gerrit(&keys).await;
+    // Each change still costs REST a few round trips: one after the other,
+    // a long series on a slow link waits many seconds for its first thread.
+    let calls: Vec<_> = session
+        .series
+        .changes
+        .iter()
+        .map(|change| threads_of(session, &change.key))
+        .collect();
+    let out = stream::iter(calls)
+        .buffered(GERRIT_CALLS)
+        .filter_map(|found| async move { found })
+        .collect()
+        .await;
     Json(out)
 }
+
+/// The threads of Gerrit on one change, with its page and its drafts.
+async fn threads_of(session: &crate::session::Session, key: &str) -> Option<ChangeThreads> {
+    let threads = session.gerrit_threads_of(key).await?;
+    let answer = session.gerrit_change(key).await?;
+    Some(ChangeThreads {
+        key: key.to_owned(),
+        url: answer.url.clone(),
+        pushed: session.gerrit_pushed(key).await,
+        drafts: session.gerrit_drafts(&answer).await,
+        threads,
+    })
+}
+
+/// How many changes ask Gerrit at once.
+const GERRIT_CALLS: usize = 8;
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
