@@ -1563,7 +1563,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `POST /api/changes/:key/gerrit/send` | Send the staged remarks of the change as drafts. Body: `{ "ids": [id] }`, every staged remark when it is absent. Answers `{ "sent": [id], "failed": [{ "id", "error" }] }`. Refused on the Unix socket. See sections 5.8 and 6.7 |
 | `POST /api/series/gerrit/send` | The same for every change of the series |
 | `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |
-| `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. See section 8.3 |
+| `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. The wait is held 30 seconds at most, and `wait=<ms>` holds it less: `qreview wait --timeout` passes the time it has left. See section 8.3 |
 | `POST /api/migrate` | Link a new version to its previous one and move its threads. Body: `{ "from", "to", "done": [ids], "blocked": [{ "id", "body" }] }`. See section 5.6 |
 | `POST /api/map` | Where places of one version stand in the next. Body: `{ "from", "to", "places": [{ "file", "side", "line" }] }`. Answers `{ "places": [...] }`, `null` for a file the new version deleted. See section 5.6 |
 | `POST /api/changes/:key/fix?thread=gerrit:<id>` | Ask the agent to fix the change. With `thread`, the fix of that thread alone: the Apply of a thread of Gerrit. The event `fix` then names it in `id`. See sections 5.7 and 6.8 |
