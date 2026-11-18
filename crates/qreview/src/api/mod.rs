@@ -1395,13 +1395,9 @@ async fn delete_comment(
     Query(by): Query<ByQuery>,
 ) -> Result<Json<Deleted>, ApiError> {
     let session = state.session.read().await;
-    let deleted = session.delete_comment(&key, &id)?;
-    state.events.push(
-        Kind::Deleted,
-        by.author.unwrap_or_default(),
-        &key,
-        Some(&id),
-    );
+    let who = by.author.unwrap_or_default();
+    let deleted = session.delete_comment(&key, &id, who)?;
+    state.events.push(Kind::Deleted, who, &key, Some(&id));
 
     Ok(Json(Deleted { deleted }))
 }
