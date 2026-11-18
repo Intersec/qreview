@@ -1,0 +1,36 @@
+/*
+ * paper: a warm light theme.
+ *
+ * Copy this file to ~/.config/qreview/themes/ and pick "paper" in the
+ * preferences. See night.css for what a theme file may hold.
+ */
+:root {
+  color-scheme: light;
+
+  /* The page and its text. */
+  --page: #fbf8f1;
+  --pane: #f3eee2;
+  --ink: #2b2a26;
+  --ink-quiet: #6b6558;
+  --ink-faint: #9a9384;
+  --edge: #ddd5c3;
+  --edge-soft: #e9e2d2;
+  --pick: #efe3c4;
+  --pick-edge: #b08a2e;
+  --action: #8a5a00;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #e3f1d4;
+  --add-word: #c3e3a6;
+  --remove-line: #f8e0dc;
+  --remove-word: #efbcb3;
+
+  /* The syntax. */
+  --tok-keyword: #8f3f71;
+  --tok-string: #4f7a28;
+  --tok-comment: #928a78;
+  --tok-constant: #b05a00;
+  --tok-entity: #2f5d8a;
+  --tok-support: #3b7d7d;
+  --tok-variable: #a33a2c;
+}
