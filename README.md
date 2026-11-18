@@ -288,7 +288,7 @@ A file that breaks these rules is left out, and the terminal says which line
 is wrong. If `ui.theme` names a theme that did not load, qreview uses the one
 before it: `.qreview.json` of the repository, then your `config.json`, then
 the system theme. A repository may name a theme, but only one of yours: it
-cannot bring colors of its own. Restart qreview to read an edited theme.
+cannot bring colors of its own. Reload the page to read an edited theme.
 
 ## Documentation
 
