@@ -132,8 +132,19 @@ export interface Rendered {
 export interface Ui {
   /// `unified` or `side-by-side`.
   diff: string;
-  /// `system`, `light` or `dark`.
+  /// `system`, `light`, `dark`, or the name of a loaded theme: the one the
+  /// tool really uses, after the fallback.
   theme: string;
+  /// The themes of the user that loaded, by name.
+  themes: Record<string, Theme>;
+}
+
+/// A theme file of the user, as the server read and checked it.
+export interface Theme {
+  /// The built-in palette it starts from.
+  base: 'light' | 'dark';
+  /// Token without `--`, to a hex color.
+  colors: Record<string, string>;
 }
 
 export interface DiffPrefs {

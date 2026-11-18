@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import type { Config } from '@/api/types';
 
 const props = defineProps<{ config: Config }>();
@@ -17,14 +17,26 @@ const draft = reactive({
   theme: props.config.ui.theme,
 });
 
+/// The reader touched the theme select. The theme shown may be a fallback,
+/// or the choice of the repository: it is sent only when the reader picked
+/// one, so it never replaces what the user wrote in the file. A pick is
+/// sent even when it equals the value shown, so the reader can clear a
+/// theme that did not load.
+const themePicked = ref(false);
+
 watch(
   () => props.config,
   (fresh) => {
     Object.assign(draft, fresh.diff, { view: fresh.ui.diff, theme: fresh.ui.theme });
+    themePicked.value = false;
   },
 );
 
 const CONTEXTS = [3, 10, 25, 50];
+
+/// The themes of the user that loaded. A file that did not load is not
+/// offered: the terminal says why.
+const themes = computed(() => Object.keys(props.config.ui.themes ?? {}).sort());
 
 function save() {
   emit('save', {
@@ -36,7 +48,10 @@ function save() {
       fontSize: Number(draft.fontSize),
       syntax: draft.syntax,
     },
-    ui: { diff: draft.view, theme: draft.theme },
+    ui: {
+      diff: draft.view,
+      ...(themePicked.value ? { theme: draft.theme } : {}),
+    },
   });
 }
 </script>
@@ -70,10 +85,13 @@ function save() {
 
       <label class="row">
         <span>Theme</span>
-        <select v-model="draft.theme" class="picker">
+        <select v-model="draft.theme" class="picker" @change="themePicked = true">
           <option value="system">follow the system</option>
           <option value="light">light</option>
           <option value="dark">dark</option>
+          <optgroup v-if="themes.length" label="Your themes">
+            <option v-for="name in themes" :key="name" :value="name">{{ name }}</option>
+          </optgroup>
         </select>
       </label>
 
@@ -103,7 +121,8 @@ function save() {
       </label>
 
       <p class="panel-note">
-        Kept in <code>~/.config/qreview/config.json</code>, so the next run starts this way.
+        Kept in <code>~/.config/qreview/config.json</code>, so the next run starts this way. Your
+        themes are the <code>.css</code> files in <code>~/.config/qreview/themes/</code>.
       </p>
 
       <div class="panel-foot">

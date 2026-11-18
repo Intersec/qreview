@@ -11,6 +11,13 @@ export async function openChange(page: Page, subject: RegExp | string) {
   await change.first().click();
 }
 
+/// Choose a theme in the preferences, and save.
+export async function pickTheme(page: Page, theme: string) {
+  await page.getByRole('button', { name: '⚙' }).click();
+  await page.getByRole('dialog').getByLabel('Theme').selectOption(theme);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+}
+
 /// Put the diff in the side by side view, whatever it was in.
 ///
 /// The view is a preference now, so it survives from one test to the next.

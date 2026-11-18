@@ -1,7 +1,7 @@
 // The real binary, on a real repository, for the browser to talk to.
 
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { addGuide, build, type Fixture } from './fixture.ts';
 
@@ -13,6 +13,8 @@ export interface Running {
   /// Kill the server and keep it, so another one can start on it. This is
   /// how a test reads the same repository a second time.
   kill(): void;
+  /// What the server wrote in its terminal so far.
+  output(): string;
 }
 
 export const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qreview');
@@ -29,6 +31,11 @@ export async function start(
     /// One more change on top, which adds a Markdown file.
     markdown?: boolean;
     config?: object;
+    /// Theme files of the user, by name, without `.css`.
+    themes?: Record<string, string>;
+    /// The `.qreview.json` of the repository. Git ignores it, so the
+    /// series stays the same.
+    repoConfig?: object;
     /// Start on a repository a previous run left behind, comments and all.
     on?: Fixture;
   } = {},
@@ -51,6 +58,17 @@ export async function start(
 
   mkdirSync(join(fixture.config, 'qreview'), { recursive: true });
   writeFileSync(join(fixture.config, 'qreview', 'config.json'), JSON.stringify(config, null, 2));
+  if (options.themes) {
+    const dir = join(fixture.config, 'qreview', 'themes');
+    mkdirSync(dir, { recursive: true });
+    for (const [name, css] of Object.entries(options.themes)) {
+      writeFileSync(join(dir, `${name}.css`), css);
+    }
+  }
+  if (options.repoConfig) {
+    writeFileSync(join(fixture.repo, '.qreview.json'), JSON.stringify(options.repoConfig));
+    appendFileSync(join(fixture.repo, '.git', 'info', 'exclude'), '.qreview.json\n');
+  }
   const args = ['--no-open', '--port', '0'];
   if (!options.gerrit) {
     args.push('--no-gerrit');
@@ -59,7 +77,7 @@ export async function start(
     args.push('--prev', fixture.previous);
   }
 
-  const { child, url } = await spawnOn(fixture.repo, args, {
+  const { child, url, output } = await spawnOn(fixture.repo, args, {
     XDG_STATE_HOME: fixture.state,
     XDG_CONFIG_HOME: fixture.config,
     NO_COLOR: '1',
@@ -75,6 +93,7 @@ export async function start(
       fixture.remove();
     },
     kill: () => child.kill('SIGTERM'),
+    output,
   };
 }
 
@@ -83,14 +102,14 @@ export async function spawnOn(
   repo: string,
   args: string[],
   env: Record<string, string | undefined>,
-): Promise<{ child: ChildProcess; url: string }> {
+): Promise<{ child: ChildProcess; url: string; output: () => string }> {
   const child: ChildProcess = spawn(BINARY, args, {
     cwd: repo,
     env: { ...process.env, ...env },
   });
 
+  let seen = '';
   const url = await new Promise<string>((resolve, reject) => {
-    let seen = '';
     const timer = setTimeout(() => reject(new Error(`qreview said nothing:\n${seen}`)), 20000);
 
     child.stdout?.on('data', (chunk) => {
@@ -110,7 +129,7 @@ export async function spawnOn(
     });
   });
 
-  return { child, url };
+  return { child, url, output: () => seen };
 }
 
 /// Change a tracked file, stage another, and leave one untracked.

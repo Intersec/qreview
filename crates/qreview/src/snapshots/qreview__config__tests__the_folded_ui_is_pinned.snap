@@ -1,0 +1,22 @@
+---
+source: crates/qreview/src/config.rs
+expression: ui
+---
+{
+  "diff": "unified",
+  "theme": "night",
+  "themes": {
+    "night": {
+      "base": "dark",
+      "colors": {
+        "page": "#000010"
+      }
+    },
+    "paper": {
+      "base": "light",
+      "colors": {
+        "page": "#fafaf0"
+      }
+    }
+  }
+}

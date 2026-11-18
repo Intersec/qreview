@@ -19,6 +19,7 @@ import { THREADS } from './diff/threads';
 import { any as anyDraft } from './diff/drafts';
 import { describe as describeTask } from './activity';
 import { show as showSignal, signalOf } from './favicon';
+import { applyTheme } from './colors';
 import type { Anchor, Comment } from './api/types';
 import type { BlameLine } from './diff/blame';
 
@@ -492,19 +493,9 @@ function onKey(event: KeyboardEvent) {
 }
 
 /// The reader can follow the system or say outright. `system` leaves the
-/// attribute off, so the media query decides.
-watch(
-  () => config.value?.ui.theme,
-  (theme) => {
-    const root = document.documentElement;
-    if (!theme || theme === 'system') {
-      delete root.dataset.theme;
-    } else {
-      root.dataset.theme = theme;
-    }
-  },
-  { immediate: true },
-);
+/// attribute off, so the media query decides. A theme of the user sets the
+/// mode of its base, and its colors on top.
+watch(() => config.value?.ui, applyTheme, { immediate: true, deep: true });
 
 /// The tab names the tool, then the repository and the change being read.
 ///

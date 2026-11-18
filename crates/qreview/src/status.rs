@@ -115,15 +115,28 @@ impl Terminal {
 
     /// Print a message above the status line.
     pub fn say(&mut self, message: &str) {
-        let mut out = std::io::stdout().lock();
-        if self.live && self.drawn.is_some() {
+        self.above(|| println!("{message}"));
+    }
+
+    /// Print a warning above the status line, on the error stream.
+    pub fn warn(&mut self, message: &str) {
+        self.above(|| eprintln!("qreview: {message}"));
+    }
+
+    /// Clear the status line, print, and draw it again under the print.
+    fn above(&mut self, print: impl FnOnce()) {
+        let live = self.live && self.drawn.is_some();
+        if live {
+            let mut out = std::io::stdout().lock();
             let _ = write!(out, "{CLEAR}");
+            let _ = out.flush();
         }
-        let _ = writeln!(out, "{message}");
-        if let Some(drawn) = self.drawn.as_ref().filter(|_| self.live) {
+        print();
+        if let Some(drawn) = self.drawn.as_ref().filter(|_| live) {
+            let mut out = std::io::stdout().lock();
             let _ = write!(out, "{drawn}");
+            let _ = out.flush();
         }
-        let _ = out.flush();
     }
 
     /// Draw the status line again. Every time, and not only on a change:
@@ -137,6 +150,44 @@ impl Terminal {
         let _ = write!(out, "{CLEAR}{text}");
         let _ = out.flush();
         self.drawn = Some(text);
+    }
+}
+
+/// What the server has to say about the configuration while it runs.
+///
+/// The themes are read again at each page load. A file that stays broken
+/// must not be said at each reload, so only a note that was not said the
+/// last time is queued.
+#[derive(Debug, Default)]
+pub struct Notes(std::sync::Mutex<NoteState>);
+
+#[derive(Debug, Default)]
+struct NoteState {
+    said: Vec<String>,
+    pending: Vec<String>,
+}
+
+impl Notes {
+    /// The notes that the terminal already shows, at startup.
+    pub fn said(notes: &[String]) -> Self {
+        Self(std::sync::Mutex::new(NoteState {
+            said: notes.to_vec(),
+            pending: Vec::new(),
+        }))
+    }
+
+    /// The notes of the configuration now. The new ones are queued.
+    pub fn offer(&self, notes: &[String]) {
+        let mut state = self.0.lock().expect("the notes lock is poisoned");
+        let NoteState { said, pending } = &mut *state;
+        pending.extend(notes.iter().filter(|n| !said.contains(n)).cloned());
+        *said = notes.to_vec();
+    }
+
+    /// The notes to print, once each.
+    pub fn take(&self) -> Vec<String> {
+        let mut state = self.0.lock().expect("the notes lock is poisoned");
+        std::mem::take(&mut state.pending)
     }
 }
 
@@ -158,6 +209,23 @@ pub fn clear() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_note_is_said_once_while_it_holds() {
+        let notes = Notes::said(&["broken.css:3".to_owned()]);
+
+        notes.offer(&["broken.css:3".to_owned()]);
+        assert!(notes.take().is_empty());
+
+        notes.offer(&["broken.css:3".to_owned(), "gone.css:1".to_owned()]);
+        assert_eq!(notes.take(), ["gone.css:1"]);
+        assert!(notes.take().is_empty());
+
+        // Fixed, then broken again: said again.
+        notes.offer(&[]);
+        notes.offer(&["gone.css:1".to_owned()]);
+        assert_eq!(notes.take(), ["gone.css:1"]);
+    }
 
     #[test]
     fn a_new_review_waits_for_its_page_and_its_agent() {

@@ -5,11 +5,13 @@
 //! that declares its own file types therefore hands the map to every reader
 //! with no setup.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+
+use crate::theme::{self, Theme};
 
 /// The configuration, after the three layers are folded together.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -21,6 +23,10 @@ pub struct Config {
     pub ui: Ui,
     pub diff: Diff,
     pub update: Update,
+    /// What the terminal must say about the themes: a file left out, a
+    /// `ui.theme` that names no theme. A theme never stops the tool.
+    #[serde(skip)]
+    pub notes: Vec<String>,
 }
 
 /// Where to ask whether a newer qreview is out.
@@ -64,8 +70,22 @@ pub struct Series {
 pub struct Ui {
     /// `unified` or `side-by-side`.
     pub diff: String,
-    /// `system`, `light` or `dark`.
+    /// `system`, `light`, `dark`, or the name of a loaded theme: the one
+    /// the tool really uses, after the fallback.
     pub theme: String,
+    /// The themes of the user that loaded, by name. An output only:
+    /// `config.json` cannot hold it.
+    pub themes: BTreeMap<String, Theme>,
+    /// The `ui.theme` of each file that sets one, the first file first.
+    #[serde(skip)]
+    pub choices: Vec<Choice>,
+}
+
+/// The `ui.theme` that one file asks for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Choice {
+    pub file: PathBuf,
+    pub value: String,
 }
 
 /// What the reader asked of a diff. The panel writes these.
@@ -102,6 +122,8 @@ impl Default for Config {
             ui: Ui {
                 diff: "unified".to_owned(),
                 theme: "system".to_owned(),
+                themes: BTreeMap::new(),
+                choices: Vec::new(),
             },
             diff: Diff {
                 // Three lines is what git gives, and it is too few to judge
@@ -117,6 +139,7 @@ impl Default for Config {
                 url: Some(HOME.to_owned()),
                 token: None,
             },
+            notes: Vec::new(),
         }
     }
 }
@@ -211,8 +234,8 @@ impl Config {
             self.series.worktree = series.worktree.unwrap_or(self.series.worktree);
         }
         if let Some(ui) = layer.ui {
+            // ui.theme is picked by resolve_theme, from the choices.
             self.ui.diff = ui.diff.unwrap_or_else(|| self.ui.diff.clone());
-            self.ui.theme = ui.theme.unwrap_or_else(|| self.ui.theme.clone());
         }
         if let Some(diff) = layer.diff {
             self.diff.context = diff.context.unwrap_or(self.diff.context).clamp(0, 2000);
@@ -239,17 +262,103 @@ impl Config {
 /// wrong is: a configuration that is silently ignored is worse than one that
 /// refuses to start, because nobody notices.
 pub fn load(repo_root: &Path) -> Result<Config> {
-    let mut config = Config::default();
+    load_from(user_path(), repo_root)
+}
 
-    for path in [user_path(), Some(repo_root.join(".qreview.json"))]
+fn load_from(user: Option<PathBuf>, repo_root: &Path) -> Result<Config> {
+    load_with(user, repo_root, None)
+}
+
+/// `loaded` is the themes directory when the caller already read it.
+fn load_with(user: Option<PathBuf>, repo_root: &Path, loaded: Option<Loaded>) -> Result<Config> {
+    let mut config = Config::default();
+    let themes = user.as_deref().and_then(theme_dir_of);
+
+    for path in [user, Some(repo_root.join(".qreview.json"))]
         .into_iter()
         .flatten()
     {
         if let Some(layer) = read(&path)? {
+            if let Some(value) = layer.ui.as_ref().and_then(|ui| ui.theme.clone()) {
+                config.ui.choices.push(Choice {
+                    file: path.clone(),
+                    value,
+                });
+            }
             config.apply(layer);
         }
     }
+
+    if let Some(dir) = themes {
+        let loaded = loaded.unwrap_or_else(|| theme::load_dir(&dir));
+        config.use_themes(&dir, loaded);
+    } else {
+        config.resolve_theme(None);
+    }
     Ok(config)
+}
+
+impl Config {
+    /// Take the themes read from `dir`, and pick the theme to use.
+    ///
+    /// Only the user directory holds themes: a repository may name one, but
+    /// it cannot bring colors of its own.
+    pub fn use_themes(&mut self, dir: &Path, (themes, errors): Loaded) {
+        self.ui.themes = themes;
+        self.notes = errors.iter().map(ToString::to_string).collect();
+        if !errors.is_empty() {
+            self.notes.push(theme::HINT.to_owned());
+        }
+        self.resolve_theme(Some(dir));
+    }
+
+    /// The last file whose `ui.theme` is a built-in or a loaded theme wins.
+    /// Each file skipped on the way is said, with what the tool does instead.
+    fn resolve_theme(&mut self, dir: Option<&Path>) {
+        self.ui.theme = "system".to_owned();
+        for (i, choice) in self.ui.choices.iter().enumerate().rev() {
+            if known(&choice.value, &self.ui.themes) {
+                self.ui.theme = choice.value.clone();
+                return;
+            }
+            let instead = match i.checked_sub(1).map(|j| &self.ui.choices[j]) {
+                Some(next) => format!("the ui.theme of {}", next.file.display()),
+                None => "`system`".to_owned(),
+            };
+            self.notes.push(format!(
+                "ui.theme in {} {} The tool falls back to {instead}.",
+                choice.file.display(),
+                unknown(&choice.value, &self.ui.themes, dir),
+            ));
+        }
+    }
+}
+
+/// What `theme::load_dir` read: the themes, and the files left out.
+pub type Loaded = (BTreeMap<String, Theme>, Vec<theme::FileError>);
+
+fn known(value: &str, themes: &BTreeMap<String, Theme>) -> bool {
+    theme::BUILT_IN.contains(&value) || themes.contains_key(value)
+}
+
+/// Why `value` is not a theme, with the themes that loaded.
+fn unknown(value: &str, themes: &BTreeMap<String, Theme>, dir: Option<&Path>) -> String {
+    format!(
+        "names `{value}`, and no theme of that name loaded. {}",
+        loaded(themes, dir)
+    )
+}
+
+/// The themes that loaded, as a sentence.
+fn loaded(themes: &BTreeMap<String, Theme>, dir: Option<&Path>) -> String {
+    if themes.is_empty() {
+        return match dir {
+            Some(dir) => format!("No theme loaded from {}.", dir.display()),
+            None => "No theme loaded.".to_owned(),
+        };
+    }
+    let names: Vec<&str> = themes.keys().map(String::as_str).collect();
+    format!("Loaded themes: {}.", names.join(", "))
 }
 
 fn read(path: &Path) -> Result<Option<Layer>> {
@@ -270,7 +379,23 @@ fn read(path: &Path) -> Result<Option<Layer>> {
 /// setting the user put there by hand stays where it is.
 pub fn update(repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
     let path = user_path().context("no configuration directory for this user")?;
-    let mut stored: serde_json::Value = match std::fs::read_to_string(&path) {
+    update_at(&path, repo_root, patch)
+}
+
+/// A change from the panel that would leave the file unreadable, and why.
+#[derive(Debug)]
+pub struct Refused(pub String);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "the preferences were not saved: {}", self.0)
+    }
+}
+
+impl std::error::Error for Refused {}
+
+fn update_at(path: &Path, repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
+    let mut stored: serde_json::Value = match std::fs::read_to_string(path) {
         Ok(text) => serde_json::from_str(&text)
             .with_context(|| format!("{} is not a readable configuration", path.display()))?,
         Err(_) => serde_json::json!({}),
@@ -288,8 +413,35 @@ pub fn update(repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
 
         if let Some(target) = target.as_object_mut() {
             for (name, value) in fields {
+                // Each field alone first, so the error names it: a whole
+                // file read from a value says what is wrong, not where.
+                let one = serde_json::json!({ section: { name: value } });
+                if let Err(error) = serde_json::from_value::<Layer>(one) {
+                    return Err(Refused(format!("{section}.{name}: {error}")).into());
+                }
                 target.insert(name.clone(), value.clone());
             }
+        }
+    }
+
+    // Read the result before writing it: a file that the next start
+    // refuses must never reach the disk.
+    if let Err(error) = Layer::deserialize(&stored) {
+        return Err(Refused(error.to_string()).into());
+    }
+
+    // Read once, for the check and for the configuration sent back.
+    let dir = theme_dir_of(path);
+    let found = dir.as_deref().map(theme::load_dir);
+
+    // Only a theme the panel asks for is checked. A stored one that failed
+    // to load must not block a save of the font size.
+    if let Some(wanted) = patch.pointer("/ui/theme").and_then(|t| t.as_str()) {
+        let empty = BTreeMap::new();
+        let themes = found.as_ref().map_or(&empty, |(themes, _)| themes);
+        if !known(wanted, themes) {
+            let why = unknown(wanted, themes, dir.as_deref());
+            return Err(Refused(format!("ui.theme {why}")).into());
         }
     }
 
@@ -298,10 +450,10 @@ pub fn update(repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
             .with_context(|| format!("cannot make {}", parent.display()))?;
     }
     let text = serde_json::to_string_pretty(&stored)?;
-    std::fs::write(&path, format!("{text}\n"))
+    std::fs::write(path, format!("{text}\n"))
         .with_context(|| format!("cannot write {}", path.display()))?;
 
-    load(repo_root)
+    load_with(Some(path.to_owned()), repo_root, found)
 }
 
 fn user_path() -> Option<PathBuf> {
@@ -316,6 +468,15 @@ fn user_path() -> Option<PathBuf> {
 /// Where a user grammar file may be dropped.
 pub fn grammar_dir() -> Option<PathBuf> {
     Some(user_path()?.parent()?.join("grammars"))
+}
+
+/// Where the themes of the user are, beside the file of the user.
+pub fn theme_dir() -> Option<PathBuf> {
+    theme_dir_of(&user_path()?)
+}
+
+fn theme_dir_of(user: &Path) -> Option<PathBuf> {
+    Some(user.parent()?.join("themes"))
 }
 
 #[cfg(test)]
@@ -405,5 +566,263 @@ mod tests {
         let config = load(dir.path()).unwrap();
         assert_eq!(config.languages.get("zz").map(String::as_str), Some("yaml"));
         assert_eq!(config.ui.diff, "side-by-side");
+    }
+
+    #[test]
+    fn an_invalid_patch_leaves_the_file_as_it_was() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let path = home.path().join("config.json");
+        let before = "{\n  \"ui\": {\n    \"theme\": \"dark\"\n  }\n}\n";
+        std::fs::write(&path, before).unwrap();
+
+        let error =
+            update_at(&path, repo.path(), &serde_json::json!({"ui": {"theme": 5}})).unwrap_err();
+
+        assert!(error.downcast_ref::<Refused>().is_some(), "{error:#}");
+        assert!(error.to_string().contains("ui.theme"), "{error}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn a_patch_with_an_unknown_key_is_refused_and_named() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let path = home.path().join("qreview").join("config.json");
+
+        let error = update_at(
+            &path,
+            repo.path(),
+            &serde_json::json!({"ui": {"thme": "dark"}}),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("thme"), "{error:#}");
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_valid_patch_is_written_and_read_back() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let path = home.path().join("qreview").join("config.json");
+
+        let config = update_at(
+            &path,
+            repo.path(),
+            &serde_json::json!({"diff": {"context": 5}}),
+        )
+        .unwrap();
+
+        assert_eq!(config.diff.context, 5);
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("\"context\": 5")
+        );
+    }
+
+    /// A user directory with its `config.json` and its themes, and a
+    /// repository with its `.qreview.json`.
+    struct Setup {
+        home: tempfile::TempDir,
+        repo: tempfile::TempDir,
+    }
+
+    impl Setup {
+        fn new(user: &str, repo: Option<&str>, themes: &[(&str, &str)]) -> Self {
+            let home = tempfile::tempdir().unwrap();
+            let repo_dir = tempfile::tempdir().unwrap();
+            std::fs::write(home.path().join("config.json"), user).unwrap();
+            if let Some(text) = repo {
+                std::fs::write(repo_dir.path().join(".qreview.json"), text).unwrap();
+            }
+            std::fs::create_dir(home.path().join("themes")).unwrap();
+            for (name, text) in themes {
+                std::fs::write(home.path().join("themes").join(name), text).unwrap();
+            }
+            Self {
+                home,
+                repo: repo_dir,
+            }
+        }
+
+        fn user(&self) -> PathBuf {
+            self.home.path().join("config.json")
+        }
+
+        fn load(&self) -> Config {
+            load_from(Some(self.user()), self.repo.path()).unwrap()
+        }
+    }
+
+    const NIGHT: (&str, &str) = (
+        "night.css",
+        ":root { color-scheme: dark; --page: #000010; }",
+    );
+    const PAPER: (&str, &str) = (
+        "paper.css",
+        ":root { color-scheme: light; --page: #fafaf0; }",
+    );
+
+    #[test]
+    fn ui_theme_may_name_a_loaded_theme() {
+        let setup = Setup::new(r#"{"ui":{"theme":"night"}}"#, None, &[NIGHT]);
+
+        let config = setup.load();
+
+        assert_eq!(config.ui.theme, "night");
+        assert_eq!(config.ui.themes["night"].colors["page"], "#000010");
+        assert!(config.notes.is_empty(), "{:?}", config.notes);
+    }
+
+    #[test]
+    fn a_repository_may_pick_a_theme_of_the_user() {
+        let setup = Setup::new(
+            r#"{"ui":{"theme":"paper"}}"#,
+            Some(r#"{"ui":{"theme":"night"}}"#),
+            &[NIGHT, PAPER],
+        );
+
+        let config = setup.load();
+
+        assert_eq!(config.ui.theme, "night");
+        assert!(config.notes.is_empty(), "{:?}", config.notes);
+    }
+
+    #[test]
+    fn an_unknown_name_in_the_repository_falls_back_to_the_user() {
+        let setup = Setup::new(
+            r#"{"ui":{"theme":"paper"}}"#,
+            Some(r#"{"ui":{"theme":"gone"}}"#),
+            &[NIGHT, PAPER],
+        );
+
+        let config = setup.load();
+
+        assert_eq!(config.ui.theme, "paper");
+        assert_eq!(config.notes.len(), 1);
+        let note = &config.notes[0];
+        assert!(note.contains(".qreview.json names `gone`"), "{note}");
+        assert!(note.contains("Loaded themes: night, paper."), "{note}");
+        assert!(note.contains("falls back to the ui.theme of"), "{note}");
+        assert!(note.contains("config.json"), "{note}");
+    }
+
+    #[test]
+    fn when_both_files_fail_the_tool_uses_system() {
+        let setup = Setup::new(
+            r#"{"ui":{"theme":"lost"}}"#,
+            Some(r#"{"ui":{"theme":"gone"}}"#),
+            &[],
+        );
+
+        let config = setup.load();
+
+        assert_eq!(config.ui.theme, "system");
+        assert_eq!(config.notes.len(), 2);
+        assert!(
+            config.notes[1].contains("names `lost`"),
+            "{:?}",
+            config.notes
+        );
+        assert!(config.notes[1].ends_with("falls back to `system`."));
+        assert!(config.notes[1].contains("No theme loaded from"));
+    }
+
+    #[test]
+    fn a_broken_file_counts_as_not_loaded() {
+        let broken = (
+            "night.css",
+            ":root {\n  color-scheme: dark;\n  --page: red;\n}",
+        );
+        let setup = Setup::new(r#"{"ui":{"theme":"night"}}"#, None, &[broken]);
+
+        let config = setup.load();
+
+        assert_eq!(config.ui.theme, "system");
+        assert!(
+            config.notes[0].contains("night.css:3:"),
+            "{:?}",
+            config.notes
+        );
+        assert_eq!(config.notes[1], theme::HINT);
+        assert!(
+            config.notes[2].contains("names `night`"),
+            "{:?}",
+            config.notes
+        );
+    }
+
+    #[test]
+    fn a_repository_cannot_bring_colors() {
+        let setup = Setup::new("{}", Some(r#"{"ui":{"theme":"x"}}"#), &[]);
+        let css = ":root { color-scheme: dark; }";
+        std::fs::write(setup.repo.path().join("x.css"), css).unwrap();
+        std::fs::create_dir(setup.repo.path().join("themes")).unwrap();
+        std::fs::write(setup.repo.path().join("themes").join("x.css"), css).unwrap();
+
+        let config = setup.load();
+
+        assert_eq!(config.ui.theme, "system");
+        assert!(config.ui.themes.is_empty());
+    }
+
+    #[test]
+    fn a_built_in_in_the_repository_wins_over_a_theme_of_the_user() {
+        let setup = Setup::new(
+            r#"{"ui":{"theme":"night"}}"#,
+            Some(r#"{"ui":{"theme":"dark"}}"#),
+            &[NIGHT],
+        );
+
+        assert_eq!(setup.load().ui.theme, "dark");
+    }
+
+    #[test]
+    fn a_save_that_names_no_loaded_theme_is_refused_before_writing() {
+        let before = r#"{"ui":{"theme":"night"}}"#;
+        let setup = Setup::new(before, None, &[NIGHT]);
+
+        let error = update_at(
+            &setup.user(),
+            setup.repo.path(),
+            &serde_json::json!({"ui": {"theme": "gone"}}),
+        )
+        .unwrap_err();
+
+        assert!(error.downcast_ref::<Refused>().is_some(), "{error:#}");
+        assert!(
+            error.to_string().contains("Loaded themes: night."),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_to_string(setup.user()).unwrap(), before);
+    }
+
+    #[test]
+    fn a_save_without_a_theme_keeps_the_one_in_the_file() {
+        // The theme did not load, so the page shows system. A save of the
+        // font size must not write that fallback over the choice of the user.
+        let setup = Setup::new(r#"{"ui":{"theme":"night"}}"#, None, &[]);
+
+        let config = update_at(
+            &setup.user(),
+            setup.repo.path(),
+            &serde_json::json!({"diff": {"fontSize": 14}}),
+        )
+        .unwrap();
+
+        assert_eq!(config.ui.theme, "system");
+        let stored = std::fs::read_to_string(setup.user()).unwrap();
+        assert!(stored.contains(r#""theme": "night""#), "{stored}");
+    }
+
+    #[test]
+    fn the_folded_ui_is_pinned() {
+        let setup = Setup::new(r#"{"ui":{"theme":"night"}}"#, None, &[NIGHT, PAPER]);
+
+        let ui = serde_json::to_string_pretty(&setup.load().ui).unwrap();
+
+        insta::assert_snapshot!(ui);
     }
 }

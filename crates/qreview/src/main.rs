@@ -49,6 +49,11 @@ async fn main() -> Result<()> {
         return Ok(());
     }
     let config = config::load(&root)?;
+    // Before the status line exists, so a plain line cannot break it. The
+    // same way as a grammar file that does not load.
+    for note in &config.notes {
+        eprintln!("qreview: {note}");
+    }
 
     let mut opts = Options::new();
     opts.rev = cli.rev.clone();
@@ -106,7 +111,9 @@ async fn main() -> Result<()> {
     }
 
     let token = auth::new_token();
-    let state = AppState::new(session, token.clone()).with_config(config.clone(), root.clone());
+    let state = AppState::new(session, token.clone())
+        .with_config(config.clone(), root.clone())
+        .with_themes(config::theme_dir());
 
     // While the reader reads the change the page opens on, the server reads
     // the file list of the others. See `api::read_ahead`.
@@ -214,6 +221,7 @@ async fn text_report(session: &Session) -> Result<String> {
 async fn serve(port: u16, state: AppState, no_open: bool, home: &agent::Home) -> Result<()> {
     let events = state.events.clone();
     let session = state.session.clone();
+    let notes = state.notes.clone();
     let token = state.token.clone();
     let token = token.as_str();
     let app = api::app(state);
@@ -256,7 +264,7 @@ async fn serve(port: u16, state: AppState, no_open: bool, home: &agent::Home) ->
     if !no_open {
         open_browser(&url);
     }
-    let page_task = tokio::spawn(watch_parties(events.clone(), session, url.clone()));
+    let page_task = tokio::spawn(watch_parties(events.clone(), session, notes, url.clone()));
 
     // On Ctrl-C the waits on the events answer at once, so the requests in
     // flight end. A request that still hangs gets a few seconds, no more:
@@ -299,6 +307,7 @@ async fn serve(port: u16, state: AppState, no_open: bool, home: &agent::Home) ->
 async fn watch_parties(
     events: std::sync::Arc<qreview::events::Events>,
     session: std::sync::Arc<tokio::sync::RwLock<qreview::session::Session>>,
+    notes: std::sync::Arc<qreview::status::Notes>,
     url: String,
 ) {
     let mut terminal = qreview::status::Terminal::new();
@@ -329,6 +338,12 @@ async fn watch_parties(
                 .say("The agent disconnected. To attach it again, ask it to run `qreview wait`.");
         }
         agent = listens;
+
+        // A theme read again at a page load, said here so the status line
+        // stays whole.
+        for note in notes.take() {
+            terminal.warn(&note);
+        }
 
         let state = qreview::status::Snapshot {
             page,

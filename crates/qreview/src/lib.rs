@@ -33,6 +33,7 @@ pub mod series;
 pub mod session;
 pub mod status;
 pub mod store;
+pub mod theme;
 pub mod trace;
 pub mod update;
 pub mod version;

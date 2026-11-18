@@ -1155,3 +1155,78 @@ Nothing in the storage format or the export moves.
 The server sees no change. The `wait` still asks `/api/events` again every 30 seconds inside one process, so the agent counts as listening as before.
 
 Nothing in the storage format or the export moves.
+
+## 2026-11-17 — A color theme is a CSS file in the themes directory
+
+The interface had two palettes, light and dark, built into the stylesheet.
+A user could not change a color.
+
+**Decision.** Each `*.css` file in `$XDG_CONFIG_HOME/qreview/themes/`
+defines one theme. The name of the file is the name of the theme.
+`ui.theme` in `config.json` picks `system`, `light`, `dark`, or the name of
+a theme file. The Preferences panel lists them all, and it writes
+`ui.theme` only.
+
+A theme file is a strict subset of CSS: one `:root` block and comments.
+`color-scheme: light` or `color-scheme: dark` names the built-in palette
+that the theme starts from. Each other declaration replaces one token of
+that palette, with a hex color. The server parses the file with the
+`cssparser` crate, which the lock file already holds. A file that holds
+anything else is left out.
+
+**A broken theme never stops the tool.** If a theme file cannot be read, or
+`ui.theme` names no theme that loaded, the server writes a clear error in
+its terminal and falls back one layer: from `.qreview.json` to the files of
+the user, then to `system`. A repository may name a theme, but themes are
+read from the directory of the user only, so a repository cannot bring
+colors of its own. The error names the file and the line, or the value and
+the themes that loaded. The rest of the configuration still refuses to start
+on an error: a theme changes only the colors, and the review works without
+it.
+
+The server keeps only the map of tokens, and the page builds its rule from
+that map. The text of the file never reaches the page. A theme is thus as
+safe as a list of colors, while it is still written as CSS: an editor shows
+the swatches and accepts comments.
+
+Its name comes from the file, so two themes cannot share a name, and a
+theme is shared by copying one file. The `grammars/` directory of the user
+already works this way.
+
+The rule "nothing at run time reads a file that the binary does not hold"
+does not move. Its exception already names the configuration, and the
+themes directory is part of it.
+
+**Rejected: a JSON file per theme.** It is safe and needs no new parser,
+but it has no comments, and an editor shows no swatch.
+
+**Rejected: any CSS, sent to the page.** The page holds the session token.
+`url()`, `image-set()`, `@import`, `@font-face` and attribute selectors can
+each send a part of the page to another host, and CSS keeps adding forms.
+A list of forbidden forms would never be complete. Free selectors would
+also make each class of the interface a contract with the user.
+
+**Rejected: themes inside `config.json`, under `ui.themes`.** To share a
+theme, a user has to copy a part of one file into another one by hand.
+
+**Rejected: every `*.json` file of the configuration directory as a layer
+of the user.** It mixes themes with the other settings, and a stray file in
+the directory could set any key.
+
+**Deferred: fonts and line height.** A theme sets colors only. A hex
+color is the only value that needs no grammar of its own to be safe, and
+each token that a theme may set is a contract with the user. `--code-font`,
+`--code-line` and an interface font can come later, each with a strict
+check of its value.
+
+**Rejected: refusing to start on a broken theme.** It is the rule for the
+rest of the configuration, but a typo in a color would block a review.
+
+**Cost.** A user who expects full CSS gets an error and the system
+palette. The error must name the line and say what the subset allows. The
+error is in the terminal only, so a user who does not look there sees the
+system palette and no reason. An older binary ignores the themes
+directory, and it accepts any string in `ui.theme`, so it shows the system
+palette.
+
+Nothing in the storage format or the export moves.
