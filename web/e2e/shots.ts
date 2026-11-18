@@ -31,7 +31,11 @@ const example = (name: string) =>
   readFileSync(join(import.meta.dirname, '..', '..', 'examples', 'themes', `${name}.css`), 'utf8');
 const themed = await start({
   config: { ui: { theme: 'night' } },
-  themes: { night: example('night'), paper: example('paper') },
+  themes: {
+    night: example('night'),
+    paper: example('paper'),
+    'gerrit-dark': example('gerrit-dark'),
+  },
 });
 mkdirSync(OUT, { recursive: true });
 
@@ -430,7 +434,7 @@ for (const scheme of ['light', 'dark'] as const) {
 }
 
 // The example themes. A theme sets its own mode, so one picture each.
-for (const theme of ['night', 'paper']) {
+for (const theme of ['night', 'paper', 'gerrit-dark']) {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   await page.goto(themed.url);
   await pickTheme(page, theme);

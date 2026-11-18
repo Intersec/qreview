@@ -1,0 +1,52 @@
+/*
+ * gerrit-dark: the colors of the dark theme of Gerrit.
+ *
+ * Copy this file to ~/.config/qreview/themes/ and pick "gerrit-dark" in the
+ * preferences. See night.css for what a theme file may hold.
+ *
+ * The page colors are taken from a screenshot of the dark Gerrit interface.
+ * The diff and syntax colors follow the Material dark palette that Gerrit
+ * uses, so they are close, not exact.
+ */
+:root {
+  color-scheme: dark;
+
+  /* The page and its text: the content, the side panes, the selected row. */
+  --page: #202124;
+  --pane: #2f3034;
+  --ink: #e8eaed;
+  --ink-quiet: #bdc1c6;
+  --ink-faint: #9aa0a6;
+  --edge: #5f6368;
+  --edge-soft: #3c4043;
+  --pick: #3a3f48;
+  --pick-edge: #90caf9;
+  --action: #90caf9;
+  --online: #81c995;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #0f401f;
+  --add-word: #1e6b3a;
+  --remove-line: #320404;
+  --remove-word: #62110f;
+  --context-bar: #3c4043;
+  --context-ink: #e8eaed;
+  --add-ink: #81c995;
+  --remove-ink: #f28b82;
+  --ok-ink: #81c995;
+  --error-ink: #f28b82;
+
+  /* The bar over a merge. */
+  --merge-bar: #2f3034;
+  --merge-edge: #5f6368;
+  --merge-ink: #fdd663;
+
+  /* The syntax. */
+  --tok-keyword: #c58af9;
+  --tok-string: #81c995;
+  --tok-comment: #9aa0a6;
+  --tok-constant: #fcad70;
+  --tok-entity: #8ab4f8;
+  --tok-support: #78d9ec;
+  --tok-variable: #f28b82;
+}
