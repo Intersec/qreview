@@ -912,7 +912,7 @@ async fn save_config(
 /// the server.
 fn saving(error: anyhow::Error) -> ApiError {
     match error.downcast::<crate::config::Refused>() {
-        Ok(refused) => ApiError::bad_request(refused.0),
+        Ok(refused) => ApiError::bad_request(refused.to_string()),
         Err(error) => error.into(),
     }
 }

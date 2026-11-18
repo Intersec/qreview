@@ -49,6 +49,11 @@ async fn main() -> Result<()> {
         return Ok(());
     }
     let config = config::load(&root)?;
+    // Before the status line exists, so a plain line cannot break it. The
+    // same way as a grammar file that does not load.
+    for note in &config.notes {
+        eprintln!("qreview: {note}");
+    }
 
     let mut opts = Options::new();
     opts.rev = cli.rev.clone();
