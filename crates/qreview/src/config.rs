@@ -239,9 +239,13 @@ impl Config {
 /// wrong is: a configuration that is silently ignored is worse than one that
 /// refuses to start, because nobody notices.
 pub fn load(repo_root: &Path) -> Result<Config> {
+    load_from(user_path(), repo_root)
+}
+
+fn load_from(user: Option<PathBuf>, repo_root: &Path) -> Result<Config> {
     let mut config = Config::default();
 
-    for path in [user_path(), Some(repo_root.join(".qreview.json"))]
+    for path in [user, Some(repo_root.join(".qreview.json"))]
         .into_iter()
         .flatten()
     {
@@ -270,7 +274,23 @@ fn read(path: &Path) -> Result<Option<Layer>> {
 /// setting the user put there by hand stays where it is.
 pub fn update(repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
     let path = user_path().context("no configuration directory for this user")?;
-    let mut stored: serde_json::Value = match std::fs::read_to_string(&path) {
+    update_at(&path, repo_root, patch)
+}
+
+/// A change from the panel that would leave the file unreadable.
+#[derive(Debug)]
+pub struct Refused(pub String);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Refused {}
+
+fn update_at(path: &Path, repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
+    let mut stored: serde_json::Value = match std::fs::read_to_string(path) {
         Ok(text) => serde_json::from_str(&text)
             .with_context(|| format!("{} is not a readable configuration", path.display()))?,
         Err(_) => serde_json::json!({}),
@@ -288,9 +308,21 @@ pub fn update(repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
 
         if let Some(target) = target.as_object_mut() {
             for (name, value) in fields {
+                // Each field alone first, so the error names it: a whole
+                // file read from a value says what is wrong, not where.
+                let one = serde_json::json!({ section: { name: value } });
+                if let Err(error) = serde_json::from_value::<Layer>(one) {
+                    return Err(Refused(format!("{section}.{name}: {error}")).into());
+                }
                 target.insert(name.clone(), value.clone());
             }
         }
+    }
+
+    // Read the result before writing it: a file that the next start
+    // refuses must never reach the disk.
+    if let Err(error) = serde_json::from_value::<Layer>(stored.clone()) {
+        return Err(Refused(format!("the preferences were not saved: {error}")).into());
     }
 
     if let Some(parent) = path.parent() {
@@ -298,10 +330,10 @@ pub fn update(repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
             .with_context(|| format!("cannot make {}", parent.display()))?;
     }
     let text = serde_json::to_string_pretty(&stored)?;
-    std::fs::write(&path, format!("{text}\n"))
+    std::fs::write(path, format!("{text}\n"))
         .with_context(|| format!("cannot write {}", path.display()))?;
 
-    load(repo_root)
+    load_from(Some(path.to_owned()), repo_root)
 }
 
 fn user_path() -> Option<PathBuf> {
@@ -405,5 +437,59 @@ mod tests {
         let config = load(dir.path()).unwrap();
         assert_eq!(config.languages.get("zz").map(String::as_str), Some("yaml"));
         assert_eq!(config.ui.diff, "side-by-side");
+    }
+
+    #[test]
+    fn an_invalid_patch_leaves_the_file_as_it_was() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let path = home.path().join("config.json");
+        let before = "{\n  \"ui\": {\n    \"theme\": \"dark\"\n  }\n}\n";
+        std::fs::write(&path, before).unwrap();
+
+        let error =
+            update_at(&path, repo.path(), &serde_json::json!({"ui": {"theme": 5}})).unwrap_err();
+
+        assert!(error.downcast_ref::<Refused>().is_some(), "{error:#}");
+        assert!(error.to_string().contains("ui.theme"), "{error}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn a_patch_with_an_unknown_key_is_refused_and_named() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let path = home.path().join("qreview").join("config.json");
+
+        let error = update_at(
+            &path,
+            repo.path(),
+            &serde_json::json!({"ui": {"thme": "dark"}}),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("thme"), "{error:#}");
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_valid_patch_is_written_and_read_back() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let path = home.path().join("qreview").join("config.json");
+
+        let config = update_at(
+            &path,
+            repo.path(),
+            &serde_json::json!({"diff": {"context": 5}}),
+        )
+        .unwrap();
+
+        assert_eq!(config.diff.context, 5);
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("\"context\": 5")
+        );
     }
 }
