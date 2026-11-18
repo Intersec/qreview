@@ -2,8 +2,9 @@
 //!
 //! The browser receives rows that already carry their spans, so it never
 //! downloads a grammar and a large file costs it the text and nothing else.
-//! The output is a CSS class, never a color: a theme is a stylesheet, and the
-//! light and dark pair costs one pass, not two.
+//! The output is a CSS class, never a color. The colors are CSS custom
+//! properties, in a light set and a dark set, so the pair costs one pass, not
+//! two.
 //!
 //! A parse starts at line 1, because a block comment or a multi-line string
 //! needs the lines before it. It does not have to reach the end: a diff shows
