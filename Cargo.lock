@@ -1042,6 +1042,7 @@ dependencies = [
  "asciidoc-parser",
  "axum",
  "clap",
+ "cssparser",
  "getrandom 0.4.3",
  "hex",
  "insta",

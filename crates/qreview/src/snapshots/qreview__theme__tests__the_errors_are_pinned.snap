@@ -1,0 +1,50 @@
+---
+source: crates/qreview/src/theme.rs
+expression: report
+---
+empty
+  1: expected `:root {`, found the end of the file
+no root
+  1: expected `:root {`, found `body`
+import
+  1: `@import` is not allowed in a theme
+at-rule inside
+  2: `@media` is not allowed in a theme
+second selector
+  2: expected nothing after the `:root` block, found `body`
+attribute selector
+  2: expected nothing after the `:root` block, found `[`
+unknown property
+  2: `color` is not a property a theme can set
+unknown token
+  2: `--font` is not a color token. The tokens are: --page, --pane, --ink, --ink-quiet, --ink-faint, --edge, --edge-soft, --pick, --pick-edge, --add-line, --add-word, --remove-line, --remove-word, --rebase-add-line, --rebase-add-word, --rebase-remove-line, --rebase-remove-word, --same-word, --context-bar, --context-ink, --draft, --draft-edge, --action, --agent, --agent-edge, --waiting, --waiting-edge, --waiting-ink, --online, --merge-bar, --merge-edge, --merge-ink, --add-ink, --remove-ink, --ok-ink, --error-ink, --tok-invalid, --tok-invalid-ink, --shadow, --shadow-strong, --veil, --tok-keyword, --tok-string, --tok-comment, --tok-constant, --tok-entity, --tok-support, --tok-variable
+url
+  3: `--page` takes a hex color such as #1e1e2e, found `url(x)`
+image-set
+  2: `--page` takes a hex color such as #1e1e2e, found `image-set(`
+named color
+  2: `--page` takes a hex color such as #1e1e2e, found `red`
+rgb
+  2: `--page` takes a hex color such as #1e1e2e, found `rgb(`
+short hex
+  2: `--page` takes a hex color such as #1e1e2e, found `#12`
+not hex
+  2: `--page` takes a hex color such as #1e1e2e, found `#gggggg`
+important
+  2: `--page` takes one value, then `;`. Found `!` after it
+two values
+  2: `--page` takes one value, then `;`. Found `#000` after it
+escape
+  3: expected nothing after the `:root` block, found `body`
+closing style
+  2: `--page` takes a hex color such as #1e1e2e, found `<`
+bad scheme
+  2: `color-scheme` takes `light` or `dark`, found `dim`
+no scheme
+  -: `color-scheme: light;` or `color-scheme: dark;` is missing
+set twice
+  4: `--page` is set twice, first on line 3
+no colon
+  2: expected `:` after `--page`
+empty value
+  3: `--page` takes a hex color such as #1e1e2e, found the end of the `:root` block

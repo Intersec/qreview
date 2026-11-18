@@ -36,6 +36,8 @@ pulldown-cmark = { version = "0.13", default-features = false }
 asciidoc-parser = "=0.31.2"
 asciidoc-html5 = "=0.2.3"
 ammonia = "4"
+# Without the defaults, as ammonia takes it: they would add phf and cssparser-macros.
+cssparser = { version = "0.38", default-features = false }
 
 [dev-dependencies]
 insta = "1"
