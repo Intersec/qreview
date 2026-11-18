@@ -5,7 +5,8 @@
  *
  * The diff colours follow Gerrit: a pale background for the line, a stronger
  * shade of the same colour for the words that changed inside it. The server
- * sends a class per token and never a colour, so a theme is this file alone.
+ * sends a class per token and never a colour, so the colours live here, and
+ * a theme file of the user replaces them by token.
  */
 :root {
   --page: #ffffff;
