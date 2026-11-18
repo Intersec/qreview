@@ -899,13 +899,22 @@ async fn save_config(
     State(state): State<AppState>,
     Json(patch): Json<serde_json::Value>,
 ) -> Result<Json<crate::config::Config>, ApiError> {
-    let fresh = crate::config::update(&state.root, &patch)?;
+    let fresh = crate::config::update(&state.root, &patch).map_err(saving)?;
     *state
         .config
         .write()
         .expect("the configuration lock is poisoned") = fresh.clone();
 
     Ok(Json(fresh))
+}
+
+/// A change that the file would refuse is the fault of the request, not of
+/// the server.
+fn saving(error: anyhow::Error) -> ApiError {
+    match error.downcast::<crate::config::Refused>() {
+        Ok(refused) => ApiError::bad_request(refused.0),
+        Err(error) => error.into(),
+    }
 }
 
 async fn comments(
@@ -1337,6 +1346,15 @@ mod tests {
     use crate::testutil::{Repo, build_repo, commit};
 
     const TOKEN: &str = "0123456789abcdef";
+
+    #[test]
+    fn a_refused_preference_is_a_bad_request() {
+        let refused = saving(crate::config::Refused("no".to_owned()).into());
+        assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+
+        let failed = saving(anyhow::anyhow!("the disk is full"));
+        assert_eq!(failed.status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
     /// The reader clicks a change and waits for its file list. The task
     /// reads the rest of the series while they read the first one, so the
