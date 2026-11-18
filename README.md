@@ -205,7 +205,9 @@ until you answer when the agent asked you something.
 
 **Clean** deletes the done threads of the change, once you agree with the
 work. It lists them and asks first, then waits three seconds with an
-**Undo**.
+**Undo**. A deleted comment stays on disk: the file of its change keeps
+it under `deleted`, with when and how it went. To restore one, stop the
+server, and move its `comment` back into `comments`.
 
 If Claude Code runs commands in a sandbox, start `qreview` yourself, in
 your own terminal, and let the agent connect to it. A server started from

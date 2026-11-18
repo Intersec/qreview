@@ -1393,3 +1393,14 @@ The reader sent a question to Gerrit on the change of a colleague. Its thread ca
 
 - **Done as a mark that stays in qreview on a thread of Gerrit.** On a thread that waits for the reader, Done is the Done of Gerrit, which the author of the change needs. Once a question of the reader no longer counts as work, nothing asks the reader to tick it.
 
+## 2026-11-18 — Delete and Clean keep the comments on disk
+
+Delete and Clean erased the comments from the file of the change. The reader wants them kept: to restore one by hand, and to study the reviews later.
+
+**Decision.** Format 6 of the change file adds `deleted`, a list apart from `comments`. Delete and Clean move each comment there, with `deletedAt`, `deletedBy` and `how` (`delete` or `clean`). Nothing reads the list. A restore is a move back into `comments` by hand, with the server stopped. A format 5 file reads as one with no deleted comment. An older qreview refuses a format 6 file, as for each format.
+
+**Rejected:**
+
+- **A `deleted` mark on each comment, in `comments`.** Every reader of `comments` would have to skip it: the page, the export, the counts, the threads, the moves of a migrate. One reader that forgets shows a deleted comment again. A list apart needs no reader to change.
+- **A `qreview restore` command.** The reader asked for a manual operation. A command can come when a restore is frequent.
+

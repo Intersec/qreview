@@ -28,7 +28,7 @@ use crate::rebase;
 use crate::repo;
 use crate::series::{self, Options, Plan};
 use crate::store::Store;
-use crate::store::model::{ChangeFile, Comment};
+use crate::store::model::{Author, ChangeFile, Comment};
 use crate::worktree;
 
 /// Above this many lines in one run, a context run comes back with no
@@ -2120,8 +2120,8 @@ impl Session {
             .map(|set| set.number)
     }
 
-    pub fn delete_comment(&self, key: &str, id: &str) -> Result<usize> {
-        comments::delete(&self.store, key, id)
+    pub fn delete_comment(&self, key: &str, id: &str, by: Author) -> Result<usize> {
+        comments::delete(&self.store, key, id, by)
     }
 
     /// The commits a merge brings in.
