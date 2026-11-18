@@ -12,7 +12,9 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::git::exec::Git;
 use crate::store::Store;
-use crate::store::model::{Anchor, Author, ChangeFile, Comment, Gerrit, Outbox, Scope, Side};
+use crate::store::model::{
+    Anchor, Author, ChangeFile, Comment, Deleted, Gerrit, Outbox, Removal, Scope, Side,
+};
 
 /// How many lines above and below the anchor are kept.
 pub const CONTEXT: usize = 3;
@@ -497,21 +499,43 @@ pub fn is_staged(comment: &Comment) -> bool {
 }
 
 /// Delete a comment. A remark goes with its replies, which answer nothing
-/// once it is gone.
-pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
+/// once it is gone. The file keeps them in `deleted`.
+pub fn delete(store: &Store, key: &str, id: &str, by: Author) -> Result<usize> {
     let _lock = store.lock()?;
     let mut file = store.load(key, "")?;
-    let before = file.comments.len();
 
     if !file.comments.iter().any(|c| c.id == id) {
         bail!("no comment {id}");
     }
 
-    file.comments
-        .retain(|c| c.id != id && c.parent.as_deref() != Some(id));
+    let gone = set_aside(&mut file, by, Removal::Delete, |c| {
+        c.id == id || c.parent.as_deref() == Some(id)
+    });
     store.save(&file)?;
 
-    Ok(before - file.comments.len())
+    Ok(gone)
+}
+
+/// Move the comments that `takes` picks from `comments` to `deleted`.
+fn set_aside(
+    file: &mut ChangeFile,
+    by: Author,
+    how: Removal,
+    takes: impl Fn(&Comment) -> bool,
+) -> usize {
+    let at = now();
+    let (gone, kept): (Vec<Comment>, Vec<Comment>) = std::mem::take(&mut file.comments)
+        .into_iter()
+        .partition(|c| takes(c));
+    file.comments = kept;
+    let count = gone.len();
+    file.deleted.extend(gone.into_iter().map(|comment| Deleted {
+        deleted_at: at.clone(),
+        deleted_by: by,
+        how,
+        comment,
+    }));
+    count
 }
 
 /// Delete the done threads of the version under review, replies with them.
@@ -519,7 +543,6 @@ pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
 pub fn clean(store: &Store, key: &str, current: &str) -> Result<usize> {
     let _lock = store.lock()?;
     let mut file = store.load(key, "")?;
-    let before = file.comments.len();
     let done: Vec<String> = file
         .comments
         .iter()
@@ -528,12 +551,13 @@ pub fn clean(store: &Store, key: &str, current: &str) -> Result<usize> {
         .map(|c| c.id.clone())
         .collect();
 
-    file.comments
-        .retain(|c| !done.contains(&c.id) && !c.parent.as_ref().is_some_and(|p| done.contains(p)));
-    if file.comments.len() != before {
+    let gone = set_aside(&mut file, Author::Reader, Removal::Clean, |c| {
+        done.contains(&c.id) || c.parent.as_ref().is_some_and(|p| done.contains(p))
+    });
+    if gone > 0 {
         store.save(&file)?;
     }
-    Ok(before - file.comments.len())
+    Ok(gone)
 }
 
 /// True when the remark was written on the version being read.
@@ -1045,10 +1069,32 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(delete(&f.store, "I8f3a", &first.id).unwrap(), 2);
-        assert_eq!(delete(&f.store, "I8f3a", &alone.id).unwrap(), 1);
-        let left: Vec<_> = f.file().comments.into_iter().map(|c| c.id).collect();
+        assert_eq!(
+            delete(&f.store, "I8f3a", &first.id, Author::Reader).unwrap(),
+            2
+        );
+        assert_eq!(
+            delete(&f.store, "I8f3a", &alone.id, Author::Agent).unwrap(),
+            1
+        );
+        let file = f.file();
+        let left: Vec<_> = file.comments.into_iter().map(|c| c.id).collect();
         assert_eq!(left, [other.id]);
+
+        // Kept on disk, with who took them and how.
+        let kept: Vec<_> = file
+            .deleted
+            .iter()
+            .map(|d| (d.comment.body.as_str(), d.deleted_by, d.how))
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                ("one", Author::Reader, Removal::Delete),
+                ("a", Author::Reader, Removal::Delete),
+                ("b", Author::Agent, Removal::Delete),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -1076,6 +1122,14 @@ mod tests {
             2,
             "a remark and its reply"
         );
+        let kept: Vec<_> = f
+            .file()
+            .deleted
+            .into_iter()
+            .map(|d| (d.comment.id, d.how))
+            .collect();
+        assert_eq!(kept.len(), 2);
+        assert_eq!(kept[0], (gone.id.clone(), Removal::Clean));
 
         let left: Vec<_> = f
             .file()

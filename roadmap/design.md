@@ -739,7 +739,7 @@ read, and one file is written.
 
 ```json
 {
-  "version": 4,
+  "version": 6,
   "key": "I8f3a...c21",
   "subject": "net: fix the retry loop",
   "reviewed": false,
@@ -807,6 +807,28 @@ Format 5 added `gerrit`, the remarks bound for Gerrit (section 5.8), and a
 `parent` that names a thread of Gerrit as `gerrit:<id>` (section 6.8). A
 comment with no `gerrit` stays in qreview, so a file of format 4 reads as
 it did.
+
+Format 6 added `deleted`: the comments that Delete and Clean took away,
+oldest first. A comment is never erased from the disk, for a study of the
+reviews and for a restore by hand. Nothing reads `deleted`: not the page,
+not the export, not a count. Each entry holds the comment as it stood, and
+how it went:
+
+```json
+"deleted": [
+  {
+    "deletedAt": "2026-08-21T09:12:03Z",
+    "deletedBy": "reader",
+    "how": "clean",
+    "comment": { "id": "c-01H...", "...": "..." }
+  }
+]
+```
+
+`how` is `delete` or `clean`. To restore a comment, stop the server and move
+its `comment` back into `comments`, with its replies. A file with no
+deleted comment omits the field, and a file of format 5 reads as one with
+none.
 
 The versions of a change are not stored. They are read from git, and the
 `commit` of each comment says which one a remark was written against. See
@@ -1013,7 +1035,8 @@ this rule, and the server does not: `author` is a label.
 
 **Deleting a remark deletes its thread.** A reply deleted alone leaves the
 thread as it was. The remark keeps its Delete after an answer, because the
-answers go with it.
+answers go with it. A deleted comment leaves `comments` for `deleted`, in
+the same file (section 5.2).
 
 ### 5.6 New versions, declared
 
@@ -1145,10 +1168,10 @@ While a question of the agent waits, the turn stays the reader's whatever
 the focus: looking at the page answers nothing. A tab among many, or a
 notification refused, still says it.
 
-**Clean** deletes for good every done thread of the change on the screen. A
+**Clean** deletes every done thread of the change on the screen. A
 thread reopened since is not done, and stays. The browser waits three
-seconds with an Undo before it asks the server, because nothing brings a
-deleted thread back.
+seconds with an Undo before it asks the server, because the page brings
+no deleted thread back. The file keeps it under `deleted` (section 5.2).
 
 ### 5.8 Remarks for Gerrit
 

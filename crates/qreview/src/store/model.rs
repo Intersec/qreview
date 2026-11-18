@@ -20,7 +20,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// 5 added the remarks bound for Gerrit. A comment of format 4 carries no
 /// `gerrit`, and stays in qreview.
-pub const VERSION: u32 = 5;
+///
+/// 6 added the deleted comments, kept apart for a restore by hand and for
+/// a study of the reviews. A file of format 5 has none.
+pub const VERSION: u32 = 6;
 
 /// Everything a review of one change holds.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -36,6 +39,30 @@ pub struct ChangeFile {
     pub reviewed: bool,
     #[serde(default)]
     pub comments: Vec<Comment>,
+    /// The comments that Delete and Clean took away, oldest first. Nothing
+    /// reads them: a comment moved back to `comments` by hand is restored.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted: Vec<Deleted>,
+}
+
+/// A comment taken away, as it stood then.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Deleted {
+    pub deleted_at: String,
+    pub deleted_by: Author,
+    pub how: Removal,
+    pub comment: Comment,
+}
+
+/// What took a comment away.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Removal {
+    /// Delete, on the comment or on the remark that opens its thread.
+    Delete,
+    /// Clean, which takes the done threads.
+    Clean,
 }
 
 impl ChangeFile {
@@ -46,6 +73,7 @@ impl ChangeFile {
             subject: subject.to_owned(),
             reviewed: false,
             comments: Vec::new(),
+            deleted: Vec::new(),
         }
     }
 }
