@@ -39,6 +39,10 @@
   --waiting-edge: #d93025;
   --waiting-ink: #b3261e;
   --online: #1e8e3e;
+  /* The bar over a merge, in amber, so a merge stands apart from a commit. */
+  --merge-bar: #fffbeb;
+  --merge-edge: #fcd34d;
+  --merge-ink: #78350f;
 
   --tok-keyword: #a626a4;
   --tok-string: #1a7f37;
@@ -95,6 +99,9 @@
     --waiting-edge: #f28b82;
     --waiting-ink: #f28b82;
     --online: #81c995;
+    --merge-bar: #1f160e;
+    --merge-edge: #92400e;
+    --merge-ink: #fde68a;
 
     --tok-keyword: #c678dd;
     --tok-string: #98c379;
@@ -137,6 +144,9 @@
   --waiting-edge: #f28b82;
   --waiting-ink: #f28b82;
   --online: #81c995;
+  --merge-bar: #1f160e;
+  --merge-edge: #92400e;
+  --merge-ink: #fde68a;
 
   --tok-keyword: #c678dd;
   --tok-string: #98c379;
@@ -1375,6 +1385,31 @@ tr.talk td {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+}
+
+/* ------------------------------------------------- the bar over a merge */
+
+/* The colors of the bar come from the tokens, so it follows the theme the
+   reader chose and not only the one of the system. */
+.merge-bar {
+  border-bottom: 1px solid var(--merge-edge);
+  background: var(--merge-bar);
+}
+.merge-bar .title {
+  color: var(--merge-ink);
+}
+.merge-bar button {
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+}
+.merge-bar button:hover {
+  background: var(--edge-soft);
+}
+.merge-bar .note {
+  color: var(--ink-quiet);
+}
+.merge-bar .author {
+  color: var(--ink-faint);
 }
 
 /* ------------------------------------------------------- the change bar */
