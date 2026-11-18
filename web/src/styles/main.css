@@ -43,6 +43,17 @@
   --merge-bar: #fffbeb;
   --merge-edge: #fcd34d;
   --merge-ink: #78350f;
+  /* Colours that stay the same in every mode, so the dark blocks inherit
+     them. A token lets a theme change them. */
+  --add-ink: #1a7f37;
+  --remove-ink: #c5221f;
+  --ok-ink: #1a7f37;
+  --error-ink: #8c1d18;
+  --tok-invalid: #c5221f;
+  --tok-invalid-ink: #ffffff;
+  --shadow: rgb(0 0 0 / 0.25);
+  --shadow-strong: rgb(0 0 0 / 0.3);
+  --veil: rgb(0 0 0 / 0.4);
 
   --tok-keyword: #a626a4;
   --tok-string: #1a7f37;
@@ -271,10 +282,10 @@ body {
   color: var(--ink-quiet);
 }
 .file-facts .added {
-  color: #1a7f37;
+  color: var(--add-ink);
 }
 .file-facts .removed {
-  color: #c5221f;
+  color: var(--remove-ink);
   margin-left: 4px;
 }
 .file-bar .chip {
@@ -364,7 +375,7 @@ table.code.nowrap .blame {
   border-radius: 4px;
   background: var(--page);
   color: var(--ink);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  box-shadow: 0 4px 16px var(--shadow);
   font-family: system-ui, sans-serif;
   font-size: 13px;
   line-height: 1.4;
@@ -537,8 +548,8 @@ tr.talk td {
 }
 .code .tok-invalid,
 .md-code .tok-invalid {
-  color: #ffffff;
-  background: #c5221f;
+  color: var(--tok-invalid-ink);
+  background: var(--tok-invalid);
 }
 
 /* ----------------------------------------------------- the comments */
@@ -1257,11 +1268,11 @@ tr.talk td {
   flex: none;
 }
 .added {
-  color: #1a7f37;
+  color: var(--add-ink);
 }
 .removed {
   margin-left: 4px;
-  color: #c5221f;
+  color: var(--remove-ink);
 }
 .quiet {
   color: var(--ink-quiet);
@@ -1327,7 +1338,7 @@ tr.talk td {
 }
 .copied {
   font-size: 11px;
-  color: #1a7f37;
+  color: var(--ok-ink);
 }
 .stopped {
   flex: none;
@@ -1354,7 +1365,7 @@ tr.talk td {
   flex: none;
   padding: 6px 10px;
   background: var(--remove-line);
-  color: #8c1d18;
+  color: var(--error-ink);
   font-size: 12px;
 }
 
@@ -1637,7 +1648,7 @@ a.change-id:hover {
   background: var(--page);
   color: var(--action);
   font-size: 11px;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+  box-shadow: 0 1px 4px var(--shadow);
 }
 .offer:hover {
   background: var(--pick);
@@ -1697,7 +1708,7 @@ a.change-id:hover {
   line-height: 1.35;
 }
 .mark-read[aria-pressed='true'] {
-  color: #1a7f37;
+  color: var(--ok-ink);
 }
 .mark-read:hover {
   color: var(--pick-edge);
@@ -1776,7 +1787,7 @@ a.change-id:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 0.4);
+  background: var(--veil);
 }
 .panel {
   min-width: 22rem;
@@ -1785,7 +1796,7 @@ a.change-id:hover {
   background: var(--page);
   padding: 12px 16px;
   font-size: 13px;
-  box-shadow: 0 8px 30px rgb(0 0 0 / 0.3);
+  box-shadow: 0 8px 30px var(--shadow-strong);
 }
 .fix-panel {
   max-width: 40rem;
@@ -1846,7 +1857,7 @@ a.change-id:hover {
   border: 1px solid var(--edge);
   border-radius: 4px;
   background: var(--page);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  box-shadow: 0 4px 16px var(--shadow);
   font-size: 13px;
 }
 .panel-title {
