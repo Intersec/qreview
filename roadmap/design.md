@@ -1250,8 +1250,11 @@ A `change:` query is no faster. On the same server, one `Change-Id` took
 
 The colors are computed in the server by `syntect`, which reads TextMate and
 Sublime grammars. The output is a list of CSS classes per row, never a color.
-A theme is therefore a stylesheet, and the light and dark pair costs one
-highlight pass, not two.
+The colors of those classes are CSS custom properties of the bundled
+stylesheet, in a light set and a dark set, so the pair costs one highlight
+pass, not two. A theme file of section 10 replaces tokens of one of the
+sets. The dot of the favicon keeps fixed colors, because the tab bar
+belongs to the browser.
 
 The map from extension to language is data, not code. Bundled grammars claim
 the common extensions on their own. The built-in map only carries the ones
@@ -1347,8 +1350,8 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `GET /api/config` | The three layers, folded |
 | `PUT /api/config` | Write what the panel changed, and read them back |
 
-Two static routes sit outside `/api`: `/` serves the interface, and
-`/theme/<name>.css` serves the stylesheet that names the syntax classes.
+One static route sits outside `/api`: `/` serves the interface. The themes
+reach the page as a map in the configuration, not as a stylesheet.
 
 `ws=ignore` leaves out what differs only by whitespace. `ps` names the patch
 set to read, and the last one is the default. `base`
@@ -1635,10 +1638,80 @@ Three layers, the later one wins:
 Ten lines of context, not the three git gives: three is too few to judge a
 change.
 
+**A theme is a file.** Each `*.css` file in `$XDG_CONFIG_HOME/qreview/themes/`
+defines one theme, and the name of the file without `.css` is the name of
+the theme:
+
+```css
+/* themes/dracula.css */
+:root {
+  color-scheme: dark;
+  --page: #282a36;
+  --tok-keyword: #ff79c6;
+}
+```
+
+The file is a strict subset of CSS: one `:root` block and comments, nothing
+else. `color-scheme` is required, `light` or `dark`. It picks the built-in
+palette that the theme starts from, and the mode that the rest of the page
+follows. Each other declaration replaces one token of that palette: its
+name is in the list of tokens of the stylesheet, and its value is a hex
+color. Anything else makes the whole file unreadable: another selector,
+an at-rule such as `@import`, a function such as `url()`, an unknown
+property.
+
+The server parses the file and keeps the map of tokens. It never sends the
+text of the file to the page. The page builds its own rule from the map, so
+a theme can hold nothing but checked colors.
+
+A theme name is 1 to 32 lowercase letters, digits and `-`, and starts with
+a letter or a digit. `system`, `light` and `dark` are the built-in values
+and name no file. A file larger than 64 KiB is left out. The directory is
+not read recursively, and a name that starts with a dot is skipped.
+
+`ui.theme` picks the theme: `system`, `light`, `dark`, or the name of a
+theme file. The Preferences panel lists the built-in values, then the theme
+files.
+
+**A broken theme never stops the tool.** This is the one exception to the
+rule that a wrong configuration refuses to start: a theme changes only the
+colors, and the review works without it. The server writes the error in its
+terminal and goes on:
+
+- A theme file that cannot be read is left out, and the error names the
+  file, the line, and what the subset allows. The other themes still load.
+- If `ui.theme` names no theme that loaded, the tool falls back one layer:
+  from `.qreview.json` to the files of the user, then to `system`. Each
+  fallback writes an error that names the file, the value and the themes
+  that loaded.
+
+A repository may name a theme in `.qreview.json`, but only a theme that the
+user holds: themes are read from the directory of the user, never from the
+repository. A repository cannot bring colors of its own.
+
+`config.json` keeps what the user wrote. `GET /api/config` answers the
+theme that the tool really uses, after the fallback. A `PUT /api/config`
+that names no loaded theme is still refused with a 400, because the panel
+offers only the themes that loaded. The panel sends `ui.theme` only when
+the reader changed it, so a fallback never replaces what the user wrote.
+
+The themes directory is read at startup, and again at each page load and
+each save. An edited theme shows when the page is loaded again, with no
+restart. An error that the tool already wrote is not written again.
+
+The answers of `GET /api/session` and `/api/config` carry the loaded themes
+in `ui.themes`, as `{ name: { base, colors } }`. That key is an output
+only: `config.json` cannot hold it.
+
+If `.qreview.json` names a loaded theme, it wins over the panel, as for
+`ui.diff`. The choice of the panel is saved, but it does not show in that
+repository.
+
 `PUT /api/config` writes the `diff` and `ui` sections into the file of the
-user, and nothing else. A language map that somebody put there by hand stays
-where it is. The answer is the three layers folded again, so it says what the
-tool will really use and not what was asked for.
+user, and nothing else. It never writes a theme file. A language map that
+somebody put there by hand stays where it is. The answer is the three
+layers folded again, so it says what the tool will really use and not what
+was asked for.
 
 A key nobody knows is refused, and the error names it. A configuration that
 is silently ignored is worse than one that refuses to start, because nobody
