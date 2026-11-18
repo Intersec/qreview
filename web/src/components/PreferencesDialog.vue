@@ -36,7 +36,13 @@ function save() {
       fontSize: Number(draft.fontSize),
       syntax: draft.syntax,
     },
-    ui: { diff: draft.view, theme: draft.theme },
+    ui: {
+      diff: draft.view,
+      // The theme shown may be a fallback, or the choice of the repository.
+      // Sent only when the reader changed it, so it never replaces what the
+      // user wrote in the file.
+      ...(draft.theme === props.config.ui.theme ? {} : { theme: draft.theme }),
+    },
   });
 }
 </script>

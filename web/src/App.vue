@@ -19,6 +19,7 @@ import { THREADS } from './diff/threads';
 import { any as anyDraft } from './diff/drafts';
 import { describe as describeTask } from './activity';
 import { show as showSignal, signalOf } from './favicon';
+import { mode } from './colors';
 import type { Anchor, Comment } from './api/types';
 import type { BlameLine } from './diff/blame';
 
@@ -492,18 +493,20 @@ function onKey(event: KeyboardEvent) {
 }
 
 /// The reader can follow the system or say outright. `system` leaves the
-/// attribute off, so the media query decides.
+/// attribute off, so the media query decides. A theme of the user sets the
+/// mode of its base.
 watch(
-  () => config.value?.ui.theme,
-  (theme) => {
+  () => config.value?.ui,
+  (ui) => {
     const root = document.documentElement;
-    if (!theme || theme === 'system') {
-      delete root.dataset.theme;
+    const chosen = ui ? mode(ui) : null;
+    if (chosen) {
+      root.dataset.theme = chosen;
     } else {
-      root.dataset.theme = theme;
+      delete root.dataset.theme;
     }
   },
-  { immediate: true },
+  { immediate: true, deep: true },
 );
 
 /// The tab names the tool, then the repository and the change being read.
