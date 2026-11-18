@@ -6,7 +6,7 @@ Copy the one you need and change what you want.
 |---|---|
 | `config.json` | `~/.config/qreview/config.json`, your own settings |
 | `languages.json` | `.qreview.json` at the top level of a repository |
-| `themes/*.css` | `~/.config/qreview/themes/`, color themes to pick in the preferences |
+| `themes/*.css` | `~/.config/qreview/themes/`, color themes to pick in the preferences: `night`, `paper`, and `gerrit-dark`, close to the dark Gerrit |
 
 A `.qreview.json` in a repository is read after your own file, so it wins.
 Put the file types of a code base there and every reader of that repository
