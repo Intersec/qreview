@@ -257,6 +257,32 @@ Personal settings go in `~/.config/qreview/config.json`. The preferences
 panel behind `,` writes that same file, so the next run starts the way you
 left it. See `examples/config.json`.
 
+### Color themes
+
+A theme is a CSS file in `~/.config/qreview/themes/`. Its file name is its
+name: `night.css` adds a theme called `night`. Pick it in the preferences,
+or set `ui.theme` in your `config.json`:
+
+```css
+:root {
+  color-scheme: dark;     /* the built-in palette it starts from */
+  --page: #0f1420;
+  --tok-keyword: #bb9af7;
+}
+```
+
+The file holds one `:root` block and comments, nothing else. Each `--token`
+takes a hex color and replaces one color of the base palette. The tokens are
+the custom properties at the top of
+[`web/src/styles/main.css`](./web/src/styles/main.css).
+[`examples/themes/`](./examples/themes/) holds two themes to start from.
+
+A file that breaks these rules is left out, and the terminal says which line
+is wrong. If `ui.theme` names a theme that did not load, qreview uses the one
+before it: `.qreview.json` of the repository, then your `config.json`, then
+the system theme. A repository may name a theme, but only one of yours: it
+cannot bring colors of its own. Restart qreview to read an edited theme.
+
 ## Documentation
 
 | Document | What it holds |

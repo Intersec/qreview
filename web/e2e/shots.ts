@@ -4,7 +4,7 @@
 // passes or fails here, it only makes the interface visible.
 
 import { chromium, type Page } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import config from '../playwright.config.ts';
 import { openChange, openFile, useSplit } from './act.ts';
@@ -26,6 +26,13 @@ const other = await start({ dirty: true, gerrit: true });
 const moved = build();
 moved.previous = rebaseNewest(moved);
 const rebased = await start({ on: moved, prev: true });
+// A fourth one, with the example themes of the user.
+const example = (name: string) =>
+  readFileSync(join(import.meta.dirname, '..', '..', 'examples', 'themes', `${name}.css`), 'utf8');
+const themed = await start({
+  config: { ui: { theme: 'night' } },
+  themes: { night: example('night'), paper: example('paper') },
+});
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
@@ -422,7 +429,23 @@ for (const scheme of ['light', 'dark'] as const) {
   await third.close();
 }
 
+// The example themes. A theme sets its own mode, so one picture each.
+for (const theme of ['night', 'paper']) {
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await page.goto(themed.url);
+  await page.getByRole('button', { name: '⚙' }).click();
+  await page.getByRole('dialog').getByLabel('Theme').selectOption(theme);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await openLongFile(page);
+  await page.screenshot({ path: join(OUT, `theme-${theme}-unified.png`) });
+  await openChange(page, /Merge branch side into main/);
+  await openFile(page, 'net.blk');
+  await page.screenshot({ path: join(OUT, `theme-${theme}-merge.png`) });
+  await page.close();
+}
+
 await browser.close();
+themed.stop();
 rebased.stop();
 other.stop();
 server.stop();
