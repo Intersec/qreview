@@ -1,8 +1,10 @@
 // The theme the reader chose, against the one of the system, and the theme
 // files of the user.
 
-import { expect, test, type Browser, type Page } from '@playwright/test';
-import { openChange } from './act.ts';
+import { expect, test, type Page } from '@playwright/test';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { openChange, pickTheme } from './act.ts';
 import { start, type Running } from './server.ts';
 
 const NIGHT = ':root {\n  color-scheme: dark;\n  --page: #000010;\n}\n';
@@ -13,39 +15,32 @@ async function background(page: Page): Promise<string> {
   return page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 }
 
-async function pick(page: Page, theme: string) {
-  await page.getByRole('button', { name: '⚙' }).click();
-  await page.getByRole('dialog').getByLabel('Theme').selectOption(theme);
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+// The tokens of the merge bar, in each built-in palette.
+for (const [theme, system, color] of [
+  ['light', 'dark', 'rgb(255, 251, 235)'],
+  ['dark', 'light', 'rgb(31, 22, 14)'],
+] as const) {
+  test.describe(`the ${theme} theme on a ${system} system`, () => {
+    let server: Running;
+
+    test.beforeAll(async () => {
+      server = await start({ config: { ui: { theme } } });
+    });
+    test.afterAll(() => server?.stop());
+
+    test('the merge bar follows the chosen theme, not the system', async ({ browser }) => {
+      const context = await browser.newContext({ colorScheme: system });
+      const page = await context.newPage();
+      await page.goto(server.url);
+      await openChange(page, /Merge branch side into main/);
+
+      // The bar is the block that holds its button.
+      const bar = page.getByRole('button', { name: 'What it brings in' }).locator('xpath=../..');
+      await expect(bar).toHaveCSS('background-color', color);
+      await context.close();
+    });
+  });
 }
-
-test.describe('a built-in theme', () => {
-  let server: Running;
-
-  test.beforeAll(async () => {
-    server = await start({ config: { ui: { theme: 'light' } } });
-  });
-  test.afterAll(() => server?.stop());
-
-  /// The background of the merge bar, on a system of the given scheme.
-  async function mergeBar(browser: Browser, scheme: 'light' | 'dark'): Promise<string> {
-    const context = await browser.newContext({ colorScheme: scheme });
-    const page = await context.newPage();
-    await page.goto(server.url);
-    await openChange(page, /Merge branch side into main/);
-
-    // The bar is the block that holds its button.
-    const bar = page.getByRole('button', { name: 'What it brings in' }).locator('xpath=../..');
-    const color = await bar.evaluate((el) => getComputedStyle(el).backgroundColor);
-    await context.close();
-    return color;
-  }
-
-  test('the merge bar follows the chosen theme, not the system', async ({ browser }) => {
-    // The reader chose light, so a dark system changes nothing.
-    expect(await mergeBar(browser, 'dark')).toBe(await mergeBar(browser, 'light'));
-  });
-});
 
 test.describe('the theme files of the user', () => {
   // Each test changes the theme of the file, so they run one after the other.
@@ -86,7 +81,7 @@ test.describe('the theme files of the user', () => {
   test('a theme picked in the panel stays after a reload', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.goto(server.url);
-    await pick(page, 'paper');
+    await pickTheme(page, 'paper');
 
     // A light theme on a dark system: the theme wins.
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -100,10 +95,22 @@ test.describe('the theme files of the user', () => {
   test('following the system again gives the built-in palette', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'light' });
     await page.goto(server.url);
-    await pick(page, 'system');
+    await pickTheme(page, 'system');
 
     await expect(page.locator('html')).not.toHaveAttribute('data-theme');
     expect(await background(page)).toBe('rgb(255, 255, 255)');
+  });
+
+  test('an edited theme shows on a reload, with no restart', async ({ page }) => {
+    await page.goto(server.url);
+    await pickTheme(page, 'paper');
+    await expect.poll(() => background(page)).toBe('rgb(250, 250, 240)');
+
+    const file = join(server.fixture.config, 'qreview', 'themes', 'paper.css');
+    writeFileSync(file, PAPER.replace('#fafaf0', '#f0f0ff'));
+    await page.reload();
+
+    await expect.poll(() => background(page)).toBe('rgb(240, 240, 255)');
   });
 });
 
@@ -124,6 +131,6 @@ test.describe('a theme the repository names', () => {
 
     await page.goto(server.url);
 
-    expect(await background(page)).toBe('rgb(250, 250, 240)');
+    await expect.poll(() => background(page)).toBe('rgb(250, 250, 240)');
   });
 });

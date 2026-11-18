@@ -7,7 +7,7 @@ import { chromium, type Page } from '@playwright/test';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import config from '../playwright.config.ts';
-import { openChange, openFile, useSplit } from './act.ts';
+import { openChange, openFile, pickTheme, useSplit } from './act.ts';
 import { build, rebaseNewest } from './fixture.ts';
 import { start } from './server.ts';
 
@@ -433,9 +433,7 @@ for (const scheme of ['light', 'dark'] as const) {
 for (const theme of ['night', 'paper']) {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   await page.goto(themed.url);
-  await page.getByRole('button', { name: '⚙' }).click();
-  await page.getByRole('dialog').getByLabel('Theme').selectOption(theme);
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await pickTheme(page, theme);
   await openLongFile(page);
   await page.screenshot({ path: join(OUT, `theme-${theme}-unified.png`) });
   await openChange(page, /Merge branch side into main/);

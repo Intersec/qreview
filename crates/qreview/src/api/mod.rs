@@ -42,6 +42,11 @@ pub struct AppState {
     busy: Arc<std::sync::Mutex<Busy>>,
     /// The writes to the store, for the party that did not make them.
     pub events: Arc<Events>,
+    /// Where the themes of the user are read again at each page load. None
+    /// reads nothing, which is what a test that sets no directory wants.
+    themes: Option<Arc<std::path::PathBuf>>,
+    /// What the terminal must say about the themes read again.
+    pub notes: Arc<crate::status::Notes>,
 }
 
 /// What the server is doing, as the read-ahead task needs to know it.
@@ -66,14 +71,40 @@ impl AppState {
                 ended: std::time::Instant::now(),
             })),
             events: Arc::new(Events::default()),
+            themes: None,
+            notes: Arc::new(crate::status::Notes::default()),
         }
     }
 
     /// The configuration this run started with, and where it came from.
     pub fn with_config(mut self, config: crate::config::Config, root: std::path::PathBuf) -> Self {
+        self.notes = Arc::new(crate::status::Notes::said(&config.notes));
         self.config = Arc::new(std::sync::RwLock::new(config));
         self.root = Arc::new(root);
         self
+    }
+
+    /// Read the themes of the user again at each page load, from `dir`.
+    pub fn with_themes(mut self, dir: Option<std::path::PathBuf>) -> Self {
+        self.themes = dir.map(Arc::new);
+        self
+    }
+
+    /// Read the theme files again, so an edited theme shows on a reload
+    /// with no restart. The rest of the configuration is read at startup.
+    fn reload_themes(&self) {
+        let Some(dir) = &self.themes else {
+            return;
+        };
+        // Read the files before the lock, so no reader of the configuration
+        // waits on the disk.
+        let loaded = crate::theme::load_dir(dir);
+        let mut config = self
+            .config
+            .write()
+            .expect("the configuration lock is poisoned");
+        config.use_themes(dir, loaded);
+        self.notes.offer(&config.notes);
     }
 
     /// How long the server has had nothing in hand.
@@ -314,7 +345,9 @@ struct SessionBody {
 
 async fn session(State(state): State<AppState>) -> Json<SessionBody> {
     // The working tree moves while the page is open. The reload is where the
-    // series catches up with it.
+    // series catches up with it. The themes are read before the session
+    // lock, which every other request waits on.
+    state.reload_themes();
     let mut session = state.session.write().await;
     session.refresh_worktree().await;
 
@@ -900,6 +933,7 @@ async fn save_config(
     Json(patch): Json<serde_json::Value>,
 ) -> Result<Json<crate::config::Config>, ApiError> {
     let fresh = crate::config::update(&state.root, &patch).map_err(saving)?;
+    state.notes.offer(&fresh.notes);
     *state
         .config
         .write()
@@ -1474,6 +1508,44 @@ mod tests {
             .map(|f| f["path"].as_str().unwrap())
             .filter(|path| *path != crate::commitmsg::PATH)
             .collect()
+    }
+
+    #[tokio::test]
+    async fn a_page_load_reads_the_themes_again() {
+        let repo = fixture().await;
+        let themes = tempfile::tempdir().unwrap();
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned())
+            .with_themes(Some(themes.path().to_owned()));
+
+        let (_, before) = json(app(state.clone()), get_with_cookie("/api/session", TOKEN)).await;
+        assert_eq!(before["config"]["ui"]["themes"], serde_json::json!({}));
+
+        let night = ":root { color-scheme: dark; --page: #000010; }";
+        std::fs::write(themes.path().join("night.css"), night).unwrap();
+        let (_, after) = json(app(state), get_with_cookie("/api/session", TOKEN)).await;
+
+        assert_eq!(
+            after["config"]["ui"]["themes"]["night"]["colors"]["page"],
+            "#000010"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_broken_theme_is_said_once_across_reloads() {
+        let repo = fixture().await;
+        let themes = tempfile::tempdir().unwrap();
+        std::fs::write(themes.path().join("broken.css"), ":root { --page: red; }").unwrap();
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned())
+            .with_themes(Some(themes.path().to_owned()));
+
+        for _ in 0..2 {
+            json(app(state.clone()), get_with_cookie("/api/session", TOKEN)).await;
+        }
+
+        let said = state.notes.take();
+        assert_eq!(said.len(), 2, "{said:?}");
+        assert!(said[0].contains("broken.css:1"), "{said:?}");
+        assert_eq!(said[1], crate::theme::HINT);
     }
 
     async fn json(app: Router, request: Request<Body>) -> (StatusCode, serde_json::Value) {
