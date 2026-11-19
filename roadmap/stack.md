@@ -1175,6 +1175,8 @@ Beside this, qreview reads the threads of Gerrit through REST, with their ids an
 
 The rest stays on ssh: the query, the patch sets, `git fetch`, and the commits of a blame. REST serves only what ssh cannot.
 
+Settled while building Send, on 2026-11-13: Send shows only when a remark is staged. For Gerrit works without an authorization, and only Send needs one. `GET /api/gerrit/status` holds the state of REST, so `GET /api/session` never waits for the command of the authorization.
+
 `qreview <gerrit-url>` fetches a change and opens its review. The worktree then runs one server for each review, not one server in all. Sections 6.9 and 11 hold the rules.
 
 **Why REST for the threads and the drafts.** The ssh query gives no comment id, no thread link and no resolved state. Without the id, a reply opens a new thread beside the thread of the reviewer and resolves nothing. `gerrit review --json` over ssh can post, but it publishes at once: it cannot write a draft.

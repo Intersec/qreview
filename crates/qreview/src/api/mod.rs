@@ -114,6 +114,9 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/blame", get(blame))
         .route("/api/gerrit/commits", post(gerrit_commits))
+        .route("/api/gerrit/status", get(gerrit_status))
+        .route("/api/changes/{key}/gerrit/send", post(send_drafts))
+        .route("/api/series/gerrit/send", post(send_series_drafts))
         .route("/api/changes/{key}/mergelist", get(mergelist))
         .route("/api/comments", get(all_comments))
         .route("/api/events", get(events))
@@ -146,6 +149,19 @@ pub fn app(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(state.clone(), auth::guard))
         .layer(middleware::from_fn_with_state(state.clone(), timed))
         .with_state(state)
+}
+
+/// The way a request came in. The router of the Unix socket carries
+/// `Via::Socket`; the port carries nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Via {
+    Socket,
+}
+
+/// The router of the Unix socket: the same routes, marked, so a route that
+/// only the page may call can refuse the agent.
+pub fn on_socket(app: Router) -> Router {
+    app.layer(axum::Extension(Via::Socket))
 }
 
 /// Time the whole request, so a trace shows what the browser waited for.
@@ -836,6 +852,105 @@ async fn gerrit_commits(
     Ok(Json(GerritPages {
         urls: session.gerrit_pages(&body.commits).await,
     }))
+}
+
+/// What the REST API of Gerrit allows this run.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GerritStatus {
+    rest: crate::session::RestStatus,
+    /// Why it does not allow more, for the reader.
+    reason: Option<String>,
+    /// The address of the server, when one is known.
+    base: Option<String>,
+}
+
+async fn gerrit_status(State(state): State<AppState>) -> Json<GerritStatus> {
+    let session = state.session.read().await;
+    let rest = session.gerrit_rest().await;
+
+    Json(GerritStatus {
+        rest: rest.status,
+        reason: rest.reason,
+        base: rest.client.map(|c| c.base().to_owned()),
+    })
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct SendBody {
+    /// The remarks to send. Every staged one when it is missing.
+    #[serde(default)]
+    ids: Option<Vec<String>>,
+}
+
+/// Only the reader sends to Gerrit. No command of the agent calls this,
+/// and the socket, the way in of an agent in a sandbox, is refused. The
+/// agent holds the token, so this is a convention and not a lock: the
+/// draft is the lock. See section 5.8 of the design.
+fn from_the_page(via: Option<axum::Extension<Via>>) -> Result<(), ApiError> {
+    match via {
+        Some(_) => Err(ApiError {
+            status: StatusCode::FORBIDDEN,
+            code: "reader_only",
+            message: "only the reader sends to Gerrit, from the page".to_owned(),
+        }),
+        None => Ok(()),
+    }
+}
+
+async fn send_drafts(
+    State(state): State<AppState>,
+    via: Option<axum::Extension<Via>>,
+    Path(key): Path<String>,
+    body: Option<Json<SendBody>>,
+) -> Result<Json<crate::session::Sent>, ApiError> {
+    from_the_page(via)?;
+    let ids = body.and_then(|Json(body)| body.ids);
+    let session = state.session.read().await;
+    let sent = session.send_drafts(&key, ids.as_deref()).await?;
+    for id in &sent.sent {
+        state
+            .events
+            .push(Kind::Sent, Author::Reader, &key, Some(id));
+    }
+
+    Ok(Json(sent))
+}
+
+async fn send_series_drafts(
+    State(state): State<AppState>,
+    via: Option<axum::Extension<Via>>,
+) -> Result<Json<crate::session::Sent>, ApiError> {
+    from_the_page(via)?;
+    let session = state.session.read().await;
+    let mut out = crate::session::Sent::default();
+    for key in session.staged_keys() {
+        // A change that fails holds back no other one of the series.
+        let sent = match session.send_drafts(&key, None).await {
+            Ok(sent) => sent,
+            Err(error) => crate::session::Sent {
+                sent: Vec::new(),
+                failed: session
+                    .staged_ids(&key)
+                    .into_iter()
+                    .map(|id| crate::session::SendFailure {
+                        id,
+                        error: format!("{error:#}"),
+                    })
+                    .collect(),
+            },
+        };
+        for id in &sent.sent {
+            state
+                .events
+                .push(Kind::Sent, Author::Reader, &key, Some(id));
+        }
+        out.sent.extend(sent.sent);
+        out.failed.extend(sent.failed);
+    }
+
+    Ok(Json(out))
 }
 
 /// The review of a change, and where each comment lands in the patch set
@@ -2210,6 +2325,38 @@ mod tests {
         .await;
 
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn the_agent_cannot_send_to_gerrit_through_the_socket() {
+        let repo = fixture().await;
+        let (status, body) = json(
+            on_socket(server(&repo).await),
+            post("/api/changes/I8f3ac21/gerrit/send", "{}"),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["error"]["code"], "reader_only");
+    }
+
+    #[tokio::test]
+    async fn a_run_without_gerrit_says_why_it_sends_nothing() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        let (_, status) = json(server.clone(), get_with_cookie("/api/gerrit/status", TOKEN)).await;
+        assert_eq!(status["rest"], "off");
+
+        let (code, body) = json(server, post("/api/changes/I8f3ac21/gerrit/send", "{}")).await;
+        assert_ne!(code, StatusCode::OK);
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Gerrit is off"),
+            "{body}"
+        );
     }
 
     #[tokio::test]

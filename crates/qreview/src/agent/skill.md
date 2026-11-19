@@ -23,6 +23,11 @@ Outside a fix: no edit, no `git commit`, no amend, no rebase, no
 
 ## Start
 
+If the `origin` remote of the repository is a Gerrit server, the user
+starts the server in their own terminal, not you: Gerrit may ask them to
+log in there. Ask them to run `qreview`. Go on when
+`qreview wait --timeout 1` exits with code 1 and JSON.
+
 If your commands run in a sandbox, the user starts the server, not you. A
 server started inside the sandbox cannot save comments, and the browser of
 the user cannot reach it. You know you are in one when `qreview` prints

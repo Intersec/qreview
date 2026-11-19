@@ -39,6 +39,8 @@ pub enum Kind {
     /// The agent waits again after it wrote: its work is over, and a page
     /// that held its reloads catches up once.
     Idle,
+    /// The reader sent a remark to Gerrit as a draft.
+    Sent,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]

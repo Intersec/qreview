@@ -47,7 +47,14 @@ export async function start(
   // No test talks to a server. qreview asks its home whether a newer
   // release is out, so every fixture says to ask nobody, and the suite that
   // is about that check names its own address.
-  const config = { update: { url: '' }, ...options.config };
+  const config = {
+    update: { url: '' },
+    // The account of the fake Gerrit.
+    ...(options.gerrit
+      ? { gerrit: { auth: { command: [join(fixture.bin!, 'gerrit-auth')] } } }
+      : {}),
+    ...options.config,
+  };
 
   mkdirSync(join(fixture.config, 'qreview'), { recursive: true });
   writeFileSync(join(fixture.config, 'qreview', 'config.json'), JSON.stringify(config, null, 2));

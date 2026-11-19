@@ -240,8 +240,41 @@ port, and the project from the remote URL, and the target branch from
 A line of the blame opens the change of its commit on Gerrit, when the server
 holds that commit.
 
-qreview only reads. It never votes, never comments on the server, and never
-pushes.
+### Send remarks to Gerrit
+
+On a version that Gerrit holds, check **For Gerrit** on a remark. The remark
+is staged: it stays in qreview, and the agent does not count it as work. Click
+**Send to Gerrit**, read the list, and press Enter. Each remark becomes a
+draft on Gerrit. Only you see a draft, until you publish it in Gerrit. The
+replies of a thread never leave qreview.
+
+Sending needs access to the REST API of Gerrit. qreview stores no secret:
+a command of yours gives the `Authorization` header. Name it in
+`~/.config/qreview/config.json`, the only file that may name it:
+
+```json
+"gerrit": { "auth": { "command": ["/path/to/gerrit-auth"] } }
+```
+
+The command prints `{"authorization": "Bearer …", "expiresIn": 3600}`.
+`expiresIn` is optional. A token of OIDC is `Bearer …`. An HTTP password
+of Gerrit is `Basic` and the base64 of `user:password`:
+[`examples/gerrit-auth-basic.sh`](examples/gerrit-auth-basic.sh) asks it in
+the terminal.
+
+qreview runs the command at its first call to Gerrit, in the terminal
+where you started `qreview`. There, the command may ask your password,
+or open a browser to log in. So start `qreview` yourself, in a terminal,
+when you review with Gerrit. If Gerrit refuses what the command gave,
+qreview asks once more.
+
+Without the command, qreview reads the threads of Gerrit as an anonymous
+reader, and sends nothing.
+
+When your Gerrit gives no web
+address for its changes, set `gerrit.url` in the configuration.
+
+qreview never votes, never publishes, and never pushes.
 
 ## Custom file types
 
