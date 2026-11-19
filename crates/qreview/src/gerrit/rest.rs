@@ -20,7 +20,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OnceCell};
 
 /// How long a call may take before the review goes on without it.
 pub const TIMEOUT: Duration = Duration::from_secs(5);
@@ -53,6 +53,8 @@ pub struct Auth {
     /// qreview runs in a terminal: the command gets it, and may ask.
     interactive: bool,
     held: Mutex<Option<Held>>,
+    /// The account of the reader on Gerrit, asked once.
+    me: OnceCell<Option<Account>>,
 }
 
 struct Held {
@@ -61,12 +63,20 @@ struct Held {
     until: Option<Instant>,
 }
 
+/// Who the reader is on Gerrit, from `GET /a/accounts/self`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Account {
+    pub username: String,
+    pub email: String,
+}
+
 impl Auth {
     pub fn new(command: Vec<String>, interactive: bool) -> Self {
         Self {
             command,
             interactive,
             held: Mutex::new(None),
+            me: OnceCell::new(),
         }
     }
 
@@ -253,6 +263,22 @@ impl Rest {
 
     pub fn has_auth(&self) -> bool {
         self.auth.is_some()
+    }
+
+    /// The account of the reader, asked once. None for an anonymous reader,
+    /// or when Gerrit does not answer.
+    pub async fn account(&self) -> Option<Account> {
+        let auth = self.auth.as_ref()?;
+        auth.me
+            .get_or_init(|| async {
+                let me = self.call("GET", "accounts/self", None).await.ok()?;
+                Some(Account {
+                    username: me["username"].as_str().unwrap_or_default().to_owned(),
+                    email: me["email"].as_str().unwrap_or_default().to_owned(),
+                })
+            })
+            .await
+            .clone()
     }
 
     /// The address of a route. `/a/` asks for the authorization; without
@@ -649,6 +675,13 @@ mod tests {
         assert!(given.contains("Authorization: Bearer token-1"), "{given}");
         assert!(!args.contains("token"), "{args}");
         assert_eq!(runs(dir.path()), ["https://review.example.com"], "run once");
+        assert_eq!(
+            rest.account().await,
+            Some(Account {
+                username: "me".to_owned(),
+                email: "me@example.com".to_owned(),
+            })
+        );
     }
 
     #[tokio::test]

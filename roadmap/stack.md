@@ -1277,3 +1277,13 @@ In a review of the change of a colleague, the reader wrote "This is a review, pr
 
 - **For Gerrit ticked by default on the change of a colleague.** The reader often writes a remark to ask the agent first; the text that goes out is the agent's wording, not the first remark.
 
+## 2026-11-18 — A question of the reader on Gerrit waits for the author
+
+The reader sent a question to Gerrit on the change of a colleague. Its thread came back unresolved, so it counted as work in To handle. To clear it, the reader ticked Done. The Done box of a thread of Gerrit stages a reply `Done` that resolves it. That reply would have closed the question before the author answered. The thread folded, so the reply was hidden, and Send the series counted one more remark than the reader could find.
+
+**Decision.** A thread of Gerrit waits for the reader only when its newest comment is of somebody else. The reader is the account with the email `user.email`, or the account that `GET /a/accounts/self` gives, by email or username. The thread carries `waits`. Only a thread that waits counts as work: in To handle, in the counts, and in the export. A thread with a reply staged for Send never folds on its own.
+
+**Rejected:**
+
+- **Done as a mark that stays in qreview on a thread of Gerrit.** On a thread that waits for the reader, Done is the Done of Gerrit, which the author of the change needs. Once a question of the reader no longer counts as work, nothing asks the reader to tick it.
+

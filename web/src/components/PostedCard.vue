@@ -46,9 +46,11 @@ function gone(reply: Comment): boolean {
   return reply.gerrit?.state === 'sent' && threads?.sentState?.(reply) === 'deleted';
 }
 
+/// A reply that waits for Send keeps the thread open: it is work left.
+const staged = computed(() => ours.value.some((reply) => reply.gerrit?.state === 'staged'));
 /// Null until the reader folds or unfolds it, so the state decides.
 const foldedByHand = ref<boolean | null>(null);
-const folded = computed(() => foldedByHand.value ?? done.value);
+const folded = computed(() => foldedByHand.value ?? (done.value && !staged.value));
 watch(done, () => (foldedByHand.value = null));
 
 const replying = ref(read(threadSlot(`${GERRIT_PARENT}${props.comment.id}`, 'reply')) !== '');

@@ -59,13 +59,16 @@ test('the ssh answer stands back when REST answers', async ({ page }) => {
 });
 
 test('a thread that waits is work: the counts and the export hold it', async ({ page }) => {
-  // Two threads wait on this change, one on each side; the third is resolved.
+  // Two threads wait on this change, one on each side. The third is
+  // resolved, and the fourth is a question of the reader.
   await expect(page.getByRole('button', { name: /^Fix this change · 2/ })).toBeVisible();
 
   const text = server.agent(['export']);
   expect(text).toContain('Remark from Jane Reviewer on Gerrit: Where does this loop stop?');
   expect(text).toContain('Reply from Test Author on Gerrit: At the first error.');
   expect(text).not.toContain('Rename this function.');
+  // An unresolved question of the reader waits for the author.
+  expect(text).not.toContain('Can this read block?');
 });
 
 test('the threads that wait come first in the pane, and the series row counts them', async ({
@@ -77,7 +80,24 @@ test('the threads that wait come first in the pane, and the series row counts th
   await expect(first.locator('.list-row')).toHaveCount(2);
   await expect(first).toContainText('Where does this loop stop?');
   await expect(first).not.toContainText('Rename this function.');
+  await expect(first).not.toContainText('Can this read block?');
 
   const row = page.locator('nav li', { hasText: 'net: retry the read' });
   await expect(row.locator('.count-gerrit')).toHaveText('· 2 Gerrit');
+});
+
+test('a thread that holds a staged reply stays open, even done', async ({ page }) => {
+  const thread = page.locator('.posted-box', { hasText: 'Rename this function.' });
+  await thread.getByRole('button', { name: /Jane Reviewer/ }).click();
+  await thread.getByRole('button', { name: 'Reply' }).click();
+  await thread.getByRole('textbox').fill('Renamed.');
+  await thread.getByLabel('For Gerrit').check();
+  await thread.getByRole('button', { name: 'Save', exact: true }).click();
+
+  await page.reload();
+  await openChange(page, /net: retry the read/);
+  await openFile(page, 'net.blk');
+  await expect(thread).not.toHaveClass(/talk-folded/);
+  await expect(thread.locator('.talk-tag-gerrit')).toHaveText('for Gerrit');
+  await thread.getByRole('button', { name: 'Delete' }).click();
 });

@@ -508,7 +508,8 @@ export function addGuide(repo: string) {
 
 /// What the REST API of Gerrit answers for the comments of the change
 /// `net: retry the read`: a thread that waits, with a reply, a resolved
-/// one, and one on the parent side.
+/// one, one on the parent side, and a question of the reader, which waits
+/// for the author and not for the reader.
 export const GERRIT_THREADS = {
   'src/net.blk': [
     {
@@ -548,6 +549,15 @@ export const GERRIT_THREADS = {
       message: 'This return was the only exit.',
       unresolved: true,
       updated: '2026-11-01 09:30:00.000000000',
+    },
+    {
+      id: 'mine1',
+      patch_set: 2,
+      line: 2,
+      author: { name: 'A Developer', email: 'author@example.com' },
+      message: 'Can this read block?',
+      unresolved: true,
+      updated: '2026-11-01 12:00:00.000000000',
     },
   ],
 };

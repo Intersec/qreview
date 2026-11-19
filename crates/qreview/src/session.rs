@@ -1657,6 +1657,26 @@ impl Session {
             .map(|file| file.comments)
             .unwrap_or_default();
 
+        let account = match self.gerrit_rest().await.client {
+            Some(rest) => rest.account().await,
+            None => None,
+        };
+        let same = |a: &str, b: &str| !a.is_empty() && a.eq_ignore_ascii_case(b);
+        let mine = |id: &str| {
+            found
+                .iter()
+                .find(|c| c.id == id)
+                .and_then(|c| c.author.as_ref())
+                .is_some_and(|who| {
+                    self.user_email
+                        .as_deref()
+                        .is_some_and(|email| same(&who.email, email))
+                        || account.as_ref().is_some_and(|me| {
+                            same(&who.email, &me.email) || same(&who.username, &me.username)
+                        })
+                })
+        };
+
         let mut out: Vec<crate::model::GerritThread> = Vec::new();
         for item in posted {
             let wire = item.wire;
@@ -1677,6 +1697,7 @@ impl Session {
                 side,
                 line: wire.line,
                 unresolved: false,
+                waits: false,
                 done: false,
                 comments: vec![wire],
                 replies: Vec::new(),
@@ -1688,6 +1709,8 @@ impl Session {
                 .comments
                 .last()
                 .is_some_and(|c| c.unresolved == Some(true));
+            thread.waits =
+                thread.unresolved && thread.comments.last().is_some_and(|c| !mine(&c.id));
             thread.replies = ours
                 .iter()
                 .filter(|c| comments::gerrit_parent(c) == Some(thread.id.as_str()))
