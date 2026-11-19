@@ -205,6 +205,9 @@ export interface Comment {
   body: string;
   anchor: Anchor | null;
   author: Author;
+  /// The name that the agent gave, on a comment of the agent. A draft of
+  /// Gerrit starts with it.
+  agentName?: string;
   /// The remark that opens the thread, on a reply.
   parent: string | null;
   /// The thread is done. Only on the remark that opens it.

@@ -1258,8 +1258,11 @@ async fn all_comments(
 async fn add_comment(
     State(state): State<AppState>,
     Path(key): Path<String>,
-    Json(new): Json<NewComment>,
+    Json(mut new): Json<NewComment>,
 ) -> Result<(StatusCode, Json<Comment>), ApiError> {
+    if new.author == Author::Agent {
+        new.agent_name = state.events.agent_name();
+    }
     let session = state.session.read().await;
     let ask = new.ask;
     let comment = session.add_comment(&key, new).await?;
@@ -1418,6 +1421,8 @@ struct EventsQuery {
     /// How long to hold the wait, in milliseconds, when the party has less
     /// time than the server would hold it: `qreview wait --timeout 1`.
     wait: Option<u64>,
+    /// The name of the agent: `qreview wait --agent <name>`.
+    agent: Option<String>,
 }
 
 /// How long a wait on the events is held before it answers empty. Short
@@ -1429,6 +1434,11 @@ const EVENTS_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 /// The session lock is not held: a wait of 30 seconds must not stop a
 /// refresh.
 async fn events(State(state): State<AppState>, Query(query): Query<EventsQuery>) -> Json<Batch> {
+    if query.who.as_deref() == Some("agent")
+        && let Some(name) = &query.agent
+    {
+        state.events.agent_named(name);
+    }
     let mut agent = (query.who.as_deref() == Some("agent")).then(|| state.events.agent_waits());
     let _page = (query.who.as_deref() == Some("reader")).then(|| state.events.page_waits());
 
@@ -4314,6 +4324,42 @@ mod tests {
         assert_eq!(batch["events"][0]["kind"], "fix");
         assert_eq!(batch["events"][0]["key"], "I8f3ac21");
         assert_eq!(batch["events"][0]["id"], "gerrit:g1");
+    }
+
+    #[tokio::test]
+    async fn the_name_of_the_wait_goes_on_each_comment_of_the_agent() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+        let of_agent = r#"{"scope":"line","file":"src/a.blk","side":"new","startLine":2,"body":"x","author":"agent","agentName":"Mallory"}"#;
+
+        // No name yet: a body cannot give one.
+        let (_, body) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", of_agent),
+        )
+        .await;
+        assert!(body.get("agentName").is_none());
+
+        json(
+            server.clone(),
+            get_with_cookie("/api/events?after=0&who=agent&wait=1&agent=GPT%205", TOKEN),
+        )
+        .await;
+        // A later wait without a name keeps it.
+        json(
+            server.clone(),
+            get_with_cookie("/api/events?after=0&who=agent&wait=1", TOKEN),
+        )
+        .await;
+
+        let (_, body) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", of_agent),
+        )
+        .await;
+        assert_eq!(body["agentName"], "GPT 5");
+        let (_, body) = json(server, post("/api/changes/I8f3ac21/comments", LINE_COMMENT)).await;
+        assert!(body.get("agentName").is_none());
     }
 
     #[tokio::test]

@@ -67,6 +67,7 @@ test('a staged remark becomes a draft on Gerrit, and the password stays off the 
   const basic = Buffer.from('reviewer:s3cret').toString('base64');
   expect(given).toContain(`header = "Authorization: Basic ${basic}"`);
   expect(given).toContain('Please name this function after what it does.');
+  expect(given).not.toContain('From ');
   expect(logged('curl-args.log')).not.toContain('s3cret');
   expect(logged('curl-args.log')).not.toContain(basic);
 });
@@ -119,6 +120,8 @@ test('a staged thread sends its newest reply, which the agent words', async ({ p
   const remark = JSON.parse(
     server.agent(['comment', 'src/net.blk:new:1', '--gerrit', '--body', 'word this for Bob']),
   ) as { id: string };
+  // The agent gives its name in its wait. The wait finds nothing new.
+  expect(() => server.agent(['wait', '--agent', 'Claude', '--timeout', '1'])).toThrow();
   const reply = JSON.parse(
     server.agent(['stage', remark.id, '--body', 'Could this loop stop after three tries?']),
   ) as { parent: string };
@@ -134,8 +137,9 @@ test('a staged thread sends its newest reply, which the agent words', async ({ p
   await page.keyboard.press('Enter');
   await expect(dialog).toHaveCount(0);
 
+  // Gerrit shows the draft under the name of the reader: it names the agent.
   const given = logged('curl.log');
-  expect(given).toContain('Could this loop stop after three tries?');
+  expect(given).toContain('From Claude:\\n\\nCould this loop stop after three tries?');
   expect(given).not.toContain('word this for Bob');
 });
 

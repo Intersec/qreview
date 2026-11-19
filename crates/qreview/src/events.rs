@@ -181,6 +181,8 @@ struct Listening {
     answer_to: (String, String),
     /// An agent waited once on this server.
     seen: bool,
+    /// The name that the agent gave in its wait, for the drafts of Gerrit.
+    name: Option<String>,
 }
 
 /// Held while an agent waits. A guard, because the agent can hang up.
@@ -272,6 +274,23 @@ impl Events {
             return Some(true);
         }
         pages.ended.map(|at| at.elapsed() < grace)
+    }
+
+    /// Keep the name that the agent gives in its wait. A wait without one
+    /// keeps the name of the earlier waits.
+    pub fn agent_named(&self, name: &str) {
+        let name = name.trim();
+        if name.is_empty() {
+            return;
+        }
+        let mut agent = self.agent.lock().expect("the agent state is poisoned");
+        agent.name = Some(name.to_owned());
+    }
+
+    /// The name of the agent, when one gave it since the server started.
+    pub fn agent_name(&self) -> Option<String> {
+        let agent = self.agent.lock().expect("the agent state is poisoned");
+        agent.name.clone()
     }
 
     pub fn agent_listens(&self) -> bool {

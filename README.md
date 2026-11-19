@@ -149,7 +149,7 @@ repository on its own:
 qreview comment src/net.c:new:42 --body "The result of read is not checked."
 qreview reply c-5b72… --body "Renamed." --done
 qreview reply c-5b72… --body "Log it, or return it?" --blocked
-qreview wait                  # block until you ask, print the thread as JSON
+qreview wait --agent Claude   # block until you ask, print the thread as JSON
 qreview export --json         # the open threads, each comment with its id
 qreview migrate --from 4a91… --done c-5b72…  # after an amend, see below
 qreview refresh               # read the repository again
@@ -190,7 +190,10 @@ review it, you do not amend it. Ask agent still works, and the export
 asks the agent for help with the review rather than a fix. A remark on
 such a change is for its author: when the agent answers it with a remark
 for the author, it stages that remark For Gerrit without a request. You
-read it, and click Send.
+read it, and click Send. Gerrit shows a draft under your name, so a
+draft that the agent wrote starts with `From <name>:`, the name that
+the agent gave in `qreview wait --agent <name>`. Without a name, it
+starts with `From the agent:`.
 
 While the agent works on a fix, the page says **Agent working…** and holds
 its writes, then shows the whole fix at once when the agent waits again. A

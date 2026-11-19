@@ -1298,3 +1298,15 @@ Delete and Clean erased the comments from the file of the change. The reader wan
 - **A `deleted` mark on each comment, in `comments`.** Every reader of `comments` would have to skip it: the page, the export, the counts, the threads, the moves of a migrate. One reader that forgets shows a deleted comment again. A list apart needs no reader to change.
 - **A `qreview restore` command.** The reader asked for a manual operation. A command can come when a restore is frequent.
 
+## 2026-11-19 — A draft of the agent names the agent
+
+Gerrit shows each draft under the name of the reader, who sends it. The author of the change cannot tell a remark of the agent from a remark of the reader.
+
+**Decision.** The agent names itself in its wait: `qreview wait --agent <name>`. The server keeps the newest name in memory, and writes it as `agentName` on each comment of the agent. Each wait sends the name, so a server that restarts learns it again at the next wait. When qreview sends a draft whose text the agent wrote, the `message` starts with the line `From <agentName>:`, or `From the agent:` without a name, and a blank line. The text that goes out is the newest reply of the thread, so the author of that reply decides. The store keeps the text without the line, so the page and the export do not change. A remark of the agent that the reader edits keeps its author, and keeps the line. The field joins format 6, which no release has written yet.
+
+**Rejected:**
+
+- **The agent writes the line in its text.** The page would show it on every remark of the agent, in the series of the reader too, where nothing goes to Gerrit. And the procedure of the agent can forget it.
+- **`From Claude:` for every agent, or `Claude` when `CLAUDECODE` is set.** qreview works with any agent, and the binary must not know one by name.
+- **`QREVIEW_AGENT` in the environment.** Each user must set it once. The procedure of the agent already runs `wait` at each turn.
+- **`--agent` on each command that writes.** The agent can forget it on one command, and that draft goes out unnamed.

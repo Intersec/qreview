@@ -780,6 +780,7 @@ read, and one file is written.
       "id": "c-01K...",
       "parent": "gerrit:a3f1c0de_7b2e9a41",
       "author": "agent",
+      "agentName": "Claude",
       "patchSet": 2,
       "commit": "af448g15...",
       "createdAt": "2026-08-20T15:10:02Z",
@@ -993,6 +994,13 @@ Gerrit can take replies in qreview too, by the rules of section 6.8.
 is the reader's. Both hold the same session token, so this is a label and
 not a permission. The interface draws the writing of the agent in a style of
 its own.
+
+**`agentName` is the name that the agent gives itself**, on a comment of the
+agent only. The agent gives it with `qreview wait --agent <name>`, and the
+server keeps the newest one in memory. Each wait sends it, so a server that
+restarts learns it at the next wait. The server writes it on each comment of
+the agent; a body that carries one is ignored. A draft of Gerrit starts with
+it (section 6.7). Format 6 added it.
 
 **`done` is on the remark that opens the thread**, the way Gerrit has a
 Done box on a thread. The agent or the reader checks it. A done thread is
@@ -1421,7 +1429,7 @@ PUT /a/changes/myproject~12321/revisions/<revision>/drafts
 | `parent` | On a merge, the number of the parent of the left column. Absent for the auto-merge |
 | `line` | `endLine`. Absent on a remark about a file |
 | `range` | `startLine`, `endLine`, and the characters when the remark has some. Absent on a single whole line |
-| `message` | The newest reply of the thread, or the body of the remark when it has none |
+| `message` | The newest reply of the thread, or the body of the remark when it has none. If the agent wrote that text, the line `From <agentName>:`, or `From the agent:` without a name, and a blank line come first |
 | `in_reply_to` | On a reply to a thread of Gerrit, the id of the last comment of that thread when the reader sends (section 6.8). The reply takes the `path` of the comment that opens the thread, so a reply to a remark about the change goes to `/PATCHSET_LEVEL` |
 | `unresolved` | `true` on a remark. On a reply, the opposite of `gerrit.resolve` |
 
@@ -1585,7 +1593,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `POST /api/changes/:key/gerrit/send` | Send the staged remarks of the change as drafts. Body: `{ "ids": [id] }`, every staged remark when it is absent. Answers `{ "sent": [id], "failed": [{ "id", "error" }] }`. Refused on the Unix socket. See sections 5.8 and 6.7 |
 | `POST /api/series/gerrit/send` | The same for every change of the series |
 | `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |
-| `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. The wait is held 30 seconds at most, and `wait=<ms>` holds it less: `qreview wait --timeout` passes the time it has left. See section 8.3 |
+| `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. The wait is held 30 seconds at most, and `wait=<ms>` holds it less: `qreview wait --timeout` passes the time it has left. With `who=agent`, `agent=<name>` names the agent for its next comments (section 5.5). See section 8.3 |
 | `POST /api/migrate` | Link a new version to its previous one and move its threads. Body: `{ "from", "to", "done": [ids], "blocked": [{ "id", "body" }] }`. See section 5.6 |
 | `POST /api/map` | Where places of one version stand in the next. Body: `{ "from", "to", "places": [{ "file", "side", "line" }] }`. Answers `{ "places": [...] }`, `null` for a file the new version deleted. See section 5.6 |
 | `POST /api/changes/:key/fix?thread=gerrit:<id>` | Ask the agent to fix the change. With `thread`, the fix of that thread alone: the Apply of a thread of Gerrit. The event `fix` then names it in `id`. See sections 5.7 and 6.8 |
@@ -1988,7 +1996,7 @@ qreview stage <id> --body <text> [--resolve]
                               stage a thread, with its text for Gerrit as its newest reply
 qreview reply <id> --body <text> [--done] [--blocked]
                               reply to a thread
-qreview wait [--after <n>] [--timeout <s>]
+qreview wait [--agent <name>] [--after <n>] [--timeout <s>]
                               print the next requests of the reader as JSON
 qreview refresh               read the repository again, as the ⟳ button
 qreview migrate --from <old> [--to <new>] [--done <id>,...] [--blocked <id>=<text>]...

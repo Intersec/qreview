@@ -165,7 +165,11 @@ pub async fn comment(
         .into_iter()
         .flatten()
         .any(|change| change["key"].as_str() == Some(&key) && change["own"] == json!(false));
-    let mut new = json!({ "body": body, "author": "agent", "file": place.file });
+    let mut new = json!({
+        "body": body,
+        "author": "agent",
+        "file": place.file,
+    });
     match &place.lines {
         Some((side, from, to)) => {
             new["scope"] = json!(if from == to { "line" } else { "range" });
@@ -456,7 +460,12 @@ pub async fn wait(
     home: &Home,
     after: Option<u64>,
     timeout: Option<Duration>,
+    name: Option<&str>,
 ) -> Result<(Value, bool)> {
+    // Sent on every wait: a server that restarts learns it again.
+    let named = name.map_or(String::new(), |name| {
+        format!("&agent={}", crate::gerrit::rest::encode(name))
+    });
     let deadline = timeout.map(|timeout| Instant::now() + timeout);
     let mut client = reach(home, deadline).await?;
     let mut after = match after {
@@ -476,7 +485,7 @@ pub async fn wait(
             })
             .unwrap_or_default();
         let Ok(batch) = client
-            .get(&format!("/api/events?after={after}&who=agent{held}"))
+            .get(&format!("/api/events?after={after}&who=agent{held}{named}"))
             .await
         else {
             let back = reach(home, deadline).await?;
