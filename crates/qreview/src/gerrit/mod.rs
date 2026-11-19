@@ -7,6 +7,7 @@
 
 pub mod answer;
 pub mod coords;
+pub mod draft;
 pub mod posted;
 pub mod rest;
 

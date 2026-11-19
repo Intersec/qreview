@@ -37,6 +37,11 @@ pub struct Options {
     /// Show the tracked changes that are not committed as a change of the
     /// series, above the newest commit.
     pub worktree: bool,
+    /// The address of the REST API of Gerrit, when the configuration sets
+    /// it.
+    pub gerrit_url: Option<String>,
+    /// The command that gives the authorization for REST: `gerrit.auth.command`.
+    pub gerrit_auth: Option<Vec<String>>,
 }
 
 impl Options {
@@ -51,6 +56,8 @@ impl Options {
             prevs: Vec::new(),
             gerrit: true,
             worktree: true,
+            gerrit_url: None,
+            gerrit_auth: None,
         }
     }
 }

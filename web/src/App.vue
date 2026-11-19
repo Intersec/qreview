@@ -7,6 +7,7 @@ import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
 import CleanDialog from './components/CleanDialog.vue';
 import FixDialog from './components/FixDialog.vue';
+import SendDialog from './components/SendDialog.vue';
 import PreferencesDialog from './components/PreferencesDialog.vue';
 import ShortcutHelp from './components/ShortcutHelp.vue';
 import LoadingVeil from './components/LoadingVeil.vue';
@@ -71,6 +72,9 @@ const {
   doneHere,
   waitingHere,
   openSeries,
+  stagedHere,
+  stagedSeries,
+  gerritStatus,
 } = storeToRefs(review);
 
 /// The server stopped, and the reader still holds unsaved remarks. The tab
@@ -145,6 +149,39 @@ async function sendFix() {
     await review.askFix(scope);
   }
 }
+
+/// The dialog of Send: the scope it sends, the remarks Gerrit refused at
+/// the last send, and whether one runs.
+const sending = ref<'change' | 'series' | null>(null);
+const sendFailed = ref(new Map<string, string>());
+const sendBusy = ref(false);
+
+function openSend(scope: 'change' | 'series') {
+  sendFailed.value = new Map();
+  sending.value = scope;
+}
+
+async function sendToGerrit() {
+  const scope = sending.value;
+  if (!scope) {
+    return;
+  }
+  sendBusy.value = true;
+  const out = await review.sendDrafts(scope);
+  sendBusy.value = false;
+  sendFailed.value = new Map((out?.failed ?? []).map((f) => [f.id, f.error]));
+  // What left is gone from the list. What Gerrit refused stays, with why.
+  if (out && out.failed.length === 0) {
+    sending.value = null;
+  }
+}
+
+/// Why Send cannot send, for its title.
+const noSend = computed(() =>
+  gerritStatus.value?.rest === 'ok'
+    ? null
+    : (gerritStatus.value?.reason ?? 'Gerrit takes no draft from this run'),
+);
 
 async function jumpTo(thread: { key: string; comment: Comment }) {
   fixing.value = null;
@@ -618,6 +655,24 @@ onBeforeUnmount(() => {
           >
         </button>
         <button
+          v-if="stagedHere.length > 0"
+          type="button"
+          class="chip chip-gerrit"
+          :title="noSend ?? 'Send the remarks for Gerrit of this change, as drafts'"
+          @click="openSend('change')"
+        >
+          Send to Gerrit<span class="count"> · {{ stagedHere.length }}</span>
+        </button>
+        <button
+          v-if="stagedSeries.length > stagedHere.length"
+          type="button"
+          class="chip chip-gerrit"
+          :title="noSend ?? 'Send the remarks for Gerrit of every change, as drafts'"
+          @click="openSend('series')"
+        >
+          Send the series<span class="count"> · {{ stagedSeries.length }}</span>
+        </button>
+        <button
           type="button"
           class="chip"
           title="Delete the done threads of this change"
@@ -816,6 +871,18 @@ onBeforeUnmount(() => {
       @send="sendFix"
       @jump="jumpTo"
       @close="fixing = null"
+    />
+
+    <SendDialog
+      v-if="sending"
+      :series="sending === 'series'"
+      :staged="sending === 'series' ? stagedSeries : stagedHere"
+      :status="gerritStatus"
+      :failed="sendFailed"
+      :sending="sendBusy"
+      :subject-of="subjectOf"
+      @send="sendToGerrit"
+      @close="sending = null"
     />
 
     <CleanDialog

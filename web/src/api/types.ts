@@ -237,6 +237,20 @@ export interface GerritMark {
   sentAt: string | null;
 }
 
+/// What the REST API of Gerrit allows this run.
+export interface GerritStatus {
+  rest: 'ok' | 'anonymous' | 'refused' | 'unreachable' | 'off';
+  /// Why it does not allow more, for the reader.
+  reason: string | null;
+  base: string | null;
+}
+
+/// What a send did.
+export interface Sent {
+  sent: string[];
+  failed: { id: string; error: string }[];
+}
+
 /// What staging a remark for Gerrit asks for.
 export interface Stage {
   resolve?: boolean;
@@ -257,7 +271,8 @@ export interface StoreEvent {
     | 'migrated'
     | 'fix'
     | 'clean'
-    | 'idle';
+    | 'idle'
+    | 'sent';
   author: Author;
   key: string;
   id: string | null;

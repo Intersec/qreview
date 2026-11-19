@@ -221,6 +221,11 @@ body {
 .chip:disabled {
   opacity: 0.45;
 }
+/* Send to Gerrit: the one button whose work leaves this tool. */
+.chip-gerrit {
+  border-color: var(--pick-edge);
+  color: var(--pick-edge);
+}
 .chip[aria-pressed='true'] {
   background: var(--pick);
   border-color: var(--pick-edge);
@@ -1854,6 +1859,18 @@ a.change-id:hover {
 }
 .clean-hint {
   margin-left: auto;
+}
+/* The patch set a remark goes to, in the dialog of Send. */
+.send-set {
+  margin: 0 4px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+/* Why a remark, or the whole send, did not leave. */
+.send-failed {
+  margin: 2px 0 6px;
+  white-space: normal;
+  color: var(--waiting-ink);
 }
 /* The Undo of Clean, at the foot of the window, above the panes. */
 .undo-note {

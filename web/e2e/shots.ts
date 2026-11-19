@@ -370,6 +370,15 @@ for (const scheme of ['light', 'dark'] as const) {
   await second.locator('.talk-tag-gerrit').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-gerrit-staged.png`) });
 
+  // The dialog of Send, then the remark once it is a draft on Gerrit.
+  await second.getByRole('button', { name: /^Send to Gerrit/ }).click();
+  await second.getByRole('dialog').waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-send.png`) });
+  await second.keyboard.press('Enter');
+  await second.getByRole('dialog').waitFor({ state: 'detached' });
+  await second.getByText('draft on Gerrit').first().waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-sent.png`) });
+
   // A line of the blame that opens its change on Gerrit.
   await second.keyboard.press('b');
   await second.locator('td.blame a[target="_blank"]').first().hover();

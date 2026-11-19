@@ -12,6 +12,7 @@ import type {
   EventBatch,
   FileDiff,
   FileEntry,
+  GerritStatus,
   MergeListItem,
   NewComment,
   PatchSet,
@@ -21,6 +22,7 @@ import type {
   Review,
   Rendered,
   Row,
+  Sent,
   Series,
   SessionBody,
 } from './types';
@@ -252,6 +254,16 @@ export const api = {
         throw new ApiError(body?.error?.code ?? 'failed', body?.error?.message ?? 'failed');
       }
     }),
+
+  gerritStatus: () => call<GerritStatus>('/api/gerrit/status'),
+
+  /// Send the staged remarks of a change to Gerrit as drafts, or of the
+  /// whole series with no key.
+  sendDrafts: (key?: string) =>
+    call<Sent>(
+      key ? `/api/changes/${encodeURIComponent(key)}/gerrit/send` : '/api/series/gerrit/send',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    ),
 
   clean: (key: string) =>
     call<{ deleted: number }>(`/api/changes/${encodeURIComponent(key)}/clean`, {

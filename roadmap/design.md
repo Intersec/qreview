@@ -1191,7 +1191,7 @@ The usual path, when the reader wants the agent to word a remark:
 
 A comment is never lost: the local remark stays in the store in each case.
 
-Without an authorization (section 6.6), For Gerrit and Send are disabled, and say why.
+**Send** shows only when a remark is staged, so a review that sends nothing looks as it always did. Without an authorization (section 6.6), Send says why. For Gerrit still works then: the reader stages now, and sets `gerrit.auth.command` before the send.
 
 ### 5.9 A change of a colleague
 
@@ -1523,7 +1523,8 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 
 | Method and route | What it does |
 |---|---|
-| `GET /api/session` | The repository, the first batch of the series, the tool version and the commit it was built from. `gerrit` says how Gerrit answers, and why not: `{ "rest": "ok" \| "anonymous" \| "refused" \| "unreachable" \| "off" }`. See section 6.6 |
+| `GET /api/session` | The repository, the first batch of the series, the tool version and the commit it was built from |
+| `GET /api/gerrit/status` | What the REST API allows this run: `{ "rest": "ok" \| "anonymous" \| "refused" \| "unreachable" \| "off", "reason", "base" }`. A route of its own, so the session answers without running `gerrit.auth.command`. See section 6.6 |
 | `POST /api/session/refresh` | Resolve the series again, and answer with what git holds now |
 | `POST /api/series/extend` | Load the next batch. Body: `{ "count": 5, "parent": 1 }` |
 | `POST /api/series/fix` | Ask the agent to fix every change of the series. See section 5.7 |
@@ -1545,7 +1546,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `POST /api/changes/:key/comments` | Create a remark, or a reply when the body names a `parent`. `"author": "agent"` writes as the agent, and a reply may carry `"done": true` or `"blocked": true`. `"ask": true` asks the agent about the thread once it is saved. `"gerrit": { "resolve": false }` stages it for Gerrit. A `parent` of `gerrit:<id>` replies to a thread of Gerrit. See sections 5.8 and 6.8 |
 | `POST /api/changes/:key/comments/:id/ask` | Ask the agent to answer the thread of a comment. See section 5.5 |
 | `PATCH /api/changes/:key/comments/:id` | Change the body, or check or clear `done` on a thread. `"gerrit": { "resolve": … }` stages the remark, and `"gerrit": null` takes it back. A sent remark refuses both |
-| `POST /api/changes/:key/gerrit/send` | Send the staged remarks of the change as drafts. Body: `{ "ids": [id] }`. Answers `{ "sent": [id], "failed": [{ "id", "error" }] }`. Refused on the Unix socket. See sections 5.8 and 6.7 |
+| `POST /api/changes/:key/gerrit/send` | Send the staged remarks of the change as drafts. Body: `{ "ids": [id] }`, every staged remark when it is absent. Answers `{ "sent": [id], "failed": [{ "id", "error" }] }`. Refused on the Unix socket. See sections 5.8 and 6.7 |
 | `POST /api/series/gerrit/send` | The same for every change of the series |
 | `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |
 | `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. See section 8.3 |

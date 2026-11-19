@@ -70,6 +70,8 @@ async fn main() -> Result<()> {
     // The option only ever switches Gerrit off, never on.
     opts.gerrit = config.gerrit.enabled && !cli.no_gerrit;
     opts.worktree = config.series.worktree && !cli.no_worktree;
+    opts.gerrit_url = config.gerrit.url.clone();
+    opts.gerrit_auth = config.gerrit.auth.clone();
 
     let mut langs = Languages::new();
     langs.extend(&config.languages);
@@ -247,7 +249,7 @@ async fn serve(port: u16, state: AppState, no_open: bool, home: &agent::Home) ->
     };
     let on_socket = unix.as_ref().map(|(_, path)| path.clone());
     let socket_task = unix.map(|(listener, _)| {
-        let app = app.clone();
+        let app = api::on_socket(app.clone());
         tokio::spawn(async move { axum::serve(listener, app).await })
     });
 
@@ -262,7 +264,7 @@ async fn serve(port: u16, state: AppState, no_open: bool, home: &agent::Home) ->
     };
     let shared_socket = shared.as_ref().map(|(_, path)| path.clone());
     let shared_task = shared.map(|(listener, _)| {
-        let app = app.clone();
+        let app = api::on_socket(app.clone());
         tokio::spawn(async move { axum::serve(listener, app).await })
     });
 

@@ -185,7 +185,38 @@ function fakeGerrit(base: string, repo: string): { bin: string; served: string }
   );
   chmodSync(ssh, 0o755);
 
+  // The REST API, for the drafts. It keeps what it was given: the
+  // arguments in one file, and the configuration on standard input, which
+  // holds the password, in another.
+  const curl = join(bin, 'curl');
+  const log = JSON.stringify(join(bin, 'curl.log'));
+  writeFileSync(join(bin, 'self.json'), `)]}'\n{"name":"Test Reviewer"}\n`);
+  writeFileSync(
+    curl,
+    [
+      '#!/bin/sh',
+      '# The REST API of a Gerrit that is a shell script. See e2e/fixture.ts.',
+      `echo "$*" >> ${JSON.stringify(join(bin, 'curl-args.log'))}`,
+      'config=$(cat)',
+      `echo "$config" >> ${log}`,
+      `echo -- >> ${log}`,
+      'case "$config" in',
+      `  *accounts/self*) cat ${JSON.stringify(join(bin, 'self.json'))}; printf 200 ;;`,
+      `  */drafts*) echo ")]}'"; echo "{\\"id\\":\\"draft-$(grep -c '^--$' ${log})\\"}"; printf 201 ;;`,
+      '  *) echo "Not found"; printf 404 ;;',
+      'esac',
+      '',
+    ].join('\n'),
+  );
+  chmodSync(curl, 0o755);
+
   git(repo, ['remote', 'add', 'origin', 'ssh://review.example.com:29418/myproject']);
+
+  // The authorization of the fake account, as `gerrit.auth.command` gives it.
+  const auth = join(bin, 'gerrit-auth');
+  const basic = Buffer.from('reviewer:s3cret').toString('base64');
+  writeFileSync(auth, `#!/bin/sh\necho '{"authorization":"Basic ${basic}"}'\n`);
+  chmodSync(auth, 0o755);
 
   return { bin, served };
 }
