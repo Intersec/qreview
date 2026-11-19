@@ -205,7 +205,7 @@ export const useReview = defineStore('review', () => {
         change.threads
           .filter(
             (t) =>
-              t.unresolved &&
+              t.waits &&
               !resolvesHere(answers.get(`${GERRIT_PARENT}${t.id}`) ?? [], (reply) =>
                 sentState(change.key, reply),
               ),

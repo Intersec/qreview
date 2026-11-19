@@ -424,6 +424,9 @@ export interface GerritThread {
   line: number | null;
   /// Its newest comment on Gerrit waits for an answer.
   unresolved: boolean;
+  /// It waits for the reader: unresolved, and its newest comment is of
+  /// somebody else.
+  waits: boolean;
   /// A reply written here resolves it, staged or sent.
   done: boolean;
   comments: PostedComment[];

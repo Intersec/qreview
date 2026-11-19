@@ -53,8 +53,10 @@ test('a reply For Gerrit goes out in the thread, and resolves it', async ({ page
   await thread(page).getByLabel('Resolve').check();
   await thread(page).getByRole('button', { name: 'Save', exact: true }).click();
 
-  // Resolved here before Gerrit knows: the thread folds.
-  await expect(thread(page)).toHaveClass(/talk-folded/);
+  // Resolved here before Gerrit knows. It stays open while its reply
+  // waits for Send.
+  await expect(thread(page)).toHaveClass(/talk-done/);
+  await expect(thread(page)).not.toHaveClass(/talk-folded/);
 
   await page.getByRole('button', { name: 'Send to Gerrit · 1' }).click();
   await page.keyboard.press('Enter');
@@ -70,12 +72,12 @@ test('a reply For Gerrit goes out in the thread, and resolves it', async ({ page
 test('the Done box stages a reply Done, and takes it back', async ({ page }) => {
   await thread(page).getByLabel('Done').check();
 
-  await expect(thread(page)).toHaveClass(/talk-folded/);
+  await expect(thread(page)).toHaveClass(/talk-done/);
+  await expect(thread(page).locator('.talk-reply', { hasText: 'Done' })).toContainText(
+    'for Gerrit',
+  );
   await expect(page.getByRole('button', { name: 'Send to Gerrit · 1' })).toBeVisible();
 
-  await thread(page)
-    .getByRole('button', { name: /Jane Reviewer/ })
-    .click();
   await thread(page).getByLabel('Done').uncheck();
   await expect(thread(page)).not.toHaveClass(/talk-done/);
   await expect(page.getByRole('button', { name: /^Send to Gerrit/ })).toHaveCount(0);
@@ -90,7 +92,7 @@ test('the agent answers a thread of Gerrit, and only the user sends', async ({ p
 
   expect(staged.parent).toBe('gerrit:ask1');
   expect(staged.gerrit).toMatchObject({ state: 'staged', resolve: true });
-  await expect(thread(page)).toHaveClass(/talk-folded/);
+  await expect(thread(page)).toHaveClass(/talk-done/);
   await expect(page.getByRole('button', { name: 'Send to Gerrit · 1' })).toBeVisible();
   expect(sent()).not.toContain('request = "PUT"');
 });

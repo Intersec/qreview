@@ -1373,6 +1373,8 @@ The organization supplies the command. It can run a flow of OIDC with a refresh 
 
 **Where the authorization goes.** The server runs the command at the first REST call of the run, and keeps the answer in memory. It runs it again 30 seconds before `expiresIn` ends, and once after Gerrit refuses the value in memory: the token can die early, and the reader can type a wrong password. The value reaches `curl` on standard input, as a `--config -` file, and never in the arguments, which any local user reads in `ps`. It never reaches a line of the trace, an error message, the page, the agent, the store or the configuration.
 
+**The account.** With an authorization, the server asks `GET /a/accounts/self` once, for the email and the user name of the reader. They tell the comments of the reader on Gerrit apart (section 6.8).
+
 **Without the command**, qreview asks the routes that read without `/a/`, as an anonymous reader. A server that lets anonymous readers see the project answers them, so the threads of section 6.8 need nothing to configure. Only a draft needs the authorization.
 
 **Failure.** Gerrit stays optional (section 6.4). REST turns off for the run when the command fails, when the server refuses its value twice, when `curl` is missing, or when a call times out after 5 seconds. The page then says why. The reading over ssh of section 6.3 stays, and Send is disabled. For Gerrit still works (section 5.8). A refresh runs the command again.
@@ -1419,7 +1421,7 @@ Each comment carries an `id`, `in_reply_to`, `unresolved`, a side, a line or a r
 
 **A thread of Gerrit** is a comment and the comments that reply to it, through `in_reply_to`. It is unresolved when its last comment is unresolved, the rule of Gerrit.
 
-**An unresolved thread is work.** It counts on every patch set, the way Gerrit counts it: on the series, on the files, in the export, and in the dialog of Fix. A resolved thread is shown grey and folded, like a done thread, and counted nowhere.
+**An unresolved thread that waits for the reader is work.** It waits for the reader when its last comment is of somebody else: an unresolved question that the reader asked waits for the author. The reader is the account whose email is `user.email`, or the account of `accounts/self` (section 6.6), by email or user name. Such a thread counts on every patch set, the way Gerrit counts it: on the series, on the files, in the export, and in the dialog of Fix. The thread carries `waits` for it. A resolved thread is shown grey and folded, like a done thread, and counted nowhere. A thread that holds a reply staged for Send stays open, resolved or not: that reply is work left.
 
 **Apply** on a thread that waits, on a change of the reader with an agent that listens, asks the agent to fix that thread alone: the decision per comment of a reader who answers a review. The agent fixes the request at every site of the pattern in the commit, stages a reply that resolves the thread, and says in it the other sites it fixed. A reader who does not want the change writes why, and the agent stages that reason for the reviewer.
 
