@@ -33,6 +33,8 @@ import type {
   Review,
   Series,
   StoreEvent,
+  GerritStatus,
+  Sent,
 } from '@/api/types';
 
 /// The settings the server reads when it builds a diff. A change to one of
@@ -201,6 +203,7 @@ export const useReview = defineStore('review', () => {
       config.value = body.config;
 
       void readWritten();
+      void readGerritStatus();
       // After the page, never before it: a reader came to read a diff.
       void api
         .update()
@@ -322,6 +325,7 @@ export const useReview = defineStore('review', () => {
       const body = await api.refresh();
       series.value = body.series;
       void readWritten();
+      void readGerritStatus();
       // The server asks Gerrit again after a refresh, so the page does too:
       // a commit pushed since then has a page now.
       askedGerrit = new Set();
@@ -743,6 +747,46 @@ export const useReview = defineStore('review', () => {
   );
   const waitingHere = computed(() => blockedThreads.value.filter((t) => t.key === changeKey.value));
 
+  /// The remarks staged for Gerrit, change by change: what Send sends. A
+  /// staged remark stays on its patch set after an amend, so a previous
+  /// one is sent too.
+  const stagedSeries = computed(() =>
+    written.value.flatMap((change) =>
+      change.comments
+        .filter((comment) => comment.parent === null && comment.gerrit?.state === 'staged')
+        .map((comment) => ({ key: change.key, comment })),
+    ),
+  );
+  const stagedHere = computed(() => stagedSeries.value.filter((t) => t.key === changeKey.value));
+
+  /// What the REST API of Gerrit allows this run. Asked once, and again
+  /// after a refresh, which runs `gerrit.auth.command` again.
+  const gerritStatus = ref<GerritStatus | null>(null);
+  async function readGerritStatus() {
+    try {
+      gerritStatus.value = await api.gerritStatus();
+    } catch {
+      gerritStatus.value = null;
+    }
+  }
+
+  /// Send the staged remarks to Gerrit as drafts. The remarks that Gerrit
+  /// refused stay staged, and the answer names them.
+  async function sendDrafts(scope: 'change' | 'series'): Promise<Sent | null> {
+    const key = scope === 'change' ? (changeKey.value ?? undefined) : undefined;
+    if (scope === 'change' && !key) {
+      return null;
+    }
+    let out: Sent | null = null;
+    await guard(async () => {
+      out = await api.sendDrafts(key);
+      await reload();
+    });
+    // A refused authorization changes what the run allows.
+    await readGerritStatus();
+    return out;
+  }
+
   async function askFix(scope: 'change' | 'series') {
     askLeave();
     const key = changeKey.value;
@@ -1065,6 +1109,11 @@ export const useReview = defineStore('review', () => {
     askAgent,
     setDone,
     setGerrit,
+    stagedSeries,
+    stagedHere,
+    gerritStatus,
+    readGerritStatus,
+    sendDrafts,
     blockedThreads,
     blockedChanges,
     blockedFiles,

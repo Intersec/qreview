@@ -3,13 +3,14 @@
 //! The command line builds it, the server shares it, and the interface reads
 //! it through the API. Nothing here touches the working tree.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use std::sync::Arc;
 
 use crate::comments::{self, EditComment, NewComment, Target};
 use crate::commitmsg;
 use crate::diff;
+use crate::gerrit::rest::{self, Rest};
 use crate::gerrit::{self, Coordinates};
 use crate::git::blame as git_blame;
 use crate::git::commit;
@@ -72,6 +73,50 @@ pub struct Session {
     /// The file lists this run has read. Shared, so the task that reads the
     /// series ahead of the reader fills the same one.
     pub lists: Arc<diff::FileLists>,
+    /// The REST API of Gerrit, and what it allows. Resolved on first use,
+    /// and again after a refresh, which runs `gerrit.auth.command` again.
+    rest: tokio::sync::Mutex<Option<RestState>>,
+}
+
+/// What the REST API of Gerrit allows this run. See section 6.6 of the
+/// design.
+#[derive(Clone, Copy, Debug, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RestStatus {
+    /// An authorization: the run reads and sends drafts.
+    Ok,
+    /// No `gerrit.auth.command`: the run reads what an anonymous reader may.
+    Anonymous,
+    /// The server refused the authorization, or the command gave none.
+    Refused,
+    /// Nothing answered, or no address is known.
+    Unreachable,
+    /// Gerrit is off, or the remote is no Gerrit.
+    Off,
+}
+
+/// The client of the REST API, what it allows, and why not when it does
+/// not.
+#[derive(Clone, Debug)]
+pub struct RestState {
+    pub client: Option<Rest>,
+    pub status: RestStatus,
+    pub reason: Option<String>,
+}
+
+/// What a send did: the remarks that are drafts now, and the others.
+#[derive(Clone, Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sent {
+    pub sent: Vec<String>,
+    pub failed: Vec<SendFailure>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendFailure {
+    pub id: String,
+    pub error: String,
 }
 
 /// Above this size, an image is not served. A rendered file shows a figure,
@@ -203,6 +248,7 @@ impl Session {
             gerrit_answers: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             gerrit_pages: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             lists: Arc::new(diff::FileLists::default()),
+            rest: tokio::sync::Mutex::new(None),
         };
         session.make_keys_unique();
         session.link_versions().await;
@@ -335,6 +381,7 @@ impl Session {
         // now, so the answer kept for the run is thrown away.
         self.gerrit_answers.lock().await.clear();
         self.gerrit_pages.lock().await.clear();
+        *self.rest.lock().await = None;
 
         for count in std::mem::take(&mut self.extends) {
             // The boundary can be gone, and then there is nothing to walk.
@@ -1268,6 +1315,186 @@ impl Session {
     /// What the repository is called, for a person to read.
     pub fn project(&self) -> String {
         self.repo.name.clone()
+    }
+
+    /// The REST API of Gerrit, and what it allows. Resolved once.
+    pub async fn gerrit_rest(&self) -> RestState {
+        let mut kept = self.rest.lock().await;
+        if let Some(state) = kept.as_ref() {
+            return state.clone();
+        }
+        let state = self.resolve_rest().await;
+        *kept = Some(state.clone());
+        state
+    }
+
+    async fn resolve_rest(&self) -> RestState {
+        let Some(coords) = self.gerrit.as_ref() else {
+            return RestState {
+                client: None,
+                status: RestStatus::Off,
+                reason: Some("Gerrit is off for this run, or origin is no Gerrit".to_owned()),
+            };
+        };
+
+        // The page of a change that the ssh query already gave says where
+        // the server is, and costs no second query.
+        let known = self
+            .gerrit_answers
+            .lock()
+            .await
+            .values()
+            .flatten()
+            .find_map(|change| rest::base_of(&change.url));
+        let base = match (&self.opts.gerrit_url, known) {
+            (Some(url), _) => rest::configured(url),
+            (None, Some(base)) => Ok(base),
+            (None, None) => gerrit::rest_address(None, coords).await,
+        };
+        let base = match base {
+            Ok(base) => base,
+            Err(error) => {
+                return RestState {
+                    client: None,
+                    status: RestStatus::Unreachable,
+                    reason: Some(format!("{error:#}")),
+                };
+            }
+        };
+
+        match &self.opts.gerrit_auth {
+            Some(command) => RestState {
+                client: Some(Rest::new(
+                    &base,
+                    Some(rest::Auth::new(
+                        command.clone(),
+                        std::io::IsTerminal::is_terminal(&std::io::stdin()),
+                    )),
+                )),
+                status: RestStatus::Ok,
+                reason: None,
+            },
+            None => RestState {
+                client: Some(Rest::new(&base, None)),
+                status: RestStatus::Anonymous,
+                reason: Some(format!(
+                    "No gerrit.auth.command in the configuration of the user: \
+                     qreview reads {base} as an anonymous reader, and sends no draft"
+                )),
+            },
+        }
+    }
+
+    /// Gerrit refused the authorization. Nothing more is sent this run.
+    async fn rest_refused(&self, error: &anyhow::Error) {
+        if let Some(state) = self.rest.lock().await.as_mut() {
+            state.status = RestStatus::Refused;
+            state.reason = Some(format!("{error:#}"));
+        }
+    }
+
+    /// Send the staged remarks of a change to Gerrit, each as a draft. See
+    /// section 5.8 of the design.
+    ///
+    /// Each remark is one draft, so one that Gerrit refuses holds back no
+    /// other. `only` names the remarks to send; all the staged ones when it
+    /// is `None`.
+    pub async fn send_drafts(&self, key: &str, only: Option<&[String]>) -> Result<Sent> {
+        let state = self.gerrit_rest().await;
+        let client = match (state.client, state.status) {
+            (Some(client), RestStatus::Ok) => client,
+            _ => bail!(
+                "{}",
+                state
+                    .reason
+                    .unwrap_or_else(|| "Gerrit takes no draft from this run".to_owned())
+            ),
+        };
+        let change = self
+            .gerrit_change(key)
+            .await
+            .context("Gerrit does not know this change")?;
+        let staged: Vec<Comment> = self
+            .store
+            .load(key, "")?
+            .comments
+            .into_iter()
+            .filter(comments::is_staged)
+            .filter(|c| only.is_none_or(|ids| ids.contains(&c.id)))
+            .collect();
+
+        let mut out = Sent::default();
+        let mut sent = Vec::new();
+        let mut refused: Option<String> = None;
+        for comment in staged {
+            let fail = |error: String| SendFailure {
+                id: comment.id.clone(),
+                error,
+            };
+            if let Some(error) = &refused {
+                out.failed.push(fail(error.clone()));
+                continue;
+            }
+            let number = comment.gerrit.as_ref().map_or(0, |g| g.patch_set);
+            let Some(set) = change.patch_sets.iter().find(|s| s.number == number) else {
+                out.failed
+                    .push(fail(format!("patch set {number} is not on Gerrit")));
+                continue;
+            };
+            let base = self.base_of(&set.revision, &Against::Parent).await?;
+            let body = gerrit::draft::input(&self.git, &comment, &set.revision, &base).await;
+            let route = format!(
+                "changes/{}~{}/revisions/{}/drafts",
+                rest::encode(&change.project),
+                change.number,
+                set.revision
+            );
+
+            match client.call("PUT", &route, Some(&body)).await {
+                Ok(answer) => {
+                    sent.push((comment.id.clone(), answer["id"].as_str().map(str::to_owned)));
+                    out.sent.push(comment.id.clone());
+                }
+                Err(rest::Failed::Refused(error)) => {
+                    self.rest_refused(&error).await;
+                    let error = format!("{error:#}");
+                    out.failed.push(fail(error.clone()));
+                    refused = Some(error);
+                }
+                Err(error) => out.failed.push(fail(error.to_string())),
+            }
+        }
+
+        comments::mark_sent(&self.store, key, &sent)?;
+        Ok(out)
+    }
+
+    /// The changes of the series that hold a remark staged for Gerrit.
+    pub fn staged_keys(&self) -> Vec<String> {
+        self.series
+            .changes
+            .iter()
+            .filter(|change| {
+                self.store
+                    .load(&change.key, "")
+                    .is_ok_and(|file| file.comments.iter().any(comments::is_staged))
+            })
+            .map(|change| change.key.clone())
+            .collect()
+    }
+
+    /// The remarks of a change that wait for Send.
+    pub fn staged_ids(&self, key: &str) -> Vec<String> {
+        self.store
+            .load(key, "")
+            .map(|file| {
+                file.comments
+                    .into_iter()
+                    .filter(comments::is_staged)
+                    .map(|c| c.id)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// What Gerrit calls a change, when the server knows it.

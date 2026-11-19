@@ -351,6 +351,36 @@ pub fn edit(
     Ok(updated)
 }
 
+/// Mark remarks sent to Gerrit, each with the id of its draft.
+pub fn mark_sent(store: &Store, key: &str, sent: &[(String, Option<String>)]) -> Result<()> {
+    if sent.is_empty() {
+        return Ok(());
+    }
+    let _lock = store.lock()?;
+    let mut file = store.load(key, "")?;
+    let now = now();
+    for comment in &mut file.comments {
+        let Some((_, id)) = sent.iter().find(|(sent, _)| *sent == comment.id) else {
+            continue;
+        };
+        if let Some(gerrit) = comment.gerrit.as_mut() {
+            gerrit.state = Outbox::Sent;
+            gerrit.id = id.clone();
+            gerrit.sent_at = Some(now.clone());
+        }
+    }
+    store.save(&file)
+}
+
+/// True when the remark waits for the reader to send it to Gerrit.
+pub fn is_staged(comment: &Comment) -> bool {
+    comment.is_remark()
+        && comment
+            .gerrit
+            .as_ref()
+            .is_some_and(|g| g.state == Outbox::Staged)
+}
+
 /// Delete a comment. A remark goes with its replies, which answer nothing
 /// once it is gone.
 pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
