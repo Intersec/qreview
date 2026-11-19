@@ -303,6 +303,10 @@ pub struct GerritThread {
     pub line: Option<usize>,
     /// Its newest comment on Gerrit waits for an answer.
     pub unresolved: bool,
+    /// It waits for the reader: unresolved, and its newest comment is of
+    /// somebody else. An unresolved question of the reader waits for the
+    /// author instead.
+    pub waits: bool,
     /// A reply written here resolves it, staged or sent.
     pub done: bool,
     /// The comments of Gerrit, oldest first.

@@ -277,11 +277,11 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
         thread.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     }
 
-    // The threads of the reviewers that wait for an answer are work, on
+    // The threads that wait for an answer of the reader are work, on
     // whatever patch set they were posted. See section 6.8 of the design.
     let mut gerrit = std::collections::HashMap::new();
     for thread in session.gerrit_threads_of(key).await.unwrap_or_default() {
-        if !thread.unresolved || thread.done {
+        if !thread.waits || thread.done {
             continue;
         }
         let Ok(place) = session.gerrit_thread(key, &thread.id).await else {
