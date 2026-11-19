@@ -1563,9 +1563,15 @@ impl Session {
             .iter()
             .filter(|c| comments::is_staged(c))
             .filter(|c| only.is_none_or(|ids| ids.contains(&c.id)))
-            .map(|c| Comment {
-                body: comments::last_word(c, &all).to_owned(),
-                ..c.clone()
+            .map(|c| {
+                // The draft names who wrote the text that goes out.
+                let word = comments::last_word(c, &all);
+                Comment {
+                    body: word.body.clone(),
+                    author: word.author,
+                    agent_name: word.agent_name.clone(),
+                    ..c.clone()
+                }
             })
             .collect();
 
