@@ -118,6 +118,10 @@ pub enum Command {
         /// Seconds to wait. No limit by default.
         #[arg(long)]
         timeout: Option<u64>,
+        /// Your name, such as `Claude`. A draft of Gerrit that you wrote
+        /// starts with `From <name>:`.
+        #[arg(long, value_name = "NAME")]
+        agent: Option<String>,
     },
 
     /// Read the repository again, as the refresh button does.

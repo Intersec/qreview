@@ -48,6 +48,10 @@ pub struct NewComment {
     /// On a reply, check or clear the Done box of the thread with it.
     #[serde(default)]
     pub done: Option<bool>,
+    /// The name that the agent gave in its wait. The server sets it, on a
+    /// comment of the agent only.
+    #[serde(skip)]
+    pub agent_name: Option<String>,
     /// On a reply of the agent, the thread waits for the reader.
     #[serde(default)]
     pub blocked: bool,
@@ -220,6 +224,7 @@ impl Target<'_> {
             body: new.body.trim_end().to_owned(),
             anchor,
             author: new.author,
+            agent_name: new.agent_name.filter(|_| new.author == Author::Agent),
             parent: None,
             done: false,
             blocked: false,
@@ -263,6 +268,7 @@ impl Target<'_> {
             body: new.body.trim_end().to_owned(),
             anchor: thread.anchor.clone(),
             author: new.author,
+            agent_name: new.agent_name.filter(|_| new.author == Author::Agent),
             parent: Some(format!("{GERRIT_PARENT}{}", thread.id)),
             done: false,
             blocked: new.blocked,
@@ -314,6 +320,7 @@ impl Target<'_> {
             body: new.body.trim_end().to_owned(),
             anchor: None,
             author: new.author,
+            agent_name: new.agent_name.filter(|_| new.author == Author::Agent),
             parent: Some(remark.id.clone()),
             done: false,
             blocked: new.blocked,
@@ -474,18 +481,18 @@ pub fn mark_sent(store: &Store, key: &str, sent: &[(String, Option<String>)]) ->
     store.save(&file)
 }
 
-/// The text that a staged comment sends to Gerrit: the newest reply of its
-/// thread, or its own body. The reader often asks the agent to write the
-/// remark, and the answer is what the author of the change must read.
-pub fn last_word<'a>(comment: &'a Comment, all: &'a [Comment]) -> &'a str {
+/// The comment whose text a staged comment sends to Gerrit: the newest
+/// reply of its thread, or itself. The reader often asks the agent to write
+/// the remark, and the answer is what the author of the change must read.
+pub fn last_word<'a>(comment: &'a Comment, all: &'a [Comment]) -> &'a Comment {
     if !comment.is_remark() {
-        return &comment.body;
+        return comment;
     }
     // A reply joins the store after the comments it answers.
     all.iter()
         .rev()
         .find(|c| c.parent.as_deref() == Some(comment.id.as_str()))
-        .map_or(&comment.body, |reply| &reply.body)
+        .unwrap_or(comment)
 }
 
 /// True when the remark, or the reply to a thread of Gerrit, waits for the
@@ -862,6 +869,7 @@ mod tests {
             end_char: None,
             body: body.to_owned(),
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: None,
             blocked: false,
@@ -1216,7 +1224,7 @@ mod tests {
         let f = fixture().await;
         let first = f.target_on(Some(3)).add(remark("/review")).await.unwrap();
         let comments = f.file().comments;
-        assert_eq!(last_word(&comments[0], &comments), "/review");
+        assert_eq!(last_word(&comments[0], &comments).body, "/review");
 
         for (author, body) in [(Author::Agent, "draft"), (Author::Agent, "final")] {
             f.target_on(Some(3))
@@ -1225,8 +1233,47 @@ mod tests {
                 .unwrap();
         }
         let comments = f.file().comments;
-        assert_eq!(last_word(&comments[0], &comments), "final");
-        assert_eq!(last_word(&comments[1], &comments), "draft");
+        assert_eq!(last_word(&comments[0], &comments).body, "final");
+        assert_eq!(last_word(&comments[1], &comments).body, "draft");
+    }
+
+    #[tokio::test]
+    async fn only_a_comment_of_the_agent_keeps_the_name_of_the_agent() {
+        let f = fixture().await;
+        let named = |author| NewComment {
+            agent_name: Some("Claude".to_owned()),
+            ..reply("", author, "")
+        };
+        let first = f
+            .target_on(Some(3))
+            .add(NewComment {
+                parent: None,
+                body: "rename b".to_owned(),
+                ..remark("rename b")
+            })
+            .await
+            .unwrap();
+        let of_agent = f
+            .target_on(Some(3))
+            .add(NewComment {
+                parent: Some(first.id.clone()),
+                body: "renamed".to_owned(),
+                ..named(Author::Agent)
+            })
+            .await
+            .unwrap();
+        let of_reader = f
+            .target_on(Some(3))
+            .add(NewComment {
+                parent: Some(first.id.clone()),
+                body: "thanks".to_owned(),
+                ..named(Author::Reader)
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(of_agent.agent_name.as_deref(), Some("Claude"));
+        assert_eq!(of_reader.agent_name, None);
     }
 
     #[tokio::test]
@@ -1249,7 +1296,7 @@ mod tests {
         let comments = f.file().comments;
         assert_eq!(answer.parent.as_deref(), Some(first.id.as_str()));
         assert_eq!(
-            last_word(&comments[0], &comments),
+            last_word(&comments[0], &comments).body,
             "Name it after what it does."
         );
     }

@@ -54,9 +54,12 @@ directory of the worktree from a devcontainer, with nothing to configure.
 
 Repeat until the user says the review is over:
 
-1. Run `qreview wait --after <next>` in the background. Use the `next`
-   number of the last `wait`. Leave out `--after` the first time. Give it
-   no `--timeout`: it blocks until the user asks, for hours if needed.
+1. Run `qreview wait --agent <your name> --after <next>` in the
+   background, such as `--agent Claude`. Use the `next` number of the last
+   `wait`. Leave out `--after` the first time. Give it no `--timeout`: it
+   blocks until the user asks, for hours if needed. A draft of Gerrit that
+   you wrote starts with `From <your name>:`, so the author of the change
+   knows that an agent wrote it.
 2. When it returns, read the JSON:
    - `events`: the requests of the user. An event of kind `ask` names one
      thread, and carries it in `thread`: the remark first, then the
@@ -308,7 +311,7 @@ Then wait for the replies of the user with the loop above.
 |---|---|
 | `qreview` | Start the review, or print the address of the one that runs |
 | `qreview export --json` | The open threads, each comment with its `id` |
-| `qreview wait [--after <n>] [--timeout <s>]` | Block until the user asks, and print it as JSON. No time limit by default |
+| `qreview wait [--agent <name>] [--after <n>] [--timeout <s>]` | Block until the user asks, and print it as JSON. No time limit by default. `--agent` names you in your drafts of Gerrit |
 | `qreview reply <id> --body <text> [--done] [--blocked]` | Reply to a thread |
 | `qreview comment <file>[:<side>:<line>[-<end>]] --body <text> [--key <id>] [--gerrit]` | Write a remark, staged for Gerrit with `--gerrit`, and always on the change of a colleague |
 | `qreview stage <id> --body <text>` | Stage a thread for Gerrit, with the text for the author as its newest reply |

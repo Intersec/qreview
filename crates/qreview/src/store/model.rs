@@ -22,7 +22,8 @@ use serde::{Deserialize, Serialize};
 /// `gerrit`, and stays in qreview.
 ///
 /// 6 added the deleted comments, kept apart for a restore by hand and for
-/// a study of the reviews. A file of format 5 has none.
+/// a study of the reviews, and the name of the agent on its comments. A
+/// file of format 5 has no deleted comment, and no agent name.
 pub const VERSION: u32 = 6;
 
 /// Everything a review of one change holds.
@@ -116,6 +117,10 @@ pub struct Comment {
     pub anchor: Option<Anchor>,
     #[serde(default)]
     pub author: Author,
+    /// The name that the agent gave when it wrote the comment. A draft of
+    /// Gerrit shows it, because Gerrit names only the reader.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
     /// The remark that opens the thread, on a reply. A reply has no anchor:
     /// it stands where its thread stands.
     #[serde(default)]

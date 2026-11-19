@@ -8,10 +8,20 @@ use serde_json::{Map, Value, json};
 use crate::commitmsg;
 use crate::git::commit;
 use crate::git::exec::Git;
-use crate::store::model::{Comment, Side};
+use crate::store::model::{Author, Comment, Side};
 
 /// The path Gerrit gives a remark about the whole change.
 pub const PATCHSET_LEVEL: &str = "/PATCHSET_LEVEL";
+
+/// The first line of a draft that the agent wrote. Gerrit shows the draft
+/// under the name of the reader, so the author of the change must learn
+/// that an agent wrote it.
+fn from_agent(name: Option<&str>) -> String {
+    match name.map(str::trim).filter(|n| !n.is_empty()) {
+        Some(name) => format!("From {name}:"),
+        None => "From the agent:".to_owned(),
+    }
+}
 
 /// Put a reply on the file of the comment that opens its thread, as Gerrit
 /// gave it. A remark about the whole change shows on the commit message
@@ -39,7 +49,15 @@ pub async fn input(
     in_reply_to: Option<&str>,
 ) -> Value {
     let mut out = Map::new();
-    out.insert("message".to_owned(), json!(comment.body));
+    let text = match comment.author {
+        Author::Agent => format!(
+            "{}\n\n{}",
+            from_agent(comment.agent_name.as_deref()),
+            comment.body
+        ),
+        Author::Reader => comment.body.clone(),
+    };
+    out.insert("message".to_owned(), json!(text));
     let resolve = comment.gerrit.as_ref().is_some_and(|g| g.resolve);
     out.insert("unresolved".to_owned(), json!(!resolve));
     if let Some(id) = in_reply_to {
@@ -127,7 +145,7 @@ async fn line_length(git: &Git, tree: &str, path: &str, line: usize) -> Option<u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::model::{Anchor, Author, Scope};
+    use crate::store::model::{Anchor, Scope};
     use crate::testutil::{build_repo, commit};
 
     fn remark(file: &str, side: Side, lines: Option<(usize, usize)>) -> Comment {
@@ -151,6 +169,7 @@ mod tests {
                 context: Vec::new(),
             }),
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: false,
             blocked: false,
@@ -234,5 +253,18 @@ mod tests {
         assert_eq!(value["in_reply_to"], "last");
         assert_eq!(value["unresolved"], false);
         assert_eq!(value["line"], 2);
+    }
+
+    #[tokio::test]
+    async fn a_draft_of_the_agent_says_who_wrote_it() {
+        let (_repo, git, head, parent) = repo().await;
+        let mut written = remark("a.c", Side::New, Some((2, 2)));
+        written.author = Author::Agent;
+        let value = input(&git, &written, &head, &parent, None).await;
+        assert_eq!(value["message"], "From the agent:\n\nSay why.");
+
+        written.agent_name = Some("Claude".to_owned());
+        let value = input(&git, &written, &head, &parent, None).await;
+        assert_eq!(value["message"], "From Claude:\n\nSay why.");
     }
 }
