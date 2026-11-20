@@ -31,8 +31,6 @@ test('an agent with a store of its own reaches the server through the git direct
 
   // A container: another store, and no address in it.
   const env = { ...process.env, XDG_STATE_HOME: elsewhere, XDG_CONFIG_HOME: elsewhere };
-  delete env.GERRIT_HTTP_USER;
-  delete env.GERRIT_HTTP_PASSWORD;
   const written = JSON.parse(
     execFileSync(BINARY, ['comment', 'src/long.c', '--body', 'From the container.'], {
       cwd: server.fixture.repo,
