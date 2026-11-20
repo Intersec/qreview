@@ -92,18 +92,24 @@ impl AppState {
 
     /// Read the theme files again, so an edited theme shows on a reload
     /// with no restart. The rest of the configuration is read at startup.
-    fn reload_themes(&self) {
-        let Some(dir) = &self.themes else {
+    async fn reload_themes(&self) {
+        let Some(dir) = self.themes.clone() else {
             return;
         };
         // Read the files before the lock, so no reader of the configuration
-        // waits on the disk.
-        let loaded = crate::theme::load_dir(dir);
+        // waits on the disk. The directory holds any number of files, so
+        // the read runs off the workers that answer the other requests.
+        let read = dir.clone();
+        let Ok(loaded) = tokio::task::spawn_blocking(move || crate::theme::load_dir(&read)).await
+        else {
+            // The themes of the last load stay: a theme never stops the tool.
+            return;
+        };
         let mut config = self
             .config
             .write()
             .expect("the configuration lock is poisoned");
-        config.use_themes(dir, loaded);
+        config.use_themes(&dir, loaded);
         self.notes.offer(&config.notes);
     }
 
@@ -347,7 +353,7 @@ async fn session(State(state): State<AppState>) -> Json<SessionBody> {
     // The working tree moves while the page is open. The reload is where the
     // series catches up with it. The themes are read before the session
     // lock, which every other request waits on.
-    state.reload_themes();
+    state.reload_themes().await;
     let mut session = state.session.write().await;
     session.refresh_worktree().await;
 
@@ -932,7 +938,12 @@ async fn save_config(
     State(state): State<AppState>,
     Json(patch): Json<serde_json::Value>,
 ) -> Result<Json<crate::config::Config>, ApiError> {
-    let fresh = crate::config::update(&state.root, &patch).map_err(saving)?;
+    // The save reads the themes directory too, so it runs off the workers.
+    let root = state.root.clone();
+    let fresh = tokio::task::spawn_blocking(move || crate::config::update(&root, &patch))
+        .await
+        .map_err(anyhow::Error::from)?
+        .map_err(saving)?;
     state.notes.offer(&fresh.notes);
     *state
         .config
