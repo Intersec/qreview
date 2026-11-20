@@ -563,7 +563,8 @@ mod tests {
         )
         .unwrap();
 
-        let config = load(dir.path()).unwrap();
+        // No file of the user: the real one of the developer may hold anything.
+        let config = load_from(None, dir.path()).unwrap();
         assert_eq!(config.languages.get("zz").map(String::as_str), Some("yaml"));
         assert_eq!(config.ui.diff, "side-by-side");
     }
