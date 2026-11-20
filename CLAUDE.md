@@ -106,7 +106,8 @@ Two rules that no tool enforces:
 - **The server writes to Gerrit drafts, and nothing else.** Only when the
   reader clicks Send, never on a command of the agent. No publish, no vote,
   no submit. REST serves only what ssh cannot: the threads and the drafts. The authorization comes from `gerrit.auth.command`, which only the
-  configuration of the user may name. It stays in memory, and reaches
+  configuration of the site (`QREVIEW_SITE_CONFIG`) or of the user may
+  name. It stays in memory, and reaches
   `curl` on standard input only.
 - **The server binds `127.0.0.1` only**, with a session token. No other
   interface, ever. Beside it, a Unix socket in a directory only the user can

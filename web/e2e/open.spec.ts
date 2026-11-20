@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { openChange, openFile } from './act.ts';
 import { build, type Fixture } from './fixture.ts';
-import { BINARY, spawnOn } from './server.ts';
+import { BINARY, inherited, spawnOn } from './server.ts';
 
 const ADDRESS = 'https://review.example.com/c/myproject/+/12321/1';
 
@@ -42,7 +42,7 @@ function run(args: string[]): string {
   return execFileSync(BINARY, args, {
     cwd: fixture.repo,
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...inherited(), ...env },
   });
 }
 

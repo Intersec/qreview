@@ -109,9 +109,18 @@ export async function start(
       execFileSync(BINARY, args, {
         cwd: fixture.repo,
         encoding: 'utf8',
-        env: { ...process.env, ...env },
+        env: { ...inherited(), ...env },
       }),
   };
+}
+
+/// The environment of the tests, without the configuration of the site of
+/// whoever runs them: its `gerrit.auth.command` would give a real account
+/// to the fake curl, which logs what it is given.
+export function inherited(): NodeJS.ProcessEnv {
+  const out = { ...process.env };
+  delete out.QREVIEW_SITE_CONFIG;
+  return out;
 }
 
 /// Start the binary on a repository and wait for the address it prints.
@@ -122,7 +131,7 @@ export async function spawnOn(
 ): Promise<{ child: ChildProcess; url: string; output: () => string }> {
   const child: ChildProcess = spawn(BINARY, args, {
     cwd: repo,
-    env: { ...process.env, ...env },
+    env: { ...inherited(), ...env },
   });
 
   let seen = '';
