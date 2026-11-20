@@ -1242,3 +1242,34 @@ directory, and it accepts any string in `ui.theme`, so it shows the system
 palette.
 
 Nothing in the storage format or the export moves.
+
+## 2026-11-20 — qreview ships color themes, and a file of the user wins
+
+A theme existed only as a file of the user, so a reader had to find an example and copy it before they saw a single theme. The accessible themes matter most: a reader with red-green color blindness cannot read a diff that relies on green and red.
+
+**Decision.** The binary carries a set of theme files in `crates/qreview/themes/`, read with `include_str!` as the bundled grammars are. They are parsed at startup by the same parser as a file of the user, and a test parses each one, so a bundled theme that breaks the subset fails the build. The set:
+
+- `colorblind-light`, `colorblind-dark`: blue and orange for the diff, not green and red.
+- `high-contrast-light`, `high-contrast-dark`.
+- `solarized-light`, `solarized-dark`, `github-light`, `github-dark`, `gruvbox-light`, `gruvbox-dark`, `catppuccin-latte`, `catppuccin-mocha`, `one-light`, `nord`, `dracula`, `tokyo-night`.
+- `night`, `paper`, `gerrit-dark`, which were examples until now.
+
+Each file names the palette that it follows and its license in its header comment. All of these palettes are under the MIT license.
+
+**A file of the user wins over a bundled theme of the same name.** It replaces the whole theme, not token by token, so a user adjusts a bundled theme by copying its file into the themes directory. A user file of that name that does not load is left out and said in the terminal, as any broken file, and the bundled theme stays in the list.
+
+`system`, `light` and `dark` stay the only built-in values that name no file. A bundled name is not reserved.
+
+`ui.themes` in the answers carries the bundled themes too. Each theme gets a `bundled` flag, so the panel lists the themes of the user apart from the bundled ones. A user file that replaces a bundled theme counts as a theme of the user.
+
+`examples/themes/` goes away: its three files are bundled now, and the README points to `crates/qreview/themes/` as the place to copy a theme from.
+
+**Rejected: refusing a user file with a bundled name.** A user who wants one color changed would have to rename the theme, and lose the name that they know.
+
+**Rejected: merging a user file into the bundled theme token by token.** Two files would then decide one theme, and a token that the user removes from their copy would come back from the bundled one.
+
+**Deferred: a gerrit-light theme.** The built-in light palette already follows Gerrit, so the theme would add nothing.
+
+**Cost.** Each bundled token is now a contract twice: with the user files and with the bundled files. A renamed token must be renamed in each bundled file, and the test of the parse catches one that is forgotten. The answers of the session grow by about 20 small maps.
+
+Nothing in the storage format or the export moves.
