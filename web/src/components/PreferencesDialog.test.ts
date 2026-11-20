@@ -16,7 +16,11 @@ function config(theme: string): Config {
     ui: {
       diff: 'unified',
       theme,
-      themes: { night: { base: 'dark', colors: {} } },
+      themes: {
+        midnight: { base: 'dark', colors: {}, bundled: false },
+        nord: { base: 'dark', colors: {}, bundled: true },
+        dracula: { base: 'dark', colors: {}, bundled: true },
+      },
     },
     diff: {
       context: 10,
@@ -88,14 +92,14 @@ describe('the preferences panel', () => {
     expect(saved(wrapper).diff).toEqual({ tabWidth: 4 });
   });
 
-  it('offers the themes of the user after the built-in ones', () => {
+  it('offers the themes of the user, then the bundled ones', () => {
     const wrapper = mount(PreferencesDialog, { props: { config: config('system') } });
 
     const names = themeSelect(wrapper)
       .findAll('option')
       .map((o) => o.element.value);
 
-    expect(names).toEqual(['system', 'light', 'dark', 'night']);
+    expect(names).toEqual(['system', 'light', 'dark', 'midnight', 'dracula', 'nord']);
   });
 
   it('sends the theme the reader picked', async () => {

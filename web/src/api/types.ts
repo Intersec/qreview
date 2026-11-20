@@ -135,7 +135,7 @@ export interface Ui {
   /// `system`, `light`, `dark`, or the name of a loaded theme: the one the
   /// tool really uses, after the fallback.
   theme: string;
-  /// The themes of the user that loaded, by name.
+  /// The bundled themes and the themes of the user that loaded, by name.
   themes: Record<string, Theme>;
 }
 
@@ -145,6 +145,9 @@ export interface Theme {
   base: 'light' | 'dark';
   /// Token without `--`, to a hex color.
   colors: Record<string, string>;
+  /// The binary carries it. A file of the user that replaces a bundled
+  /// theme is not bundled.
+  bundled: boolean;
 }
 
 export interface DiffPrefs {

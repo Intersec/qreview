@@ -4,19 +4,21 @@ expression: ui
 ---
 {
   "diff": "unified",
-  "theme": "night",
+  "theme": "midnight",
   "themes": {
-    "night": {
+    "midnight": {
       "base": "dark",
       "colors": {
         "page": "#000010"
-      }
+      },
+      "bundled": false
     },
-    "paper": {
+    "parchment": {
       "base": "light",
       "colors": {
         "page": "#fafaf0"
-      }
+      },
+      "bundled": false
     }
   }
 }

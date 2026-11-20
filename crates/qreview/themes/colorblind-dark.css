@@ -1,0 +1,56 @@
+/*
+ * colorblind-dark: blue and orange for the diff, not green and red.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ *
+ * The colors follow the colorblind themes of GitHub, by GitHub,
+ * under the MIT license: https://github.com/primer/primitives
+ */
+:root {
+  color-scheme: dark;
+
+  /* The page and its text. */
+  --page: #131416;
+  --pane: #1a1c1e;
+  --ink: #e8eaed;
+  --ink-quiet: #9aa0a6;
+  --ink-faint: #6f7479;
+  --edge: #2f3134;
+  --edge-soft: #26282b;
+  --pick: #1f2733;
+  --pick-edge: #8ab4f8;
+  --action: #8ab4f8;
+  --online: #58a6ff;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #1a2c44;
+  --add-word: #234677;
+  --remove-line: #3b261a;
+  --remove-word: #67391e;
+  --rebase-add-line: #2d253e;
+  --rebase-add-word: #4a376c;
+  --rebase-remove-line: #242629;
+  --rebase-remove-word: #373a3f;
+  --context-bar: #2a2417;
+  --context-ink: #d29922;
+  --add-ink: #58a6ff;
+  --remove-ink: #f0883e;
+  --ok-ink: #58a6ff;
+  --tok-invalid: #db6d28;
+
+  /* The bar over a merge. */
+  --merge-bar: #262117;
+  --merge-edge: #72561c;
+  --merge-ink: #d29922;
+
+  /* The syntax. */
+  --tok-keyword: #d2a8ff;
+  --tok-string: #a5d6ff;
+  --tok-comment: #8b949e;
+  --tok-constant: #79c0ff;
+  --tok-entity: #8ab4f8;
+  --tok-support: #56b6c2;
+  --tok-variable: #ffa657;
+}

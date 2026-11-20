@@ -1,0 +1,49 @@
+/*
+ * dracula: the Dracula palette.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ *
+ * The colors follow Dracula, by Zeno Rocha,
+ * under the MIT license: https://github.com/dracula/dracula-theme
+ */
+:root {
+  color-scheme: dark;
+
+  /* The page and its text. */
+  --page: #282a36;
+  --pane: #21222c;
+  --ink: #f8f8f2;
+  --ink-quiet: #c5c8d6;
+  --ink-faint: #6272a4;
+  --edge: #44475a;
+  --edge-soft: #34384c;
+  --pick: #44475a;
+  --pick-edge: #bd93f9;
+  --action: #bd93f9;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #2f4f42;
+  --add-word: #387d52;
+  --remove-line: #4f323c;
+  --remove-word: #7e3b42;
+  --context-bar: #404340;
+  --context-ink: #f1fa8c;
+  --add-ink: #50fa7b;
+  --remove-ink: #ff5555;
+
+  /* The bar over a merge. */
+  --merge-bar: #3c3f3f;
+  --merge-edge: #8c9261;
+  --merge-ink: #f1fa8c;
+
+  /* The syntax. */
+  --tok-keyword: #ff79c6;
+  --tok-string: #f1fa8c;
+  --tok-comment: #6272a4;
+  --tok-constant: #bd93f9;
+  --tok-entity: #50fa7b;
+  --tok-support: #8be9fd;
+  --tok-variable: #ffb86c;
+}

@@ -1,0 +1,49 @@
+/*
+ * one-light: the One Light palette of the Atom editor.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ *
+ * The colors follow One Light, by GitHub,
+ * under the MIT license: https://github.com/atom/atom
+ */
+:root {
+  color-scheme: light;
+
+  /* The page and its text. */
+  --page: #fafafa;
+  --pane: #f0f0f1;
+  --ink: #383a42;
+  --ink-quiet: #696c77;
+  --ink-faint: #a0a1a7;
+  --edge: #dadbdd;
+  --edge-soft: #e8e8e9;
+  --pick: #d5e0f8;
+  --pick-edge: #4078f2;
+  --action: #4078f2;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #e0ede0;
+  --add-word: #bedbbe;
+  --remove-line: #f7e1df;
+  --remove-word: #f2c1bc;
+  --context-bar: #f3ecdc;
+  --context-ink: #c18401;
+  --add-ink: #50a14f;
+  --remove-ink: #e45649;
+
+  /* The bar over a merge. */
+  --merge-bar: #f4eee1;
+  --merge-edge: #debf7e;
+  --merge-ink: #c18401;
+
+  /* The syntax. */
+  --tok-keyword: #a626a4;
+  --tok-string: #50a14f;
+  --tok-comment: #a0a1a7;
+  --tok-constant: #986801;
+  --tok-entity: #4078f2;
+  --tok-support: #0184bc;
+  --tok-variable: #e45649;
+}

@@ -1,8 +1,10 @@
 /*
  * night: a dark blue theme.
  *
- * Copy this file to ~/.config/qreview/themes/ and pick "night" in the
- * preferences. The name of the file is the name of the theme.
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy: a file there replaces the
+ * bundled theme of the same name. The name of the file is the name of the
+ * theme.
  *
  * A theme holds one :root block. color-scheme names the built-in palette it
  * starts from, light or dark. Each --token replaces one color of that

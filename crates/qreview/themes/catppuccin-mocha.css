@@ -1,0 +1,49 @@
+/*
+ * catppuccin-mocha: the Mocha flavor of Catppuccin, a soft pastel dark.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ *
+ * The colors follow Catppuccin, by the Catppuccin organization,
+ * under the MIT license: https://github.com/catppuccin/catppuccin
+ */
+:root {
+  color-scheme: dark;
+
+  /* The page and its text. */
+  --page: #1e1e2e;
+  --pane: #181825;
+  --ink: #cdd6f4;
+  --ink-quiet: #a6adc8;
+  --ink-faint: #7f849c;
+  --edge: #313244;
+  --edge-soft: #262637;
+  --pick: #333c57;
+  --pick-edge: #89b4fa;
+  --action: #89b4fa;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #364143;
+  --add-word: #4c6155;
+  --remove-line: #443244;
+  --remove-word: #734a5f;
+  --context-bar: #38363d;
+  --context-ink: #f9e2af;
+  --add-ink: #a6e3a1;
+  --remove-ink: #f38ba8;
+
+  /* The bar over a merge. */
+  --merge-bar: #34323b;
+  --merge-edge: #8c806e;
+  --merge-ink: #f9e2af;
+
+  /* The syntax. */
+  --tok-keyword: #cba6f7;
+  --tok-string: #a6e3a1;
+  --tok-comment: #7f849c;
+  --tok-constant: #fab387;
+  --tok-entity: #89b4fa;
+  --tok-support: #94e2d5;
+  --tok-variable: #eba0ac;
+}

@@ -41,9 +41,17 @@ watch(
 
 const CONTEXTS = [3, 10, 25, 50];
 
-/// The themes of the user that loaded. A file that did not load is not
-/// offered: the terminal says why.
-const themes = computed(() => Object.keys(props.config.ui.themes ?? {}).sort());
+/// The names of the themes, bundled or of the user. A file that did not
+/// load is not offered: the terminal says why.
+function themeNames(bundled: boolean): string[] {
+  const themes = Object.entries(props.config.ui.themes ?? {});
+  return themes
+    .filter(([, theme]) => theme.bundled === bundled)
+    .map(([name]) => name)
+    .sort();
+}
+const userThemes = computed(() => themeNames(false));
+const bundledThemes = computed(() => themeNames(true));
 
 /// The fields of the diff section, with the ones that the panel reads as text.
 const DIFF = ['context', 'wrap', 'ignoreWhitespace', 'tabWidth', 'fontSize', 'syntax'] as const;
@@ -104,8 +112,11 @@ function save() {
           <option value="system">follow the system</option>
           <option value="light">light</option>
           <option value="dark">dark</option>
-          <optgroup v-if="themes.length" label="Your themes">
-            <option v-for="name in themes" :key="name" :value="name">{{ name }}</option>
+          <optgroup v-if="userThemes.length" label="Your themes">
+            <option v-for="name in userThemes" :key="name" :value="name">{{ name }}</option>
+          </optgroup>
+          <optgroup v-if="bundledThemes.length" label="Bundled themes">
+            <option v-for="name in bundledThemes" :key="name" :value="name">{{ name }}</option>
           </optgroup>
         </select>
       </label>
@@ -151,7 +162,8 @@ function save() {
 
       <p class="panel-note">
         Kept in <code>~/.config/qreview/config.json</code>, so the next run starts this way. Your
-        themes are the <code>.css</code> files in <code>~/.config/qreview/themes/</code>.
+        themes are the <code>.css</code> files in <code>~/.config/qreview/themes/</code>. A file
+        there replaces the bundled theme of the same name.
       </p>
 
       <div class="panel-foot">

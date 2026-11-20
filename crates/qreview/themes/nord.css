@@ -1,0 +1,49 @@
+/*
+ * nord: the Nord palette, an arctic blue.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ *
+ * The colors follow Nord, by Sven Greb,
+ * under the MIT license: https://github.com/nordtheme/nord
+ */
+:root {
+  color-scheme: dark;
+
+  /* The page and its text. */
+  --page: #2e3440;
+  --pane: #3b4252;
+  --ink: #eceff4;
+  --ink-quiet: #d8dee9;
+  --ink-faint: #7b88a1;
+  --edge: #434c5e;
+  --edge-soft: #3b4252;
+  --pick: #40505d;
+  --pick-edge: #88c0d0;
+  --action: #88c0d0;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #434d4e;
+  --add-word: #5d6b5e;
+  --remove-line: #483c48;
+  --remove-word: #684651;
+  --context-bar: #454649;
+  --context-ink: #ebcb8b;
+  --add-ink: #a3be8c;
+  --remove-ink: #bf616a;
+
+  /* The bar over a merge. */
+  --merge-bar: #414348;
+  --merge-edge: #8c8066;
+  --merge-ink: #ebcb8b;
+
+  /* The syntax. */
+  --tok-keyword: #81a1c1;
+  --tok-string: #a3be8c;
+  --tok-comment: #7b88a1;
+  --tok-constant: #b48ead;
+  --tok-entity: #88c0d0;
+  --tok-support: #8fbcbb;
+  --tok-variable: #d08770;
+}

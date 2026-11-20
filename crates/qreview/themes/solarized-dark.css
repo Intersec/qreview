@@ -1,0 +1,49 @@
+/*
+ * solarized-dark: the dark Solarized palette.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ *
+ * The colors follow Solarized, by Ethan Schoonover,
+ * under the MIT license: https://github.com/altercation/solarized
+ */
+:root {
+  color-scheme: dark;
+
+  /* The page and its text. */
+  --page: #002b36;
+  --pane: #073642;
+  --ink: #93a1a1;
+  --ink-quiet: #839496;
+  --ink-faint: #657b83;
+  --edge: #234751;
+  --edge-soft: #143b45;
+  --pick: #083e55;
+  --pick-edge: #268bd2;
+  --action: #268bd2;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #153d2d;
+  --add-word: #234828;
+  --remove-line: #282c35;
+  --remove-word: #4b2d34;
+  --context-bar: #163630;
+  --context-ink: #b58900;
+  --add-ink: #859900;
+  --remove-ink: #dc322f;
+
+  /* The bar over a merge. */
+  --merge-bar: #123431;
+  --merge-edge: #5a5a1b;
+  --merge-ink: #b58900;
+
+  /* The syntax. */
+  --tok-keyword: #859900;
+  --tok-string: #2aa198;
+  --tok-comment: #586e75;
+  --tok-constant: #d33682;
+  --tok-entity: #268bd2;
+  --tok-support: #b58900;
+  --tok-variable: #cb4b16;
+}

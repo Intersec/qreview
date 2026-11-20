@@ -293,6 +293,7 @@ fn load_with(user: Option<PathBuf>, repo_root: &Path, loaded: Option<Loaded>) ->
         let loaded = loaded.unwrap_or_else(|| theme::load_dir(&dir));
         config.use_themes(&dir, loaded);
     } else {
+        config.ui.themes = theme::with_bundled(BTreeMap::new());
         config.resolve_theme(None);
     }
     Ok(config)
@@ -304,7 +305,7 @@ impl Config {
     /// Only the user directory holds themes: a repository may name one, but
     /// it cannot bring colors of its own.
     pub fn use_themes(&mut self, dir: &Path, (themes, errors): Loaded) {
-        self.ui.themes = themes;
+        self.ui.themes = theme::with_bundled(themes);
         self.notes = errors.iter().map(ToString::to_string).collect();
         if !errors.is_empty() {
             self.notes.push(theme::HINT.to_owned());
@@ -349,16 +350,26 @@ fn unknown(value: &str, themes: &BTreeMap<String, Theme>, dir: Option<&Path>) ->
     )
 }
 
-/// The themes that loaded, as a sentence.
+/// The themes that loaded, as a sentence: the files of the user, then the
+/// themes that qreview carries.
 fn loaded(themes: &BTreeMap<String, Theme>, dir: Option<&Path>) -> String {
-    if themes.is_empty() {
-        return match dir {
-            Some(dir) => format!("No theme loaded from {}.", dir.display()),
-            None => "No theme loaded.".to_owned(),
-        };
+    let names = |bundled: bool| {
+        let names: Vec<&str> = themes
+            .iter()
+            .filter(|(_, theme)| theme.bundled == bundled)
+            .map(|(name, _)| name.as_str())
+            .collect();
+        names.join(", ")
+    };
+    let user = match (names(false), dir) {
+        (list, _) if !list.is_empty() => format!("Loaded themes: {list}."),
+        (_, Some(dir)) => format!("No theme loaded from {}.", dir.display()),
+        (_, None) => "No theme loaded.".to_owned(),
+    };
+    match names(true) {
+        list if list.is_empty() => user,
+        list => format!("{user} Bundled themes: {list}."),
     }
-    let names: Vec<&str> = themes.keys().map(String::as_str).collect();
-    format!("Loaded themes: {}.", names.join(", "))
 }
 
 fn read(path: &Path) -> Result<Option<Layer>> {
@@ -437,10 +448,10 @@ fn update_at(path: &Path, repo_root: &Path, patch: &serde_json::Value) -> Result
     // Only a theme the panel asks for is checked. A stored one that failed
     // to load must not block a save of the font size.
     if let Some(wanted) = patch.pointer("/ui/theme").and_then(|t| t.as_str()) {
-        let empty = BTreeMap::new();
-        let themes = found.as_ref().map_or(&empty, |(themes, _)| themes);
-        if !known(wanted, themes) {
-            let why = unknown(wanted, themes, dir.as_deref());
+        let user = found.as_ref().map(|(themes, _)| themes.clone());
+        let themes = theme::with_bundled(user.unwrap_or_default());
+        if !known(wanted, &themes) {
+            let why = unknown(wanted, &themes, dir.as_deref());
             return Err(Refused(format!("ui.theme {why}")).into());
         }
     }
@@ -659,55 +670,58 @@ mod tests {
         }
     }
 
-    const NIGHT: (&str, &str) = (
-        "night.css",
+    const MIDNIGHT: (&str, &str) = (
+        "midnight.css",
         ":root { color-scheme: dark; --page: #000010; }",
     );
-    const PAPER: (&str, &str) = (
-        "paper.css",
+    const PARCHMENT: (&str, &str) = (
+        "parchment.css",
         ":root { color-scheme: light; --page: #fafaf0; }",
     );
 
     #[test]
     fn ui_theme_may_name_a_loaded_theme() {
-        let setup = Setup::new(r#"{"ui":{"theme":"night"}}"#, None, &[NIGHT]);
+        let setup = Setup::new(r#"{"ui":{"theme":"midnight"}}"#, None, &[MIDNIGHT]);
 
         let config = setup.load();
 
-        assert_eq!(config.ui.theme, "night");
-        assert_eq!(config.ui.themes["night"].colors["page"], "#000010");
+        assert_eq!(config.ui.theme, "midnight");
+        assert_eq!(config.ui.themes["midnight"].colors["page"], "#000010");
         assert!(config.notes.is_empty(), "{:?}", config.notes);
     }
 
     #[test]
     fn a_repository_may_pick_a_theme_of_the_user() {
         let setup = Setup::new(
-            r#"{"ui":{"theme":"paper"}}"#,
-            Some(r#"{"ui":{"theme":"night"}}"#),
-            &[NIGHT, PAPER],
+            r#"{"ui":{"theme":"parchment"}}"#,
+            Some(r#"{"ui":{"theme":"midnight"}}"#),
+            &[MIDNIGHT, PARCHMENT],
         );
 
         let config = setup.load();
 
-        assert_eq!(config.ui.theme, "night");
+        assert_eq!(config.ui.theme, "midnight");
         assert!(config.notes.is_empty(), "{:?}", config.notes);
     }
 
     #[test]
     fn an_unknown_name_in_the_repository_falls_back_to_the_user() {
         let setup = Setup::new(
-            r#"{"ui":{"theme":"paper"}}"#,
+            r#"{"ui":{"theme":"parchment"}}"#,
             Some(r#"{"ui":{"theme":"gone"}}"#),
-            &[NIGHT, PAPER],
+            &[MIDNIGHT, PARCHMENT],
         );
 
         let config = setup.load();
 
-        assert_eq!(config.ui.theme, "paper");
+        assert_eq!(config.ui.theme, "parchment");
         assert_eq!(config.notes.len(), 1);
         let note = &config.notes[0];
         assert!(note.contains(".qreview.json names `gone`"), "{note}");
-        assert!(note.contains("Loaded themes: night, paper."), "{note}");
+        assert!(
+            note.contains("Loaded themes: midnight, parchment."),
+            "{note}"
+        );
         assert!(note.contains("falls back to the ui.theme of"), "{note}");
         assert!(note.contains("config.json"), "{note}");
     }
@@ -736,22 +750,22 @@ mod tests {
     #[test]
     fn a_broken_file_counts_as_not_loaded() {
         let broken = (
-            "night.css",
+            "midnight.css",
             ":root {\n  color-scheme: dark;\n  --page: red;\n}",
         );
-        let setup = Setup::new(r#"{"ui":{"theme":"night"}}"#, None, &[broken]);
+        let setup = Setup::new(r#"{"ui":{"theme":"midnight"}}"#, None, &[broken]);
 
         let config = setup.load();
 
         assert_eq!(config.ui.theme, "system");
         assert!(
-            config.notes[0].contains("night.css:3:"),
+            config.notes[0].contains("midnight.css:3:"),
             "{:?}",
             config.notes
         );
         assert_eq!(config.notes[1], theme::HINT);
         assert!(
-            config.notes[2].contains("names `night`"),
+            config.notes[2].contains("names `midnight`"),
             "{:?}",
             config.notes
         );
@@ -768,15 +782,77 @@ mod tests {
         let config = setup.load();
 
         assert_eq!(config.ui.theme, "system");
-        assert!(config.ui.themes.is_empty());
+        assert!(config.ui.themes.values().all(|t| t.bundled));
+    }
+
+    #[test]
+    fn a_file_of_the_user_replaces_a_bundled_theme() {
+        let mine = (
+            "nord.css",
+            ":root { color-scheme: light; --page: #fafaf0; }",
+        );
+        let setup = Setup::new(r#"{"ui":{"theme":"nord"}}"#, None, &[mine]);
+
+        let config = setup.load();
+
+        assert_eq!(config.ui.theme, "nord");
+        let nord = &config.ui.themes["nord"];
+        assert!(!nord.bundled);
+        assert_eq!(nord.colors.keys().collect::<Vec<_>>(), ["page"]);
+    }
+
+    #[test]
+    fn a_broken_file_of_the_user_leaves_the_bundled_theme() {
+        let broken = (
+            "nord.css",
+            ":root {\n  color-scheme: dark;\n  --page: red;\n}",
+        );
+        let setup = Setup::new(r#"{"ui":{"theme":"nord"}}"#, None, &[broken]);
+
+        let config = setup.load();
+
+        assert_eq!(config.ui.theme, "nord");
+        assert!(config.ui.themes["nord"].bundled);
+        assert!(
+            config.notes[0].contains("nord.css:3:"),
+            "{:?}",
+            config.notes
+        );
+    }
+
+    #[test]
+    fn a_save_may_name_a_bundled_theme() {
+        let setup = Setup::new("{}", None, &[]);
+
+        let config = update_at(
+            &setup.user(),
+            setup.repo.path(),
+            &serde_json::json!({"ui": {"theme": "dracula"}}),
+        )
+        .unwrap();
+
+        assert_eq!(config.ui.theme, "dracula");
+    }
+
+    #[test]
+    fn a_note_lists_the_themes_of_the_user_then_the_bundled_ones() {
+        let setup = Setup::new(r#"{"ui":{"theme":"gone"}}"#, None, &[MIDNIGHT]);
+
+        let note = &setup.load().notes[0];
+
+        assert!(
+            note.contains("Loaded themes: midnight. Bundled themes: "),
+            "{note}"
+        );
+        assert!(note.contains("dracula"), "{note}");
     }
 
     #[test]
     fn a_built_in_in_the_repository_wins_over_a_theme_of_the_user() {
         let setup = Setup::new(
-            r#"{"ui":{"theme":"night"}}"#,
+            r#"{"ui":{"theme":"midnight"}}"#,
             Some(r#"{"ui":{"theme":"dark"}}"#),
-            &[NIGHT],
+            &[MIDNIGHT],
         );
 
         assert_eq!(setup.load().ui.theme, "dark");
@@ -784,8 +860,8 @@ mod tests {
 
     #[test]
     fn a_save_that_names_no_loaded_theme_is_refused_before_writing() {
-        let before = r#"{"ui":{"theme":"night"}}"#;
-        let setup = Setup::new(before, None, &[NIGHT]);
+        let before = r#"{"ui":{"theme":"midnight"}}"#;
+        let setup = Setup::new(before, None, &[MIDNIGHT]);
 
         let error = update_at(
             &setup.user(),
@@ -796,7 +872,7 @@ mod tests {
 
         assert!(error.downcast_ref::<Refused>().is_some(), "{error:#}");
         assert!(
-            error.to_string().contains("Loaded themes: night."),
+            error.to_string().contains("Loaded themes: midnight."),
             "{error}"
         );
         assert_eq!(std::fs::read_to_string(setup.user()).unwrap(), before);
@@ -806,7 +882,7 @@ mod tests {
     fn a_save_without_a_theme_keeps_the_one_in_the_file() {
         // The theme did not load, so the page shows system. A save of the
         // font size must not write that fallback over the choice of the user.
-        let setup = Setup::new(r#"{"ui":{"theme":"night"}}"#, None, &[]);
+        let setup = Setup::new(r#"{"ui":{"theme":"midnight"}}"#, None, &[]);
 
         let config = update_at(
             &setup.user(),
@@ -817,14 +893,21 @@ mod tests {
 
         assert_eq!(config.ui.theme, "system");
         let stored = std::fs::read_to_string(setup.user()).unwrap();
-        assert!(stored.contains(r#""theme": "night""#), "{stored}");
+        assert!(stored.contains(r#""theme": "midnight""#), "{stored}");
     }
 
     #[test]
     fn the_folded_ui_is_pinned() {
-        let setup = Setup::new(r#"{"ui":{"theme":"night"}}"#, None, &[NIGHT, PAPER]);
+        let setup = Setup::new(
+            r#"{"ui":{"theme":"midnight"}}"#,
+            None,
+            &[MIDNIGHT, PARCHMENT],
+        );
 
-        let ui = serde_json::to_string_pretty(&setup.load().ui).unwrap();
+        // The bundled themes are pinned by their own files, not here.
+        let mut ui = setup.load().ui;
+        ui.themes.retain(|_, theme| !theme.bundled);
+        let ui = serde_json::to_string_pretty(&ui).unwrap();
 
         insta::assert_snapshot!(ui);
     }

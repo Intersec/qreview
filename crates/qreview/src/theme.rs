@@ -91,6 +91,9 @@ pub struct Theme {
     pub base: Base,
     /// Token without `--`, to a lowercase hex color.
     pub colors: BTreeMap<String, String>,
+    /// The binary carries it. A file of the user is never bundled, even
+    /// when it replaces a bundled theme of the same name.
+    pub bundled: bool,
 }
 
 /// The first thing wrong in a theme file.
@@ -132,6 +135,79 @@ impl fmt::Display for FileError {
         }
         write!(f, ": {}", self.problem.what)
     }
+}
+
+/// The themes that the binary carries, by name. A test parses each one.
+const BUNDLED: &[(&str, &str)] = &[
+    (
+        "catppuccin-latte",
+        include_str!("../themes/catppuccin-latte.css"),
+    ),
+    (
+        "catppuccin-mocha",
+        include_str!("../themes/catppuccin-mocha.css"),
+    ),
+    (
+        "colorblind-dark",
+        include_str!("../themes/colorblind-dark.css"),
+    ),
+    (
+        "colorblind-light",
+        include_str!("../themes/colorblind-light.css"),
+    ),
+    ("dracula", include_str!("../themes/dracula.css")),
+    ("gerrit-dark", include_str!("../themes/gerrit-dark.css")),
+    ("github-dark", include_str!("../themes/github-dark.css")),
+    ("github-light", include_str!("../themes/github-light.css")),
+    ("gruvbox-dark", include_str!("../themes/gruvbox-dark.css")),
+    ("gruvbox-light", include_str!("../themes/gruvbox-light.css")),
+    (
+        "high-contrast-dark",
+        include_str!("../themes/high-contrast-dark.css"),
+    ),
+    (
+        "high-contrast-light",
+        include_str!("../themes/high-contrast-light.css"),
+    ),
+    ("night", include_str!("../themes/night.css")),
+    ("nord", include_str!("../themes/nord.css")),
+    ("one-light", include_str!("../themes/one-light.css")),
+    ("paper", include_str!("../themes/paper.css")),
+    (
+        "solarized-dark",
+        include_str!("../themes/solarized-dark.css"),
+    ),
+    (
+        "solarized-light",
+        include_str!("../themes/solarized-light.css"),
+    ),
+    ("tokyo-night", include_str!("../themes/tokyo-night.css")),
+];
+
+/// The bundled themes, with the themes of the user on top. A file of the
+/// user replaces the bundled theme of its name as a whole, so a user
+/// changes a bundled theme by copying its file.
+pub fn with_bundled(user: BTreeMap<String, Theme>) -> BTreeMap<String, Theme> {
+    static PARSED: std::sync::LazyLock<BTreeMap<String, Theme>> = std::sync::LazyLock::new(|| {
+        BUNDLED
+            .iter()
+            // A test parses each file, so a failure here is a bug of the
+            // build. The theme is left out rather than stop the tool.
+            .filter_map(|(name, text)| {
+                let theme = parse(text).ok()?;
+                Some((
+                    (*name).to_owned(),
+                    Theme {
+                        bundled: true,
+                        ..theme
+                    },
+                ))
+            })
+            .collect()
+    });
+    let mut themes = PARSED.clone();
+    themes.extend(user);
+    themes
 }
 
 /// Read every theme of the directory. A file that is wrong is left out and
@@ -389,7 +465,11 @@ fn parse_block<'i>(parser: &mut Parser<'i>) -> Result<Theme, Failure> {
             "`color-scheme: light;` or `color-scheme: dark;` is missing",
         )));
     };
-    Ok(Theme { base, colors })
+    Ok(Theme {
+        base,
+        colors,
+        bundled: false,
+    })
 }
 
 /// `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`, in lowercase.
@@ -585,6 +665,47 @@ mod tests {
         let (_, errors) = load_dir(dir.path());
 
         assert!(errors[0].problem.what.contains("64 KiB"), "{errors:?}");
+    }
+
+    #[test]
+    fn each_bundled_theme_parses() {
+        for (name, text) in BUNDLED {
+            if let Err(problem) = parse(text) {
+                panic!("themes/{name}.css: {problem:?}");
+            }
+        }
+        assert_eq!(with_bundled(BTreeMap::new()).len(), BUNDLED.len());
+    }
+
+    #[test]
+    fn the_bundled_list_matches_the_directory() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("themes");
+        let mut files: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|f| f.ends_with(".css"))
+            .collect();
+        files.sort();
+        let listed: Vec<String> = BUNDLED.iter().map(|(n, _)| format!("{n}.css")).collect();
+
+        assert_eq!(files, listed, "BUNDLED and crates/qreview/themes differ");
+        // A bundled name follows the rule of a file of the user, so a user
+        // can copy the file under the same name.
+        for (name, _) in BUNDLED {
+            let named = name_of(&dir.join(format!("{name}.css")));
+            assert_eq!(named, Ok(Some((*name).to_owned())));
+        }
+    }
+
+    #[test]
+    fn a_file_of_the_user_replaces_a_bundled_theme_whole() {
+        let mine = parse(":root { color-scheme: light; --page: #ffffff; }").unwrap();
+
+        let themes = with_bundled(BTreeMap::from([("nord".to_owned(), mine.clone())]));
+
+        assert_eq!(themes["nord"], mine);
+        assert!(!themes["nord"].bundled);
+        assert!(themes["dracula"].bundled);
     }
 
     #[test]

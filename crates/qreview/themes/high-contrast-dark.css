@@ -1,0 +1,46 @@
+/*
+ * high-contrast-dark: white on black, with strong diff colors.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ */
+:root {
+  color-scheme: dark;
+
+  /* The page and its text. */
+  --page: #000000;
+  --pane: #0d0d0d;
+  --ink: #ffffff;
+  --ink-quiet: #e6e6e6;
+  --ink-faint: #bdbdbd;
+  --edge: #595959;
+  --edge-soft: #3d3d3d;
+  --pick: #00306b;
+  --pick-edge: #7fbfff;
+  --action: #7fbfff;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #002e00;
+  --add-word: #005700;
+  --remove-line: #3d0000;
+  --remove-word: #750000;
+  --context-bar: #332900;
+  --context-ink: #ffd966;
+  --add-ink: #7fff7f;
+  --remove-ink: #ff8f8f;
+
+  /* The bar over a merge. */
+  --merge-bar: #332900;
+  --merge-edge: #ffd966;
+  --merge-ink: #ffd966;
+
+  /* The syntax. */
+  --tok-keyword: #ff9eff;
+  --tok-string: #9eff9e;
+  --tok-comment: #bdbdbd;
+  --tok-constant: #ffd27f;
+  --tok-entity: #9ecfff;
+  --tok-support: #7fffff;
+  --tok-variable: #ffa3a3;
+}
