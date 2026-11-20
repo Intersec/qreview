@@ -1,0 +1,12 @@
+---
+source: crates/qreview/src/gerrit/draft.rs
+expression: out
+---
+a line: {"line":2,"message":"Say why.","path":"a.c","unresolved":true}
+whole lines: {"line":3,"message":"Say why.","path":"a.c","range":{"end_character":5,"end_line":3,"start_character":0,"start_line":2},"unresolved":true}
+a part of a line: {"line":2,"message":"Say why.","path":"a.c","range":{"end_character":5,"end_line":2,"start_character":4,"start_line":2},"unresolved":true}
+the old side: {"line":1,"message":"Say why.","path":"a.c","side":"PARENT","unresolved":true}
+the file: {"message":"Say why.","path":"a.c","unresolved":true}
+a line of the message: {"line":7,"message":"Say why.","path":"/COMMIT_MSG","unresolved":true}
+the message: {"message":"Say why.","path":"/COMMIT_MSG","unresolved":true}
+the change: {"message":"Say why.","path":"/PATCHSET_LEVEL","unresolved":true}

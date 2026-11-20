@@ -1,14 +1,14 @@
-//! What the user and the repository ask for.
+//! What the site, the user and the repository ask for.
 //!
-//! Three layers, the later one wins: the defaults built into the tool, the
-//! configuration of the user, then the one of the repository. A repository
-//! that declares its own file types therefore hands the map to every reader
-//! with no setup.
+//! Four layers, the later one wins: the defaults built into the tool, the
+//! configuration of the site that `QREVIEW_SITE_CONFIG` names, the one of
+//! the user, then the one of the repository. A repository that declares its
+//! own file types therefore hands the map to every reader with no setup.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 /// The configuration, after the three layers are folded together.
@@ -46,6 +46,12 @@ pub struct Gerrit {
     pub enabled: bool,
     /// The branch a change targets, when `.gerrit-branch` does not say.
     pub branch: Option<String>,
+    /// The address of the REST API, when the server gives no page for a
+    /// change. Never a password.
+    pub url: Option<String>,
+    /// The command that prints the authorization for REST. Only the file
+    /// of the site or of the user may name it.
+    pub auth: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -91,6 +97,8 @@ impl Default for Config {
             gerrit: Gerrit {
                 enabled: true,
                 branch: None,
+                url: None,
+                auth: None,
             },
             series: Series {
                 max_commits: 50,
@@ -152,6 +160,15 @@ pub struct UpdateLayer {
 pub struct GerritLayer {
     pub enabled: Option<bool>,
     pub branch: Option<String>,
+    pub url: Option<String>,
+    pub auth: Option<AuthLayer>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AuthLayer {
+    /// The program and its arguments, run with no shell.
+    pub command: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -200,6 +217,11 @@ impl Config {
         if let Some(gerrit) = layer.gerrit {
             self.gerrit.enabled = gerrit.enabled.unwrap_or(self.gerrit.enabled);
             self.gerrit.branch = gerrit.branch.or(self.gerrit.branch.take());
+            self.gerrit.url = gerrit.url.or(self.gerrit.url.take());
+            self.gerrit.auth = gerrit
+                .auth
+                .map(|auth| auth.command)
+                .or(self.gerrit.auth.take());
         }
         if let Some(series) = layer.series {
             self.series.max_commits = series.max_commits.unwrap_or(self.series.max_commits);
@@ -239,15 +261,41 @@ impl Config {
 /// wrong is: a configuration that is silently ignored is worse than one that
 /// refuses to start, because nobody notices.
 pub fn load(repo_root: &Path) -> Result<Config> {
+    load_from(site_path().as_deref(), user_path().as_deref(), repo_root)
+}
+
+/// The layers of `load`, from the files it is given.
+fn load_from(site: Option<&Path>, user: Option<&Path>, repo_root: &Path) -> Result<Config> {
     let mut config = Config::default();
 
-    for path in [user_path(), Some(repo_root.join(".qreview.json"))]
-        .into_iter()
-        .flatten()
-    {
-        if let Some(layer) = read(&path)? {
-            config.apply(layer);
+    if let Some(site) = site {
+        match read(site)? {
+            Some(layer) => config.apply(layer),
+            // A share that is not mounted must not stop a review.
+            None => eprintln!(
+                "qreview: {SITE_VAR} names {}, which cannot be read",
+                site.display()
+            ),
         }
+    }
+    if let Some(layer) = user.map(read).transpose()?.flatten() {
+        config.apply(layer);
+    }
+    let path = repo_root.join(".qreview.json");
+    if let Some(layer) = read(&path)? {
+        // A repository that someone cloned must not choose a command that
+        // the server runs.
+        if layer.gerrit.as_ref().is_some_and(|g| g.auth.is_some()) {
+            bail!(
+                "{} sets gerrit.auth, which only the configuration of the user or of \
+                 the site may set. Remove it from that file",
+                path.display()
+            );
+        }
+        config.apply(layer);
+    }
+    if config.gerrit.auth.as_ref().is_some_and(Vec::is_empty) {
+        bail!("gerrit.auth.command is empty. Name the program, and its arguments");
     }
     Ok(config)
 }
@@ -304,6 +352,16 @@ pub fn update(repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
     load(repo_root)
 }
 
+/// The variable that names the configuration of the site: the file that a
+/// team shares, read before the one of the user.
+pub const SITE_VAR: &str = "QREVIEW_SITE_CONFIG";
+
+fn site_path() -> Option<PathBuf> {
+    std::env::var_os(SITE_VAR)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+}
+
 fn user_path() -> Option<PathBuf> {
     let base = match std::env::var_os("XDG_CONFIG_HOME").filter(|d| !d.is_empty()) {
         Some(dir) => PathBuf::from(dir),
@@ -350,7 +408,13 @@ mod tests {
     fn the_later_layer_wins() {
         let mut config = Config::default();
         config.apply(layer(r#"{"gerrit":{"enabled":false}}"#));
-        config.apply(layer(r#"{"gerrit":{"enabled":true}}"#));
+        config.apply(layer(
+            r#"{"gerrit":{"enabled":true,"url":"https://review.example.com"}}"#,
+        ));
+        assert_eq!(
+            config.gerrit.url.as_deref(),
+            Some("https://review.example.com")
+        );
 
         assert!(config.gerrit.enabled);
     }
@@ -394,6 +458,64 @@ mod tests {
     }
 
     #[test]
+    fn only_the_user_names_the_command_of_the_authorization() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".qreview.json"),
+            r#"{"gerrit":{"auth":{"command":["sh","-c","evil"]}}}"#,
+        )
+        .unwrap();
+
+        let error = load_from(None, None, dir.path()).unwrap_err().to_string();
+        assert!(error.contains("gerrit.auth"), "{error}");
+
+        let mut config = Config::default();
+        config.apply(layer(
+            r#"{"gerrit":{"auth":{"command":["gerrit-auth","--host","x"]}}}"#,
+        ));
+        assert_eq!(
+            config.gerrit.auth,
+            Some(vec![
+                "gerrit-auth".to_owned(),
+                "--host".to_owned(),
+                "x".to_owned()
+            ])
+        );
+    }
+
+    #[test]
+    fn the_site_comes_first_and_may_name_the_command_of_the_authorization() {
+        let dir = tempfile::tempdir().unwrap();
+        let site = dir.path().join("site.json");
+        let user = dir.path().join("user.json");
+        std::fs::write(
+            &site,
+            r#"{"gerrit":{"url":"https://site.example.com","auth":{"command":["site-auth"]}},"ui":{"diff":"side-by-side"}}"#,
+        )
+        .unwrap();
+        std::fs::write(&user, r#"{"gerrit":{"url":"https://review.example.com"}}"#).unwrap();
+
+        let config = load_from(Some(&site), Some(&user), dir.path()).unwrap();
+
+        assert_eq!(config.gerrit.auth, Some(vec!["site-auth".to_owned()]));
+        assert_eq!(config.ui.diff, "side-by-side");
+        assert_eq!(
+            config.gerrit.url.as_deref(),
+            Some("https://review.example.com"),
+            "the user wins over the site"
+        );
+    }
+
+    #[test]
+    fn a_site_file_that_is_not_there_stops_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let config = load_from(Some(&dir.path().join("nothing.json")), None, dir.path()).unwrap();
+
+        assert_eq!(config, Config::default());
+    }
+
+    #[test]
     fn the_repository_layer_is_read_after_the_user_one() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -402,7 +524,7 @@ mod tests {
         )
         .unwrap();
 
-        let config = load(dir.path()).unwrap();
+        let config = load_from(None, None, dir.path()).unwrap();
         assert_eq!(config.languages.get("zz").map(String::as_str), Some("yaml"));
         assert_eq!(config.ui.diff, "side-by-side");
     }

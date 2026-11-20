@@ -4,11 +4,11 @@
 // passes or fails here, it only makes the interface visible.
 
 import { chromium, type Page } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import config from '../playwright.config.ts';
 import { openChange, openFile, useSplit } from './act.ts';
-import { build, rebaseNewest } from './fixture.ts';
+import { GERRIT_THREADS, build, rebaseNewest } from './fixture.ts';
 import { start } from './server.ts';
 
 const OUT = join(import.meta.dirname, '.shots');
@@ -347,6 +347,24 @@ for (const scheme of ['light', 'dark'] as const) {
   await second.locator('.talk-box:not(.posted-box)').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-posted.png`) });
 
+  // A remark staged for Gerrit: the box that stages it, then its card.
+  await second.locator('td.gutter-comment[data-column="new"]').nth(3).click();
+  await second.getByRole('textbox').first().fill('Please say why the loop stops at three.');
+  await second.locator('form.talk-box').getByLabel('For Gerrit').check();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-box.png`) });
+  await second.getByRole('button', { name: 'Save', exact: true }).click();
+  await second.locator('.talk-tag-gerrit').first().waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-staged.png`) });
+
+  // The dialog of Send, then the remark once it is a draft on Gerrit.
+  await second.getByRole('button', { name: /^Send to Gerrit/ }).click();
+  await second.getByRole('dialog').waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-send.png`) });
+  await second.keyboard.press('Enter');
+  await second.getByRole('dialog').waitFor({ state: 'detached' });
+  await second.getByText('draft on Gerrit').first().waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-sent.png`) });
+
   // A line of the blame that opens its change on Gerrit.
   await second.keyboard.press('b');
   await second.locator('td.blame a[target="_blank"]').first().hover();
@@ -358,6 +376,43 @@ for (const scheme of ['light', 'dark'] as const) {
   await openFile(second, 'Commit message');
   await second.locator('.posted-box').first().waitFor();
   await second.screenshot({ path: join(OUT, `${scheme}-posted-change.png`) });
+
+  // The threads of Gerrit over REST: replies under their remark, and a
+  // resolved thread folded. The file goes once the shot is taken, so the
+  // next scheme reads the ssh answer again.
+  const threads = join(other.fixture.bin!, 'comments.json');
+  writeFileSync(threads, `)]}'\n${JSON.stringify(GERRIT_THREADS)}\n`);
+  await second.getByRole('button', { name: 'Read the repository again' }).click();
+  await openFile(second, 'net.blk');
+  // The scheme before resolved this thread with its reply: open it again.
+  const asking = second.locator('.posted-box', { hasText: 'Where does this loop stop?' });
+  await asking.waitFor();
+  if (await asking.evaluate((card) => card.classList.contains('talk-folded'))) {
+    await asking.getByRole('button', { name: /Jane Reviewer/ }).click();
+  }
+  await second.getByText('At the first error.').waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-threads.png`) });
+
+  // A reply in a thread of Gerrit, For Gerrit, that resolves it.
+  await asking.getByRole('button', { name: 'Reply' }).click();
+  await asking.getByRole('textbox').fill('It stops after three tries now.');
+  await asking.getByLabel('For Gerrit').check();
+  await asking.getByLabel('Resolve').check();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-reply-box.png`) });
+  await asking.getByRole('button', { name: 'Save', exact: true }).click();
+  await asking.locator('form').waitFor({ state: 'detached' });
+  await second.waitForTimeout(300);
+  if (await asking.evaluate((card) => card.classList.contains('talk-folded'))) {
+    await asking.getByRole('button', { name: /Jane Reviewer/ }).click();
+  }
+  await asking.getByText('It stops after three tries now.').first().waitFor();
+  await second.screenshot({ path: join(OUT, `${scheme}-gerrit-reply.png`) });
+  await second.getByRole('button', { name: /^Send to Gerrit/ }).click();
+  await second.getByRole('dialog').waitFor();
+  await second.keyboard.press('Enter');
+  await second.getByRole('dialog').waitFor({ state: 'detached' });
+  rmSync(threads);
+  await second.getByRole('button', { name: 'Read the repository again' }).click();
 
   // The work of the agent, named in the top bar.
   const otherSession = (await (

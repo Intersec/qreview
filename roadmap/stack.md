@@ -1156,6 +1156,78 @@ The server sees no change. The `wait` still asks `/api/events` again every 30 se
 
 Nothing in the storage format or the export moves.
 
+## 2026-11-11 — qreview sends remarks to Gerrit as drafts
+
+qreview served one use: the author reviews their own series before the push. Two other uses came up, and the tool did both badly:
+
+- **Answering the reviewers.** The remarks of the reviewers were shown read only and counted nowhere. The author took them to an agent in another session, and wrote the answers in Gerrit by hand.
+- **Reviewing a colleague.** The reader fetched and checked out the change by hand, and then copied each remark into Gerrit.
+
+The concept said that qreview reads from Gerrit and never writes to it. That rule blocked both uses.
+
+**Decision.** qreview writes to Gerrit, with three limits:
+
+- It writes **drafts** and nothing else. A draft is visible to its author only. The reader publishes it in Gerrit, with the vote, as they do today. qreview never publishes, never votes and never submits.
+- It writes **when the reader clicks Send**, and at no other time. The agent stages a remark for Gerrit, and the reader decides when it leaves.
+- It writes **through the REST API**, with an authorization that a command of the reader gives. Section 6.6 of the design holds how qreview uses it without keeping it.
+
+Beside this, qreview reads the threads of Gerrit through REST, with their ids and their state. An unresolved thread of a reviewer is work, like a remark of the reader: it is counted, exported, and the agent can fix it. Section 6.8 holds the rules.
+
+The rest stays on ssh: the query, the patch sets, `git fetch`, and the commits of a blame. REST serves only what ssh cannot.
+
+Settled while building Send, on 2026-11-13: Send shows only when a remark is staged. For Gerrit works without an authorization, and only Send needs one. `GET /api/gerrit/status` holds the state of REST, so `GET /api/session` never waits for the command of the authorization.
+
+Settled while reading the threads, on 2026-11-13: `GET /api/changes/:key/posted` gives the published remarks only, with no `draft: true`. A draft of the reader that qreview sent is already a remark of the store, and showing it twice would count it twice.
+
+`qreview <gerrit-url>` fetches a change and opens its review, on the server of the worktree. Sections 6.9 and 11 hold the rules.
+
+**Why REST for the threads and the drafts.** The ssh query gives no comment id, no thread link and no resolved state. Without the id, a reply opens a new thread beside the thread of the reviewer and resolves nothing. `gerrit review --json` over ssh can post, but it publishes at once: it cannot write a draft.
+
+**Why drafts.** A mistake of the tool, or of the agent, then reaches nobody. The reader reads every remark once more in Gerrit, where the colleague will read it, before it is public. This also lowers the cost of the one weak point: the agent holds the same session token as the page, so the server cannot prove that a click came from the reader. The send route refuses a request on the Unix socket, which is the only way in for an agent in a container.
+
+**Why a command of the reader.** Gerrit moves to OIDC, which ends the HTTP password. `gerrit.auth.command` names a program that prints `{"authorization": "<value of the header>", "expiresIn": <seconds>}`: a token of OIDC or an HTTP password, from a refresh token, a keyring or a central service. qreview stores no secret, reads no secret from its own configuration, and gives none to the page or to the agent. The command runs at the first REST call, in the terminal where the reader started `qreview`, so it may ask a password or open a browser there. Only the configuration of the user may name it: a cloned repository must not choose a program that the server runs. Settled on 2026-11-19, when the move to OIDC was announced.
+
+**Rejected:**
+
+- **ssh only.** No threads and no drafts, see above.
+- **REST for everything.** It would replace a query and a fetch that work, and a patch set would have to be rebuilt from the content of its files. qreview runs on the host, where ssh and `git fetch` are there.
+- **Publishing directly.** The agent drafts the text, and one click would make it public under the name of the reader.
+- **A password in the configuration of qreview.** A secret in a plain file, which a reader copies between machines and pastes into an issue.
+- **The git credential helper, or environment variables that qreview reads.** They hold an HTTP password, which OIDC ends, and a keyring is a poor place for it. A command covers both, and a token too.
+- **qreview as a client of the MCP server that Claude sessions will use for Gerrit.** qreview sends without Claude, when the reader clicks Send. An MCP client needs the protocol, its transport and its own OAuth, for four REST calls. Tools made for a model give no contract on the fields that a draft needs, such as `in_reply_to` and the ranges in UTF-16 units. The MCP server needs an authorization too, so the problem moves without going away. And a client shared with the agent weakens the rule that the agent never writes to Gerrit.
+- **A login at the start of `qreview`, or a `qreview gerrit login` command.** A series with no Gerrit would ask for nothing it needs. And the server is another process: a command that keeps no cache, such as one that asks a password, could not give it to the server.
+- **`curl -u user:password`.** Every local user reads the arguments of a process in `ps`.
+- **An HTTP crate in the binary.** The tool already runs `git`, `ssh` and `curl` as child processes. A TLS stack would grow the static binary for one feature.
+
+The store goes to format 5: a comment gains `gerrit`, and `parent` can name a thread of Gerrit. The export changes: it holds the open threads of the reviewers, and a review of a colleague's change opens with another request. The concept loses the non-goal "qreview never writes to Gerrit".
+
+## 2026-11-13 — The export of a series that holds changes of colleagues
+
+Section 9 said that a series of both kinds asks per change, and said nothing of a series of colleagues only, nor of the opening above the headings.
+
+**Decision.** A series of the reader only keeps its opening. A series of colleagues only asks once for help, in the words of the change alone. A mixed series opens with a neutral sentence, and each heading says whose change it is and what to do. The fix route refuses the change of a colleague too, so a request that skips the page still fixes nothing.
+
+**Rejected:**
+
+- Asking per change in every series: a series of one kind would repeat one sentence under every heading.
+
+## 2026-11-14 — A remark on the whole commit message stays on it
+
+A remark about the whole commit message went out as `/PATCHSET_LEVEL`, so Gerrit showed it as a remark about the change, in the Reply box. The reader wanted it on `/COMMIT_MSG`, beside the message.
+
+**Decision.** A remark about the whole message goes to `/COMMIT_MSG` with no line, as a remark on a file. Only a remark with no anchor still goes to `/PATCHSET_LEVEL`. Section 6.7 of the design holds the rule.
+
+## 2026-11-14 — A staged thread sends its last word
+
+The reader wrote a remark that asked the agent for a review, the agent answered, and the reader checked For Gerrit. The body of the remark went out, and the answer stayed here. The reader wanted the answer.
+
+**Decision.** A staged remark sends the newest reply of its thread, or its own body when it has no reply. The page tags the reply that goes out. `qreview stage <id>` stages the thread itself, and writes the text of the agent as its newest reply, so one thread is one remark on Gerrit. For Gerrit starts clear in every box, also on the change of a colleague: the usual path is a remark, Save & ask, the talk, and then "put it on Gerrit". A staged remark stays on its patch set after an amend, so its thread still takes a reply on an earlier version, the one exception to section 5.7. Section 5.8 of the design holds the rule.
+
+**Rejected:**
+
+- **Moving the mark to the reply.** A reply in qreview has no place of its own, and every route that stages, counts and migrates reads the mark on the remark.
+- **Copying the answer into the body of the remark.** The question of the reader would be lost.
+
 ## 2026-11-17 — The server says how to reach it in the git directory
 
 An agent in a devcontainer cannot reach the server on the machine. The container has its own network, its own `/tmp` and its own `~/.local/state`. It shares the project only, at the same path. The study "qreview in a Devcontainer" compared five ways in.
@@ -1167,3 +1239,86 @@ An agent in a devcontainer cannot reach the server on the machine. The container
 - **An opt-in `--share` flag.** Every devcontainer would need it, and a forgotten flag looks like a server that does not run.
 - **Mounting the store and the socket directory into each container.** It hands every container the tokens and the comments of every repository.
 - **The loopback port through the network of the container.** A hole in its firewall to every service on the loopback of the machine.
+
+## 2026-11-17 — The threads of Gerrit that wait come first
+
+The first review of comments from Gerrit showed the problem. Two reviewers left a thread and a -1 on a change. The list of comments did not show the thread, and it showed the done remarks of the review instead. The row of the change said `· 1 ✎`, and nothing told that the one was a reviewer.
+
+**Decision.** The list of comments becomes the list of what is left to handle, titled **To handle**. It opens with the threads of Gerrit that wait, and counts them. The open remarks follow, those staged for Send included. The done, the sent and the previous remarks wait behind one click: the rule "a remark is never hidden" holds. The row of a change counts the threads of Gerrit apart. The `✎` counts on the changes and the files count what To handle lists, so a remark staged for Send counts there. Copy and Fix count the work of the agent alone. Section 6.8 of the design holds it.
+
+## 2026-11-17 — The page says what the server waits on, and shows the trace
+
+On a slow link, the first read of the threads of Gerrit took 19 seconds, and the page showed nothing in that time. Only a run with `--trace` told why, and a reader does not restart a review to learn it.
+
+**Decision.** The server keeps the last 2000 lines of the trace in memory, `--trace` or not, and the slow calls say when they start. The page shows a quiet chip in the top bar while a slow call runs for more than 300 ms, and a Trace window, opened from the version, streams the lines. Two routes serve them, `GET /api/activity` and `GET /api/trace`. A line costs a string, which is nothing beside the child process that it describes. Section 11 of the design holds it.
+
+**Rejected:**
+
+- **Lines only with `--trace`.** The reader who needs them is the one who did not start with it.
+- **A message per slow call through the events.** The events are for the agent and the reader; a poll of one cheap route each second carries no state to keep in step.
+
+## 2026-11-17 — Apply a thread of Gerrit
+
+The skill `apply-review`, which answers a Gerrit review without qreview, asks the reader for each comment whether to apply it, fixes the problem at every site of the pattern and not only on the line, and replies "Done, also in X and Y." Fix in qreview applied every clear request of a change at once, and closed each thread with a bare "Done".
+
+**Decision.** A thread of Gerrit that waits, on a change of the reader, gets an **Apply** button beside Ask agent. It sends the event `fix` of the change with the id of the thread, and the agent fixes that thread alone. The procedure of the agent says to fix the pattern in the commit, to list the sites of other commits and of older code, to say the other sites in the reply, and to stage the reason of a reader who does not want the change. Fix this change and Fix the series stay for a reader who agrees with the whole review.
+
+**Rejected:**
+
+- **Apply on every remark.** The remarks of the reader already go to the agent through Ask agent and Fix; a third button on each card is noise.
+
+## 2026-11-17 — The agent stages a remark on the change of a colleague
+
+In a review of the change of a colleague, the reader wrote "This is a review, propose a better sentence". The agent answered with the sentence and a remark worded for the author, then asked "Tell me if you want it marked for Gerrit". The reader had to answer "Do a comment to be sent through qreview". The procedure said to stage only on a request, which fits the series of the reader, where a remark is talk with the agent. On the change of a colleague, a remark of the reader is meant for the author.
+
+**Decision.** On a change whose `own` is false, the agent stages each remark for the author that comes out of its answer, in the same turn, with `qreview stage`. Its talk with the reader goes first, in a plain reply. A question about the code that gives no remark for the author stages nothing. The agent's own review of such a change is staged too, by `qreview comment` itself: the agent ran `/is-review` with its own instruction, which left out `--gerrit`, so a rule in the procedure alone does not hold. Where Gerrit does not hold the version, `comment` writes a plain remark. For Gerrit still starts clear in the box of the reader, and only Send makes a draft on Gerrit.
+
+**Rejected:**
+
+- **For Gerrit ticked by default on the change of a colleague.** The reader often writes a remark to ask the agent first; the text that goes out is the agent's wording, not the first remark.
+
+## 2026-11-18 — A question of the reader on Gerrit waits for the author
+
+The reader sent a question to Gerrit on the change of a colleague. Its thread came back unresolved, so it counted as work in To handle. To clear it, the reader ticked Done. The Done box of a thread of Gerrit stages a reply `Done` that resolves it. That reply would have closed the question before the author answered. The thread folded, so the reply was hidden, and Send the series counted one more remark than the reader could find.
+
+**Decision.** A thread of Gerrit waits for the reader only when its newest comment is of somebody else. The reader is the account with the email `user.email`, or the account that `GET /a/accounts/self` gives, by email or username. The thread carries `waits`. Only a thread that waits counts as work: in To handle, in the counts, and in the export. A thread with a reply staged for Send never folds on its own.
+
+**Rejected:**
+
+- **Done as a mark that stays in qreview on a thread of Gerrit.** On a thread that waits for the reader, Done is the Done of Gerrit, which the author of the change needs. Once a question of the reader no longer counts as work, nothing asks the reader to tick it.
+
+## 2026-11-18 — Delete and Clean keep the comments on disk
+
+Delete and Clean erased the comments from the file of the change. The reader wants them kept: to restore one by hand, and to study the reviews later.
+
+**Decision.** Format 6 of the change file adds `deleted`, a list apart from `comments`. Delete and Clean move each comment there, with `deletedAt`, `deletedBy` and `how` (`delete` or `clean`). Nothing reads the list. A restore is a move back into `comments` by hand, with the server stopped. A format 5 file reads as one with no deleted comment. An older qreview refuses a format 6 file, as for each format.
+
+**Rejected:**
+
+- **A `deleted` mark on each comment, in `comments`.** Every reader of `comments` would have to skip it: the page, the export, the counts, the threads, the moves of a migrate. One reader that forgets shows a deleted comment again. A list apart needs no reader to change.
+- **A `qreview restore` command.** The reader asked for a manual operation. A command can come when a restore is frequent.
+
+## 2026-11-19 — A draft of the agent names the agent
+
+Gerrit shows each draft under the name of the reader, who sends it. The author of the change cannot tell a remark of the agent from a remark of the reader.
+
+**Decision.** The agent names itself in its wait: `qreview wait --agent <name>`. The server keeps the newest name in memory, and writes it as `agentName` on each comment of the agent. Each wait sends the name, so a server that restarts learns it again at the next wait. When qreview sends a draft whose text the agent wrote, the `message` starts with the line `From <agentName>:`, or `From the agent:` without a name, and a blank line. The text that goes out is the newest reply of the thread, so the author of that reply decides. The store keeps the text without the line, so the page and the export do not change. A remark of the agent that the reader edits keeps its author, and keeps the line. The field joins format 6, which no release has written yet.
+
+**Rejected:**
+
+- **The agent writes the line in its text.** The page would show it on every remark of the agent, in the series of the reader too, where nothing goes to Gerrit. And the procedure of the agent can forget it.
+- **`From Claude:` for every agent, or `Claude` when `CLAUDECODE` is set.** qreview works with any agent, and the binary must not know one by name.
+- **`QREVIEW_AGENT` in the environment.** Each user must set it once. The procedure of the agent already runs `wait` at each turn.
+- **`--agent` on each command that writes.** The agent can forget it on one command, and that draft goes out unnamed.
+
+## 2026-11-20 — A configuration of the site, named by a variable
+
+A team deploys one `gerrit.auth.command` for every reader, and will replace it when Gerrit moves to OIDC. The team keeps the script on a shared disk, and loads a common shell profile for everyone, but cannot write in the home of each reader. qreview read only the file of the user and the file of the repository.
+
+**Decision.** `QREVIEW_SITE_CONFIG` names a configuration file, read after the defaults and before the file of the user. It holds every key that a user file holds, `gerrit.auth` included: a reader controls their environment as they control their home. A user file overrides it key by key. A file that cannot be read, such as a share that is not mounted, gives a line on standard error and stops nothing. The tests remove the variable from their environment, so a site command never runs in a test.
+
+**Rejected:**
+
+- **A variable per key, such as `QREVIEW_CONF_GERRIT_AUTH_COMMAND`.** The command is a list, which a variable holds only through a parsing of its own. Each key needs a name, and a new shared setting needs an edit of the shell profile.
+- **`XDG_CONFIG_DIRS`.** It is the standard for this, but a common profile that sets it changes where every other program looks for its configuration.
+- **A fixed path such as `/etc/qreview/config.json`.** The team cannot write there on every machine.

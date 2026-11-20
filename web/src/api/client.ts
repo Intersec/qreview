@@ -12,6 +12,8 @@ import type {
   EventBatch,
   FileDiff,
   FileEntry,
+  GerritStatus,
+  ChangeThreads,
   MergeListItem,
   NewComment,
   PatchSet,
@@ -21,8 +23,11 @@ import type {
   Review,
   Rendered,
   Row,
+  Sent,
   Series,
   SessionBody,
+  Activity,
+  TraceLines,
 } from './types';
 
 export class ApiError extends Error {
@@ -242,16 +247,35 @@ export const api = {
     }),
 
   /// Ask the agent to fix the change, or the whole series with no key.
-  fix: (key?: string) =>
-    fetch(key ? `/api/changes/${encodeURIComponent(key)}/fix` : '/api/series/fix', {
-      method: 'POST',
-      credentials: 'same-origin',
-    }).then(async (response) => {
+  /// With a thread, the agent fixes that thread alone: the Apply of it.
+  fix: (key?: string, thread?: string) =>
+    fetch(
+      key
+        ? `/api/changes/${encodeURIComponent(key)}/fix${thread ? `?thread=${encodeURIComponent(thread)}` : ''}`
+        : '/api/series/fix',
+      {
+        method: 'POST',
+        credentials: 'same-origin',
+      },
+    ).then(async (response) => {
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         throw new ApiError(body?.error?.code ?? 'failed', body?.error?.message ?? 'failed');
       }
     }),
+
+  gerritStatus: () => call<GerritStatus>('/api/gerrit/status'),
+  activity: () => call<Activity>('/api/activity'),
+  trace: (after: number) => call<TraceLines>(`/api/trace?after=${after}`),
+  gerritThreads: () => call<ChangeThreads[]>('/api/gerrit/threads'),
+
+  /// Send the staged remarks of a change to Gerrit as drafts, or of the
+  /// whole series with no key.
+  sendDrafts: (key?: string) =>
+    call<Sent>(
+      key ? `/api/changes/${encodeURIComponent(key)}/gerrit/send` : '/api/series/gerrit/send',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    ),
 
   clean: (key: string) =>
     call<{ deleted: number }>(`/api/changes/${encodeURIComponent(key)}/clean`, {

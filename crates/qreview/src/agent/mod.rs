@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use address::Address;
 use client::Client;
 
+use crate::comments::NOT_ON_GERRIT;
 use crate::git::exec::Git;
 use crate::store::Store;
 
@@ -142,17 +143,33 @@ pub fn parse_place(text: &str) -> Result<Place> {
 }
 
 /// Write a remark as the agent.
+///
+/// On the change of a colleague, a remark is for its author, so it is
+/// staged for Gerrit unasked. The agent forgets a flag, mostly when another
+/// skill writes the review. Where Gerrit does not hold the version, the
+/// remark stays in qreview.
 pub async fn comment(
     client: &Client,
     place: &Place,
     body: &str,
     key: Option<&str>,
+    gerrit: bool,
 ) -> Result<Value> {
+    let session = client.get("/api/session").await?;
     let key = match key {
         Some(key) => key.to_owned(),
-        None => change_with(client, &place.file).await?,
+        None => change_with(client, &session, &place.file).await?,
     };
-    let mut new = json!({ "body": body, "author": "agent", "file": place.file });
+    let colleague = session["series"]["changes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|change| change["key"].as_str() == Some(&key) && change["own"] == json!(false));
+    let mut new = json!({
+        "body": body,
+        "author": "agent",
+        "file": place.file,
+    });
     match &place.lines {
         Some((side, from, to)) => {
             new["scope"] = json!(if from == to { "line" } else { "range" });
@@ -162,15 +179,20 @@ pub async fn comment(
         }
         None => new["scope"] = json!("file"),
     }
-
-    client
-        .post(&format!("/api/changes/{}/comments", segment(&key)), &new)
-        .await
+    let path = format!("/api/changes/{}/comments", segment(&key));
+    if gerrit || colleague {
+        let mut staged = new.clone();
+        staged["gerrit"] = json!({});
+        match client.post(&path, &staged).await {
+            Err(error) if !gerrit && error.to_string().starts_with(NOT_ON_GERRIT) => {}
+            written => return written,
+        }
+    }
+    client.post(&path, &new).await
 }
 
 /// The newest change of the series that touches the file.
-async fn change_with(client: &Client, file: &str) -> Result<String> {
-    let session = client.get("/api/session").await?;
+async fn change_with(client: &Client, session: &Value, file: &str) -> Result<String> {
     let changes = session["series"]["changes"]
         .as_array()
         .cloned()
@@ -201,6 +223,14 @@ pub async fn reply(
     done: bool,
     blocked: bool,
 ) -> Result<Value> {
+    if let Some(id) = id.strip_prefix(GERRIT) {
+        if done {
+            bail!(
+                "a thread of Gerrit is done when a reply resolves it there. Run `qreview stage gerrit:{id} --resolve --body Done`"
+            );
+        }
+        return on_gerrit(client, id, body, None, blocked).await;
+    }
     let key = key_of(client, id).await?;
     let mut new = json!({
         "scope": "change",
@@ -218,22 +248,142 @@ pub async fn reply(
         .await
 }
 
-/// The change that holds a comment.
-async fn key_of(client: &Client, id: &str) -> Result<String> {
+/// Write a staged remark at the place of the thread that holds `id`.
+///
+/// The thread is the talk between the user and the agent, and stays in
+/// qreview. The new remark is what the author of the change reads. See
+/// section 5.8 of the design.
+pub async fn stage(client: &Client, id: &str, body: &str, resolve: bool) -> Result<Value> {
+    if let Some(id) = id.strip_prefix(GERRIT) {
+        return on_gerrit(client, id, body, Some(resolve), false).await;
+    }
+    if resolve {
+        bail!("--resolve answers a thread of Gerrit, and {id} is a thread of qreview");
+    }
+    let (key, comments) = change_of(client, id).await?;
+    let find = |id: &str| comments.iter().find(|c| c["id"].as_str() == Some(id));
+    let comment = find(id).with_context(|| format!("no comment {id} in this series"))?;
+    // A thread is one remark and its replies: the place is the remark's.
+    let root = match comment["parent"].as_str() {
+        Some(parent) => {
+            find(parent).with_context(|| format!("no comment {parent} in this series"))?
+        }
+        None => comment,
+    };
+
+    if root["gerrit"]["state"].as_str() == Some("sent") {
+        bail!("the thread {id} is a draft on Gerrit already. Change it there");
+    }
+    let route = format!("/api/changes/{}/comments", segment(&key));
+    let reply = json!({
+        "scope": root["scope"],
+        "parent": root["id"],
+        "author": "agent",
+        "body": body,
+    });
+    // A staged thread stays on its patch set after an amend, so its version
+    // does not matter: the reply is the new text.
+    if root["gerrit"]["state"].as_str() == Some("staged") {
+        return client.post(&route, &reply).await;
+    }
+
+    let session = client.get("/api/session").await?;
+    let current = session["series"]["changes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|change| change["key"].as_str() == Some(&key))
+        .and_then(|change| change["commit"].as_str());
+    if current != root["commit"].as_str() {
+        bail!(
+            "the thread {id} is on an older version of the change. Write the remark on the \
+             current one with `qreview comment <place> --gerrit`"
+        );
+    }
+
+    // One thread is one remark on Gerrit: the thread is staged, and its
+    // newest reply is the text that goes out. Staged first, so a version
+    // that Gerrit does not hold writes no reply.
+    let root_id = root["id"].as_str().unwrap_or_default();
+    client
+        .patch(
+            &format!("{route}/{}", segment(root_id)),
+            &json!({ "gerrit": {} }),
+        )
+        .await?;
+    client.post(&route, &reply).await
+}
+
+/// How a thread of Gerrit is named on the command line.
+const GERRIT: &str = "gerrit:";
+
+/// Reply to the thread of Gerrit that holds the comment `id`. With a
+/// stage, the reply goes out in the thread at the next Send of the user.
+async fn on_gerrit(
+    client: &Client,
+    id: &str,
+    body: &str,
+    stage: Option<bool>,
+    blocked: bool,
+) -> Result<Value> {
+    let (key, thread) = gerrit_thread_of(client, id).await?;
+    let mut new = json!({
+        "scope": "line",
+        "parent": format!("{GERRIT}{thread}"),
+        "author": "agent",
+        "body": body,
+        "blocked": blocked,
+    });
+    if let Some(resolve) = stage {
+        new["gerrit"] = json!({ "resolve": resolve });
+    }
+
+    client
+        .post(&format!("/api/changes/{}/comments", segment(&key)), &new)
+        .await
+}
+
+/// The change, and the thread, that hold a comment of Gerrit.
+async fn gerrit_thread_of(client: &Client, id: &str) -> Result<(String, String)> {
+    let all = client.get("/api/gerrit/threads").await?;
+
+    for change in all.as_array().into_iter().flatten() {
+        for thread in change["threads"].as_array().into_iter().flatten() {
+            let holds = thread["comments"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|c| c["id"].as_str() == Some(id));
+            if let (true, Some(key), Some(root)) =
+                (holds, change["key"].as_str(), thread["id"].as_str())
+            {
+                return Ok((key.to_owned(), root.to_owned()));
+            }
+        }
+    }
+    bail!("no thread of Gerrit holds {id}. If Gerrit answers, run `qreview refresh` and try again")
+}
+
+/// The change that holds a comment, and every comment of that change.
+async fn change_of(client: &Client, id: &str) -> Result<(String, Vec<Value>)> {
     let all = client.get("/api/comments").await?;
 
     all.as_array()
         .into_iter()
         .flatten()
-        .find(|change| {
-            change["comments"]
-                .as_array()
-                .into_iter()
-                .flatten()
+        .find_map(|change| {
+            let comments = change["comments"].as_array()?;
+            comments
+                .iter()
                 .any(|c| c["id"].as_str() == Some(id))
+                .then(|| Some((change["key"].as_str()?.to_owned(), comments.clone())))?
         })
-        .and_then(|change| change["key"].as_str().map(str::to_owned))
         .with_context(|| format!("no comment {id} in this series"))
+}
+
+/// The change that holds a comment.
+async fn key_of(client: &Client, id: &str) -> Result<String> {
+    Ok(change_of(client, id).await?.0)
 }
 
 /// Declare `to` the next version of `from`, and move the threads onto it.
@@ -310,7 +460,12 @@ pub async fn wait(
     home: &Home,
     after: Option<u64>,
     timeout: Option<Duration>,
+    name: Option<&str>,
 ) -> Result<(Value, bool)> {
+    // Sent on every wait: a server that restarts learns it again.
+    let named = name.map_or(String::new(), |name| {
+        format!("&agent={}", crate::gerrit::rest::encode(name))
+    });
     let deadline = timeout.map(|timeout| Instant::now() + timeout);
     let mut client = reach(home, deadline).await?;
     let mut after = match after {
@@ -321,8 +476,16 @@ pub async fn wait(
     };
 
     loop {
+        // The server holds a wait for half a minute: a shorter time limit
+        // says how long it may hold this one.
+        let held = deadline
+            .map(|deadline| {
+                let left = deadline.saturating_duration_since(Instant::now());
+                format!("&wait={}", left.as_millis())
+            })
+            .unwrap_or_default();
         let Ok(batch) = client
-            .get(&format!("/api/events?after={after}&who=agent"))
+            .get(&format!("/api/events?after={after}&who=agent{held}{named}"))
             .await
         else {
             let back = reach(home, deadline).await?;
@@ -382,15 +545,58 @@ async fn with_threads(client: &Client, events: Vec<Value>) -> Result<Vec<Value>>
         .flat_map(|change| change["comments"].as_array().into_iter().flatten())
         .collect();
 
+    // The threads of Gerrit only when one is asked about: REST may be slow.
+    let asks_gerrit = events
+        .iter()
+        .any(|e| e["id"].as_str().is_some_and(|id| id.starts_with(GERRIT)));
+    let gerrit = match asks_gerrit {
+        true => client.get("/api/gerrit/threads").await?,
+        false => Value::Null,
+    };
+
     Ok(events
         .into_iter()
         .map(|mut event| {
-            if let Some(id) = event["id"].as_str() {
-                event["thread"] = Value::Array(thread_of(&comments, id));
-            }
+            let thread = match event["id"].as_str() {
+                Some(id) => match id.strip_prefix(GERRIT) {
+                    Some(id) => gerrit_thread(&gerrit, id),
+                    None => thread_of(&comments, id),
+                },
+                None => return event,
+            };
+            event["thread"] = Value::Array(thread);
             event
         })
         .collect())
+}
+
+/// A thread of Gerrit as the agent reads it: the comments of Gerrit, each
+/// with the name of its author, then the replies written here.
+fn gerrit_thread(all: &Value, id: &str) -> Vec<Value> {
+    let Some(thread) = all
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|change| change["threads"].as_array().into_iter().flatten())
+        .find(|thread| thread["id"].as_str() == Some(id))
+    else {
+        return Vec::new();
+    };
+    let mut out: Vec<Value> = thread["comments"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|c| {
+            json!({
+                "id": format!("{GERRIT}{}", c["id"].as_str().unwrap_or_default()),
+                "author": "gerrit",
+                "name": c["author"],
+                "body": c["body"],
+            })
+        })
+        .collect();
+    out.extend(thread["replies"].as_array().into_iter().flatten().cloned());
+    out
 }
 
 /// The remark `id` and its replies, oldest first.
@@ -532,5 +738,37 @@ mod tests {
         assert_eq!(segment("I8f3a"), "I8f3a");
         assert_eq!(segment("sha-4a91"), "sha-4a91");
         assert_eq!(segment("../x?y"), "xy");
+    }
+
+    #[test]
+    fn a_thread_of_gerrit_reads_its_reviewers_then_the_replies_here() {
+        let all = json!([{
+            "key": "I1",
+            "threads": [{
+                "id": "g1",
+                "comments": [
+                    { "id": "g1", "author": "Jane", "body": "Why?" },
+                    { "id": "g2", "author": "Bob", "body": "Indeed." }
+                ],
+                "replies": [{ "id": "c-1", "author": "reader", "body": "Answer this." }]
+            }]
+        }]);
+
+        let thread = gerrit_thread(&all, "g1");
+
+        let said: Vec<(&str, &str)> = thread
+            .iter()
+            .map(|c| (c["id"].as_str().unwrap(), c["body"].as_str().unwrap()))
+            .collect();
+        assert_eq!(
+            said,
+            [
+                ("gerrit:g1", "Why?"),
+                ("gerrit:g2", "Indeed."),
+                ("c-1", "Answer this.")
+            ]
+        );
+        assert_eq!(thread[0]["name"], "Jane");
+        assert!(gerrit_thread(&all, "gone").is_empty());
     }
 }

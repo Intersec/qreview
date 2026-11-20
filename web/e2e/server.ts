@@ -13,6 +13,9 @@ export interface Running {
   /// Kill the server and keep it, so another one can start on it. This is
   /// how a test reads the same repository a second time.
   kill(): void;
+  /// Run a command of the agent on the repository, and answer what it
+  /// printed.
+  agent(args: string[]): string;
 }
 
 export const BINARY = join(import.meta.dirname, '..', '..', 'target', 'release', 'qreview');
@@ -47,7 +50,14 @@ export async function start(
   // No test talks to a server. qreview asks its home whether a newer
   // release is out, so every fixture says to ask nobody, and the suite that
   // is about that check names its own address.
-  const config = { update: { url: '' }, ...options.config };
+  const config = {
+    update: { url: '' },
+    // The account of the fake Gerrit.
+    ...(options.gerrit
+      ? { gerrit: { auth: { command: [join(fixture.bin!, 'gerrit-auth')] } } }
+      : {}),
+    ...options.config,
+  };
 
   mkdirSync(join(fixture.config, 'qreview'), { recursive: true });
   writeFileSync(join(fixture.config, 'qreview', 'config.json'), JSON.stringify(config, null, 2));
@@ -59,13 +69,14 @@ export async function start(
     args.push('--prev', fixture.previous);
   }
 
-  const { child, url } = await spawnOn(fixture.repo, args, {
+  const env = {
     XDG_STATE_HOME: fixture.state,
     XDG_CONFIG_HOME: fixture.config,
     NO_COLOR: '1',
     // The fake ssh answers the query and serves the fetch.
     PATH: options.gerrit ? `${fixture.bin}:${process.env.PATH}` : process.env.PATH,
-  });
+  };
+  const { child, url } = await spawnOn(fixture.repo, args, env);
 
   return {
     url,
@@ -75,7 +86,22 @@ export async function start(
       fixture.remove();
     },
     kill: () => child.kill('SIGTERM'),
+    agent: (args) =>
+      execFileSync(BINARY, args, {
+        cwd: fixture.repo,
+        encoding: 'utf8',
+        env: { ...inherited(), ...env },
+      }),
   };
+}
+
+/// The environment of the tests, without the configuration of the site of
+/// whoever runs them: its `gerrit.auth.command` would give a real account
+/// to the fake curl, which logs what it is given.
+export function inherited(): NodeJS.ProcessEnv {
+  const out = { ...process.env };
+  delete out.QREVIEW_SITE_CONFIG;
+  return out;
 }
 
 /// Start the binary on a repository and wait for the address it prints.
@@ -86,7 +112,7 @@ export async function spawnOn(
 ): Promise<{ child: ChildProcess; url: string }> {
   const child: ChildProcess = spawn(BINARY, args, {
     cwd: repo,
-    env: { ...process.env, ...env },
+    env: { ...inherited(), ...env },
   });
 
   const url = await new Promise<string>((resolve, reject) => {

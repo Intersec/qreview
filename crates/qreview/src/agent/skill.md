@@ -23,6 +23,12 @@ Outside a fix: no edit, no `git commit`, no amend, no rebase, no
 
 ## Start
 
+If the `origin` remote of the repository is a Gerrit server, the user
+starts the server in their own terminal, not you: Gerrit may ask them to
+log in there. Ask them to run `qreview`, or `qreview <gerrit-url>` for a
+change of Gerrit. Go on when `qreview wait --timeout 1` exits with code
+1 and JSON.
+
 If your commands run in a sandbox, the user starts the server, not you. A
 server started inside the sandbox cannot save comments, and the browser of
 the user cannot reach it. You know you are in one when `qreview` prints
@@ -39,6 +45,8 @@ directory of the worktree from a devcontainer, with nothing to configure.
      answers.
    - `qreview <rev>` or `qreview <revA>..<revB>` reviews another range.
      To change the range, the user stops the old server first.
+   - `qreview <gerrit-url>` fetches a change of Gerrit and reviews it on
+     the server of the worktree. See "A change of a colleague".
 2. Read the open threads: `qreview export --json`.
 3. Start the loop below.
 
@@ -46,9 +54,12 @@ directory of the worktree from a devcontainer, with nothing to configure.
 
 Repeat until the user says the review is over:
 
-1. Run `qreview wait --after <next>` in the background. Use the `next`
-   number of the last `wait`. Leave out `--after` the first time. Give it
-   no `--timeout`: it blocks until the user asks, for hours if needed.
+1. Run `qreview wait --agent <your name> --after <next>` in the
+   background, such as `--agent Claude`. Use the `next` number of the last
+   `wait`. Leave out `--after` the first time. Give it no `--timeout`: it
+   blocks until the user asks, for hours if needed. A draft of Gerrit that
+   you wrote starts with `From <your name>:`, so the author of the change
+   knows that an agent wrote it.
 2. When it returns, read the JSON:
    - `events`: the requests of the user. An event of kind `ask` names one
      thread, and carries it in `thread`: the remark first, then the
@@ -62,7 +73,10 @@ Repeat until the user says the review is over:
      answers `"reset": true`.
    - An event of kind `fix`: the user pressed **Fix this change** on the
      change `key`. See "Fix a change". If `key` is empty, the user pressed
-     **Fix the series**. See "Fix the series".
+     **Fix the series**. See "Fix the series". If the event names a thread
+     in `id` and carries it in `thread`, the user pressed **Apply** on that
+     thread of Gerrit: fix that thread alone, as "Fix a change" says, and
+     leave every other thread as it is.
 3. Answer the thread. See "Answer a remark". Change nothing. If `thread` is empty, or a
    reply fails with `no comment`, the user deleted the thread: skip it, and
    do not look into why.
@@ -94,6 +108,77 @@ Rules:
 - Answer in the thread, not in the terminal. The user reads the browser.
 - A long body goes on standard input: `--body -`.
 - Markdown works in a body.
+
+## Put a remark on Gerrit
+
+The user sends remarks to Gerrit from qreview, where the author of the
+change reads them. One thread of qreview becomes one remark on Gerrit,
+and its text is the **newest reply** of the thread. The usual path:
+
+1. The user writes a remark, and asks you about it (Save & ask).
+2. You answer, and the two of you talk in the thread.
+3. The user asks you to put it on Gerrit: "put it on Gerrit", "format it
+   for Gerrit", "word it for the author". Run:
+
+   ```sh
+   qreview stage <id> --body "<the remark, for the author of the change>"
+   ```
+
+   `stage` marks the thread For Gerrit, and writes your text as its
+   newest reply. The card shows that reply with the tag "for Gerrit".
+4. The user reads it, edits it if needed, and clicks Send.
+
+Rules:
+
+- Write the body to the author of the change, not to the user. Leave out
+  your talk with the user, and do not mention qreview or yourself.
+- After `stage`, write no other reply in that thread: a newer reply would
+  become the text that goes out. If the user asks something more there,
+  answer, then run `stage` again with the whole text for the author, so
+  that it is the newest reply again.
+- Never answer "Staged for Gerrit." or the like in the thread. The tag on
+  the card already says it.
+- On a change of the user, stage only what the user asked for. Without a
+  request, a thread stays in qreview.
+- On a change of a colleague, a remark is for the author: stage it without
+  a request. See "A change of a colleague".
+
+**You never send anything to Gerrit.** No command does: the user sends from
+the page, and Gerrit keeps each remark as a draft that only the user sees
+until they publish it there. `stage` fails when Gerrit does not hold the
+version yet: tell the user that the change must be pushed first.
+
+## Threads of Gerrit
+
+The remarks that reviewers posted on Gerrit are threads too. Their id
+reads `gerrit:<id>`, in the export and in an `ask` event. A comment of
+Gerrit has the author `gerrit`, and `name` says which reviewer wrote it.
+A thread of Gerrit that waits for an answer is work, like a remark of the
+user: it is in the export, and in a fix.
+
+- **Talk with the user about it**: `qreview reply gerrit:<id> --body
+  "<text>"`. That reply stays in qreview: the reviewer never reads it.
+- **Answer the reviewer**, when the user asks: `qreview stage gerrit:<id>
+  --body "<text>"`. Write to the reviewer. The user sends it.
+- **Close it in a fix**: for a thread whose request you carried out, run
+  `qreview stage gerrit:<id> --resolve --body "Done"`, not `--done`. Gerrit
+  then shows the thread resolved, once the user sends. Say more in one
+  short sentence only when "Done" alone does not show what you did:
+  "Done, also in X and Y." or "Done: the helper is in the change before
+  this one." Name only what this version fixes.
+- **Fix the pattern, not only the line.** A reviewer names one place but
+  means the problem. Search the series for the other sites of the same
+  problem, by the pattern and not only by the name of the line. Fix the
+  sites of this commit with it. In "Fix the series", fix each site in the
+  commit that holds it. In "Fix a change", list in your reply the sites of
+  other commits, and fix none of them. A site in code that the series does
+  not touch is older than the review: list it, and do not fix it.
+- **When the user does not want the change**, they say why. Stage that
+  reason for the reviewer with `qreview stage gerrit:<id> --body
+  "<reason>"`, worded for the reviewer. Add `--resolve` only when the user
+  asks for it.
+- A thread of Gerrit takes no `--done` and no `--blocked` in `migrate`.
+  Its place stays on the patch set it was posted on.
 
 ## Change the code
 
@@ -146,7 +231,8 @@ The user asked for a fix of a change: deal with every open thread of it.
    - a thread that waits for the user: leave it.
 3. Make all the fixes, amend once, and run one `qreview migrate` with
    `--done` for the threads you fixed and `--blocked` for your questions.
-   Nothing else is Done.
+   Nothing else is Done. For a thread of Gerrit that you fixed, stage a
+   reply that resolves it instead (see "Threads of Gerrit").
 4. Wait again, **only once the whole fix is over**: the code, the amend,
    every migrate and every reply. Your next `qreview wait` tells the page
    that the fix is done, and the page then shows it all at once. Do not
@@ -158,6 +244,8 @@ The user asked for a fix of every change of the series: deal with every
 open thread of the series.
 
 1. `qreview export --json` lists the open threads of each change.
+   Skip a change with `"own": false`: it belongs to a colleague (see "A
+   change of a colleague").
 2. Sort them as in "Fix a change".
 3. For each commit that has a thread to fix, note its sha, make its fixes,
    and stage only those edits. Then run `git commit --fixup=<sha>`. The top
@@ -169,6 +257,32 @@ open thread of the series.
    one `qreview migrate` for each pair that changed, with the `--done` ids
    and the `--blocked` questions of that commit only.
 6. Wait again, **only once the whole fix is over**, as in "Fix a change".
+
+## A change of a colleague
+
+A change whose `own` is false in `qreview export --json` belongs to a
+colleague. The user reviews it, and never amends it:
+
+- Change no code and no commit for it, even in a fix.
+- A remark of the user on it is meant for the author. When your answer
+  leads to a remark for the author, stage it at once, in the same turn. Do
+  not ask whether it goes to Gerrit: the user reads it, and sends or
+  edits it.
+  1. If you have something to tell the user first, such as what you
+     checked or why the remark holds, write it with `qreview reply`.
+  2. Then run `qreview stage <id> --body "<the remark, for the author>"`,
+     as in "Put a remark on Gerrit". Do not also copy the remark in the
+     reply.
+- If the user only asks you a question about the code, and no remark for
+  the author comes out of it, answer with `qreview reply` and stage
+  nothing.
+- When you review such a change on your own, `qreview comment` stages
+  each remark for Gerrit, without `--gerrit`: each remark is for the
+  author. This holds when another skill writes the review too. Where Gerrit
+  does not hold the version, the remark stays in qreview.
+
+When the user opened the change with `qreview <gerrit-url>`, its review
+runs on the server of the worktree: the commands reach it as usual.
 
 ## Review on your own
 
@@ -186,6 +300,8 @@ qreview comment src/net.c --body "A remark about the whole file."
 - The change is the newest commit of the series that touches the file. Name
   another one with `--key <Change-Id>`.
 - Each command prints the comment it wrote, with its `id`.
+- On a change of a colleague, each remark is staged for Gerrit (see "A
+  change of a colleague").
 
 Then wait for the replies of the user with the loop above.
 
@@ -195,9 +311,11 @@ Then wait for the replies of the user with the loop above.
 |---|---|
 | `qreview` | Start the review, or print the address of the one that runs |
 | `qreview export --json` | The open threads, each comment with its `id` |
-| `qreview wait [--after <n>] [--timeout <s>]` | Block until the user asks, and print it as JSON. No time limit by default |
+| `qreview wait [--agent <name>] [--after <n>] [--timeout <s>]` | Block until the user asks, and print it as JSON. No time limit by default. `--agent` names you in your drafts of Gerrit |
 | `qreview reply <id> --body <text> [--done] [--blocked]` | Reply to a thread |
-| `qreview comment <file>[:<side>:<line>[-<end>]] --body <text> [--key <id>]` | Write a remark |
+| `qreview comment <file>[:<side>:<line>[-<end>]] --body <text> [--key <id>] [--gerrit]` | Write a remark, staged for Gerrit with `--gerrit`, and always on the change of a colleague |
+| `qreview stage <id> --body <text>` | Stage a thread for Gerrit, with the text for the author as its newest reply |
+| `qreview stage gerrit:<id> --body <text> [--resolve]` | Write a reply in a thread of Gerrit, staged, and resolve it with `--resolve` |
 | `qreview migrate --from <old> [--to <new>] [--done <ids>] [--blocked <id>=<text>]` | Declare a new version after an amend, and move its threads |
 | `qreview refresh` | Read the repository again |
 

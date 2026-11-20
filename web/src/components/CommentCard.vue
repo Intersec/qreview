@@ -93,6 +93,33 @@ async function toggleDone(event: Event) {
   await threads?.setDone(props.comment.id, (event.target as HTMLInputElement).checked);
 }
 
+/// A draft on Gerrit is changed there: here it is read only.
+const sent = computed(() => props.comment.gerrit?.state === 'sent');
+/// A sent remark whose draft was deleted on Gerrit left nothing there: it
+/// can be staged again.
+const gone = computed(() => sent.value && threads?.sentState?.(props.comment) === 'deleted');
+
+/// The For Gerrit box: on a remark that is not sent yet, on a version that
+/// Gerrit holds. A staged remark can always come back here.
+const stageable = computed(
+  () =>
+    threads?.setGerrit !== undefined &&
+    (!sent.value || gone.value) &&
+    (props.comment.gerrit?.state === 'staged' || threads.onGerrit?.value === true),
+);
+
+/// The reply that a staged thread sends: its newest one. The reader often
+/// asks the agent to word the remark, and the answer is what goes out.
+const outgoing = computed(() =>
+  props.comment.gerrit?.state === 'staged'
+    ? replies.value[replies.value.length - 1]?.id
+    : undefined,
+);
+
+async function toggleGerrit(event: Event) {
+  await threads?.setGerrit?.(props.comment.id, (event.target as HTMLInputElement).checked);
+}
+
 function when(comment: Comment): string {
   return comment.createdAt.slice(0, 16).replace('T', ' ');
 }
@@ -196,6 +223,37 @@ function saveEdit(id: string, body: string) {
         <span>{{ when(comment) }}</span>
         <span v-if="agent" class="talk-tag">agent</span>
         <span v-if="blocked" class="talk-tag talk-tag-waiting">waits for you</span>
+        <span
+          v-if="comment.gerrit?.state === 'staged'"
+          class="talk-tag talk-tag-gerrit"
+          :title="
+            outgoing
+              ? 'The newest reply of this thread goes to Gerrit when you click Send'
+              : 'This remark goes to Gerrit when you click Send'
+          "
+          >for Gerrit</span
+        >
+        <span
+          v-else-if="gone"
+          class="talk-tag"
+          title="This draft was deleted on Gerrit. Check For Gerrit to send it again"
+          >deleted on Gerrit</span
+        >
+        <a
+          v-else-if="sent && threads?.gerritUrl?.value"
+          class="talk-tag talk-tag-gerrit"
+          :href="threads.gerritUrl.value"
+          target="_blank"
+          rel="noopener"
+          title="This remark is a draft on Gerrit. Edit or publish it there"
+          >draft on Gerrit</a
+        >
+        <span
+          v-else-if="sent"
+          class="talk-tag talk-tag-gerrit"
+          title="This remark is a draft on Gerrit. Edit or publish it there"
+          >draft on Gerrit</span
+        >
       </template>
       <button
         v-if="moved"
@@ -243,10 +301,22 @@ function saveEdit(id: string, body: string) {
           <span v-if="answer.blocked && answer.author === 'agent'" class="talk-tag talk-tag-waiting"
             >question</span
           >
+          <span
+            v-if="answer.id === outgoing"
+            class="talk-tag talk-tag-gerrit"
+            title="This reply goes to Gerrit when you click Send"
+            >for Gerrit</span
+          >
           <template v-if="mine(answer) && !editing && !replying">
             <span class="spacer"></span>
             <button type="button" class="action" @click="editingId = answer.id">Edit</button>
             <button type="button" class="action" @click="emit('remove', answer.id)">Delete</button>
+          </template>
+          <!-- The text that goes to Gerrit, whoever wrote it: the reader reads
+               it, and edits it if needed, before Send. -->
+          <template v-else-if="answer.id === outgoing && !readOnly && !editing && !replying">
+            <span class="spacer"></span>
+            <button type="button" class="action" @click="editingId = answer.id">Edit</button>
           </template>
         </p>
         <CommentBox
@@ -272,9 +342,22 @@ function saveEdit(id: string, body: string) {
       </div>
 
       <div v-if="!editing && !replying && !frozen" class="talk-foot">
-        <label v-if="threads" class="talk-done-box">
+        <!-- A remark for Gerrit is a message to a colleague, and no work to be done. -->
+        <label v-if="threads && !comment.gerrit" class="talk-done-box">
           <input type="checkbox" :checked="comment.done" @change="toggleDone" />
           Done
+        </label>
+        <label
+          v-if="stageable"
+          class="talk-done-box"
+          title="Send this thread to Gerrit as a draft: its newest reply, or the remark when it has none"
+        >
+          <input
+            type="checkbox"
+            :checked="comment.gerrit?.state === 'staged'"
+            @change="toggleGerrit"
+          />
+          For Gerrit
         </label>
         <span class="spacer"></span>
         <span v-if="asked || threads?.answering?.value === comment.id" class="talk-hint"
@@ -291,7 +374,7 @@ function saveEdit(id: string, body: string) {
         </button>
         <button v-if="threads" type="button" class="action" @click="replying = true">Reply</button>
         <button
-          v-if="!answered.has(comment.id)"
+          v-if="!answered.has(comment.id) && !sent"
           type="button"
           class="action"
           @click="editingId = comment.id"

@@ -185,7 +185,44 @@ function fakeGerrit(base: string, repo: string): { bin: string; served: string }
   );
   chmodSync(ssh, 0o755);
 
+  // The REST API, for the drafts. It keeps what it was given: the
+  // arguments in one file, and the configuration on standard input, which
+  // holds the password, in another.
+  const curl = join(bin, 'curl');
+  const log = JSON.stringify(join(bin, 'curl.log'));
+  const ids = JSON.stringify(join(bin, 'drafts.ids'));
+  writeFileSync(join(bin, 'self.json'), `)]}'\n{"name":"Test Reviewer"}\n`);
+  writeFileSync(
+    curl,
+    [
+      '#!/bin/sh',
+      '# The REST API of a Gerrit that is a shell script. See e2e/fixture.ts.',
+      `echo "$*" >> ${JSON.stringify(join(bin, 'curl-args.log'))}`,
+      'config=$(cat)',
+      `echo "$config" >> ${log}`,
+      `echo -- >> ${log}`,
+      'case "$config" in',
+      `  *accounts/self*) cat ${JSON.stringify(join(bin, 'self.json'))}; printf 200 ;;`,
+      // The threads of the change, when a test wrote them.
+      `  */comments\\"*) if [ -f ${JSON.stringify(join(bin, 'comments.json'))} ]; then cat ${JSON.stringify(join(bin, 'comments.json'))}; printf 200; else echo "Not found"; printf 404; fi ;;`,
+      // The drafts of the reader: each one written is kept until a test
+      // deletes it from drafts.ids, as a reader would on Gerrit.
+      `  */drafts\\"*GET*) echo ")]}'"; printf '{"a":['; sed 's/.*/{"id":"&"}/' ${ids} 2>/dev/null | paste -sd, -; printf ']}\\n'; printf 200 ;;`,
+      `  */drafts*) id="draft-$(grep -c '^--$' ${log})"; echo "$id" >> ${ids}; echo ")]}'"; echo "{\\"id\\":\\"$id\\"}"; printf 201 ;;`,
+      '  *) echo "Not found"; printf 404 ;;',
+      'esac',
+      '',
+    ].join('\n'),
+  );
+  chmodSync(curl, 0o755);
+
   git(repo, ['remote', 'add', 'origin', 'ssh://review.example.com:29418/myproject']);
+
+  // The authorization of the fake account, as `gerrit.auth.command` gives it.
+  const auth = join(bin, 'gerrit-auth');
+  const basic = Buffer.from('reviewer:s3cret').toString('base64');
+  writeFileSync(auth, `#!/bin/sh\necho '{"authorization":"Basic ${basic}"}'\n`);
+  chmodSync(auth, 0o755);
 
   return { bin, served };
 }
@@ -468,3 +505,59 @@ export function addGuide(repo: string) {
   );
   commit(repo, 'docs: write a manual', 'Change-Id: Imanualaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 }
+
+/// What the REST API of Gerrit answers for the comments of the change
+/// `net: retry the read`: a thread that waits, with a reply, a resolved
+/// one, one on the parent side, and a question of the reader, which waits
+/// for the author and not for the reader.
+export const GERRIT_THREADS = {
+  'src/net.blk': [
+    {
+      id: 'ask1',
+      patch_set: 2,
+      line: 3,
+      author: { name: 'Jane Reviewer' },
+      message: 'Where does this loop stop?',
+      unresolved: true,
+      updated: '2026-11-01 10:00:00.000000000',
+    },
+    {
+      id: 'ask2',
+      in_reply_to: 'ask1',
+      patch_set: 2,
+      line: 3,
+      author: { name: 'Test Author' },
+      message: 'At the first error.',
+      unresolved: true,
+      updated: '2026-11-01 11:00:00.000000000',
+    },
+    {
+      id: 'ok1',
+      patch_set: 2,
+      line: 1,
+      author: { name: 'Jane Reviewer' },
+      message: 'Rename this function.',
+      unresolved: false,
+      updated: '2026-11-01 09:00:00.000000000',
+    },
+    {
+      id: 'old1',
+      patch_set: 2,
+      side: 'PARENT',
+      line: 3,
+      author: { name: 'Jane Reviewer' },
+      message: 'This return was the only exit.',
+      unresolved: true,
+      updated: '2026-11-01 09:30:00.000000000',
+    },
+    {
+      id: 'mine1',
+      patch_set: 2,
+      line: 2,
+      author: { name: 'A Developer', email: 'author@example.com' },
+      message: 'Can this read block?',
+      unresolved: true,
+      updated: '2026-11-01 12:00:00.000000000',
+    },
+  ],
+};

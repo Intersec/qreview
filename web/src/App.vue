@@ -6,7 +6,10 @@ import { questions, turnMark } from './notify';
 import ChangeBar from './components/ChangeBar.vue';
 import DiffView from './components/DiffView.vue';
 import CleanDialog from './components/CleanDialog.vue';
+import TraceDialog from './components/TraceDialog.vue';
+import { api } from './api/client';
 import FixDialog from './components/FixDialog.vue';
+import SendDialog from './components/SendDialog.vue';
 import PreferencesDialog from './components/PreferencesDialog.vue';
 import ShortcutHelp from './components/ShortcutHelp.vue';
 import LoadingVeil from './components/LoadingVeil.vue';
@@ -19,7 +22,7 @@ import { THREADS } from './diff/threads';
 import { any as anyDraft } from './diff/drafts';
 import { describe as describeTask } from './activity';
 import { show as showSignal, signalOf } from './favicon';
-import type { Anchor, Comment } from './api/types';
+import type { Anchor, Comment, Waiting } from './api/types';
 import type { BlameLine } from './diff/blame';
 
 const review = useReview();
@@ -36,12 +39,15 @@ const {
   written,
   total,
   countOf,
+  listedCount,
+  openGerrit,
+  gerritWaiting,
+  gerritReading,
   batchSize,
   inFile,
   release,
   version,
   build,
-  posted,
   readingOlder,
   currentSha,
   onMerge,
@@ -69,7 +75,12 @@ const {
   openHere,
   doneHere,
   waitingHere,
+  waitingSeries,
   openSeries,
+  colleague,
+  stagedHere,
+  stagedSeries,
+  gerritStatus,
 } = storeToRefs(review);
 
 /// The server stopped, and the reader still holds unsaved remarks. The tab
@@ -132,7 +143,9 @@ const noFix = computed(() =>
 const fixing = ref<'change' | 'series' | null>(null);
 
 function openFix(scope: 'change' | 'series') {
-  if (agent.value && !working.value && (scope === 'series' || changeKey.value)) {
+  // The reader does not fix the change of a colleague, section 5.9.
+  const target = scope === 'series' || (changeKey.value !== null && !colleague.value);
+  if (agent.value && !working.value && target) {
     fixing.value = scope;
   }
 }
@@ -144,6 +157,39 @@ async function sendFix() {
     await review.askFix(scope);
   }
 }
+
+/// The dialog of Send: the scope it sends, the remarks Gerrit refused at
+/// the last send, and whether one runs.
+const sending = ref<'change' | 'series' | null>(null);
+const sendFailed = ref(new Map<string, string>());
+const sendBusy = ref(false);
+
+function openSend(scope: 'change' | 'series') {
+  sendFailed.value = new Map();
+  sending.value = scope;
+}
+
+async function sendToGerrit() {
+  const scope = sending.value;
+  if (!scope) {
+    return;
+  }
+  sendBusy.value = true;
+  const out = await review.sendDrafts(scope);
+  sendBusy.value = false;
+  sendFailed.value = new Map((out?.failed ?? []).map((f) => [f.id, f.error]));
+  // What left is gone from the list. What Gerrit refused stays, with why.
+  if (out && out.failed.length === 0) {
+    sending.value = null;
+  }
+}
+
+/// Why Send cannot send, for its title.
+const noSend = computed(() =>
+  gerritStatus.value?.rest === 'ok'
+    ? null
+    : (gerritStatus.value?.reason ?? 'Gerrit takes no draft from this run'),
+);
 
 async function jumpTo(thread: { key: string; comment: Comment }) {
   fixing.value = null;
@@ -179,9 +225,20 @@ function undoClean() {
 
 provide(THREADS, {
   repliesOf: review.repliesOf,
+  postedRepliesOf: review.postedRepliesOf,
+  replyOnGerrit: review.replyOnGerrit,
+  askGerrit: review.askGerrit,
+  applyGerrit: review.applyGerrit,
+  canApply: computed(() => agent.value && !working.value && !colleague.value),
+  setGerritDone: review.setGerritDone,
+  remove: review.deleteComment,
+  sentState: (comment: Comment) => review.sentState(changeKey.value ?? '', comment),
+  gerritUrl: computed(() => review.gerritUrl),
   reply: review.reply,
   ask: review.askAgent,
   setDone: review.setDone,
+  setGerrit: review.setGerrit,
+  onGerrit: computed(() => review.onGerrit),
   blockedChanges,
   blockedFiles,
   movedTo: review.movedTo,
@@ -192,6 +249,10 @@ provide(THREADS, {
 const comments = computed(() => review.comments());
 /// How many comments the change on the screen carries.
 const here = computed(() => (changeKey.value ? (countOf.value.get(changeKey.value) ?? 0) : 0));
+/// How many threads of reviewers wait in each change.
+const gerritCounts = computed(
+  () => new Map([...openGerrit.value].map(([key, threads]) => [key, threads.length])),
+);
 /// The two settings the browser owns rather than the server.
 const codeStyle = computed(() => ({
   '--code-size': `${config.value?.diff.fontSize ?? 12}px`,
@@ -551,16 +612,40 @@ watch(
   { immediate: true },
 );
 
+/// What the server waits on now, such as a query to Gerrit: on a slow link,
+/// a page that only waits looks broken.
+const waiting = ref<Waiting[]>([]);
+/// The Trace window: the lines of `--trace`, without a restart.
+const tracing = ref(false);
+let watchServer: ReturnType<typeof setInterval> | undefined;
+async function readActivity() {
+  if (document.visibilityState !== 'visible' || stopped.value) {
+    return;
+  }
+  try {
+    waiting.value = (await api.activity()).waiting;
+  } catch {
+    waiting.value = [];
+  }
+}
+/// The call that has waited the longest. A short one would only flicker.
+const slowest = computed(() => {
+  const first = waiting.value[0];
+  return first && first.ms >= 300 ? first : null;
+});
+
 onMounted(() => {
   void goTo(null, review.load(parse(location.hash)));
   window.addEventListener('keydown', onKey);
   void review.listen();
   window.addEventListener('popstate', onPop);
+  watchServer = setInterval(() => void readActivity(), 1000);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('popstate', onPop);
+  clearInterval(watchServer);
 });
 </script>
 
@@ -605,6 +690,7 @@ onBeforeUnmount(() => {
           >Agent connected</span
         >
         <button
+          v-if="!colleague"
           type="button"
           class="chip chip-fix"
           :title="noFix ?? 'Ask the agent to fix this change (a)'"
@@ -623,6 +709,24 @@ onBeforeUnmount(() => {
           Fix the series<span v-if="openSeries.length" class="count">
             · {{ openSeries.length }}</span
           >
+        </button>
+        <button
+          v-if="stagedHere.length > 0"
+          type="button"
+          class="chip chip-gerrit"
+          :title="noSend ?? 'Send the remarks for Gerrit of this change, as drafts'"
+          @click="openSend('change')"
+        >
+          Send to Gerrit<span class="count"> · {{ stagedHere.length }}</span>
+        </button>
+        <button
+          v-if="stagedSeries.length > stagedHere.length"
+          type="button"
+          class="chip chip-gerrit"
+          :title="noSend ?? 'Send the remarks for Gerrit of every change, as drafts'"
+          @click="openSend('series')"
+        >
+          Send the series<span class="count"> · {{ stagedSeries.length }}</span>
         </button>
         <button
           type="button"
@@ -668,7 +772,28 @@ onBeforeUnmount(() => {
           ⚙
         </button>
         <span v-if="copied" role="status" class="copied">copied</span>
-        <span class="quiet version" :title="`qreview ${build}`">{{ version }}</span>
+        <button
+          v-if="slowest"
+          type="button"
+          class="server-waits"
+          role="status"
+          :title="`${waiting.map((call) => call.what).join('\n')}\n\nOpen the trace`"
+          @click="tracing = true"
+        >
+          <span class="server-waits-what">{{ slowest.what }}</span>
+          · {{ (slowest.ms / 1000).toFixed(0) }}s<span v-if="waiting.length > 1">
+            +{{ waiting.length - 1 }}</span
+          >
+        </button>
+        <button
+          type="button"
+          class="quiet version"
+          :title="`qreview ${build}`"
+          aria-label="Open the trace"
+          @click="tracing = true"
+        >
+          {{ version }}
+        </button>
         <a
           v-if="release?.newer"
           class="newer"
@@ -711,7 +836,10 @@ onBeforeUnmount(() => {
         :busy="busy"
         :batch="batchSize"
         :loading-files="loadingFiles"
-        :counts="countOf"
+        :counts="listedCount"
+        :gerrit-counts="gerritCounts"
+        :gerrit-waiting="gerritWaiting"
+        :gerrit-reading="gerritReading"
         :written="written"
         :in-file="inFile"
         @open-change="goToChange"
@@ -768,7 +896,7 @@ onBeforeUnmount(() => {
             :current-sha="currentSha"
             :sets="patchSets"
             :placement="review.placement"
-            :posted="posted.comments"
+            :posted="review.postedRoots"
             :posted-placement="review.postedPlacement"
             :posted-stranded="postedStranded"
             :read-only="readingOlder"
@@ -818,13 +946,31 @@ onBeforeUnmount(() => {
       v-if="fixing"
       :series="fixing === 'series'"
       :open="fixing === 'series' ? openSeries : openHere"
-      :waiting="fixing === 'series' ? blockedThreads : waitingHere"
+      :waiting="fixing === 'series' ? waitingSeries : waitingHere"
       :subject-of="subjectOf"
       @send="sendFix"
       @jump="jumpTo"
       @close="fixing = null"
     />
 
+    <SendDialog
+      v-if="sending"
+      :series="sending === 'series'"
+      :staged="sending === 'series' ? stagedSeries : stagedHere"
+      :status="gerritStatus"
+      :failed="sendFailed"
+      :sending="sendBusy"
+      :subject-of="subjectOf"
+      :unpushed="
+        review.unpushed([
+          ...new Set((sending === 'series' ? stagedSeries : stagedHere).map((t) => t.key)),
+        ])
+      "
+      @send="sendToGerrit"
+      @close="sending = null"
+    />
+
+    <TraceDialog v-if="tracing" @close="tracing = false" />
     <CleanDialog
       v-if="confirmingClean"
       :done="doneHere"

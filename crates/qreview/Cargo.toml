@@ -36,6 +36,8 @@ pulldown-cmark = { version = "0.13", default-features = false }
 asciidoc-parser = "=0.31.2"
 asciidoc-html5 = "=0.2.3"
 ammonia = "4"
+# Already in the tree through axum: the Gerrit calls of the changes run side by side.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 insta = "1"

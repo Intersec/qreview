@@ -199,6 +199,11 @@ body {
 .chip:disabled {
   opacity: 0.45;
 }
+/* Send to Gerrit: the one button whose work leaves this tool. */
+.chip-gerrit {
+  border-color: var(--pick-edge);
+  color: var(--pick-edge);
+}
 .chip[aria-pressed='true'] {
   background: var(--pick);
   border-color: var(--pick-edge);
@@ -1076,6 +1081,33 @@ tr.talk td {
 .list-row.is-previous {
   opacity: 0.62;
 }
+.list-row.is-done {
+  opacity: 0.62;
+  text-decoration: line-through;
+}
+/* The threads of reviewers: the work that someone waits on. */
+.tag-gerrit {
+  background: var(--pick);
+  color: var(--pick-edge);
+  font-weight: 600;
+}
+.list-reading {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+.list-more {
+  display: block;
+  width: 100%;
+  padding: 4px 10px;
+  text-align: left;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.list-more:hover {
+  color: var(--ink);
+}
 .talk-stranded {
   border-style: dashed;
 }
@@ -1127,6 +1159,13 @@ tr.talk td {
   white-space: nowrap;
   color: var(--ink-faint);
 }
+/* A remark bound for Gerrit, staged or sent. Blue, the color of the
+   selection, because it leaves this tool. */
+.talk-tag-gerrit {
+  background: var(--pick);
+  color: var(--pick-edge);
+  font-weight: 600;
+}
 /* A thread that waits for the reader. It must catch the eye. */
 .talk-blocked {
   border-color: var(--waiting-edge);
@@ -1165,8 +1204,10 @@ tr.talk td {
 }
 .talk-done-box {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
   font-weight: 600;
   color: var(--ink-quiet);
 }
@@ -1184,6 +1225,10 @@ tr.talk td {
 }
 .count {
   margin-left: 4px;
+}
+.count-gerrit {
+  color: var(--pick-edge);
+  font-weight: 600;
 }
 
 .files {
@@ -1797,6 +1842,18 @@ a.change-id:hover {
 .clean-hint {
   margin-left: auto;
 }
+/* The patch set a remark goes to, in the dialog of Send. */
+.send-set {
+  margin: 0 4px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+/* Why a remark, or the whole send, did not leave. */
+.send-failed {
+  margin: 2px 0 6px;
+  white-space: normal;
+  color: var(--waiting-ink);
+}
 /* The Undo of Clean, at the foot of the window, above the panes. */
 .undo-note {
   position: fixed;
@@ -1942,4 +1999,93 @@ button.agent-working {
 .talk-moved:hover,
 .talk-moved:focus-visible {
   background: var(--agent-edge);
+}
+
+/* What the server waits on, such as a query to Gerrit. Quiet, with the pulse
+   of the agent, so a slow link reads as work and not as a broken page. */
+.server-waits {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 360px;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-quiet);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.server-waits::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-quiet);
+  animation: agent-pulse 1.2s ease-in-out infinite;
+}
+.server-waits-what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+button.version {
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+button.version:hover {
+  text-decoration: underline;
+}
+.trace-panel {
+  width: min(70rem, 92vw);
+  max-width: none;
+}
+.trace-waiting {
+  margin: 0 0 6px;
+  padding-left: 1.2em;
+  color: var(--ink-quiet);
+  font-size: 12px;
+}
+.trace-body {
+  height: 60vh;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--pane);
+  font-family: var(--code-font);
+  font-size: 11px;
+}
+.trace-line {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  white-space: pre;
+}
+.trace-at,
+.trace-ms {
+  flex: none;
+  text-align: right;
+  color: var(--ink-faint);
+}
+.trace-at {
+  width: 6em;
+}
+.trace-ms {
+  width: 7em;
+}
+.trace-ms.is-slow {
+  color: var(--waiting-ink);
+  font-weight: 600;
+}
+.trace-what {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

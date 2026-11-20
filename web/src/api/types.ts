@@ -52,6 +52,9 @@ export interface ChangeSummary {
   /// The lines the commit adds and removes against its first parent.
   /// Absent on a merge, and when git could not count them.
   lines?: LineCount | null;
+  /// False on the change of a colleague, which the reader does not fix.
+  /// See section 5.9 of the design.
+  own?: boolean;
 }
 
 export interface LineCount {
@@ -202,12 +205,47 @@ export interface Comment {
   body: string;
   anchor: Anchor | null;
   author: Author;
+  /// The name that the agent gave, on a comment of the agent. A draft of
+  /// Gerrit starts with it.
+  agentName?: string;
   /// The remark that opens the thread, on a reply.
   parent: string | null;
   /// The thread is done. Only on the remark that opens it.
   done: boolean;
   /// A reply of the agent that waits for the reader.
   blocked: boolean;
+  /// Set when the remark goes to Gerrit. Null on a remark that stays here.
+  gerrit: GerritMark | null;
+}
+
+/// A remark bound for Gerrit, and how far it went.
+export interface GerritMark {
+  /// `staged` waits for Send; `sent` is a draft on Gerrit.
+  state: 'staged' | 'sent';
+  /// The patch set of Gerrit that the draft goes to.
+  patchSet: number;
+  resolve: boolean;
+  id: string | null;
+  sentAt: string | null;
+}
+
+/// What the REST API of Gerrit allows this run.
+export interface GerritStatus {
+  rest: 'ok' | 'anonymous' | 'refused' | 'unreachable' | 'off';
+  /// Why it does not allow more, for the reader.
+  reason: string | null;
+  base: string | null;
+}
+
+/// What a send did.
+export interface Sent {
+  sent: string[];
+  failed: { id: string; error: string }[];
+}
+
+/// What staging a remark for Gerrit asks for.
+export interface Stage {
+  resolve?: boolean;
 }
 
 export type Author = 'reader' | 'agent';
@@ -225,7 +263,8 @@ export interface StoreEvent {
     | 'migrated'
     | 'fix'
     | 'clean'
-    | 'idle';
+    | 'idle'
+    | 'sent';
   author: Author;
   key: string;
   id: string | null;
@@ -291,11 +330,15 @@ export interface NewComment {
   done?: boolean;
   /// Ask the agent to answer the thread once the comment is saved.
   ask?: boolean;
+  /// Stage the remark for Gerrit.
+  gerrit?: Stage;
 }
 
 export interface EditComment {
   body?: string;
   done?: boolean;
+  /// Stage the remark for Gerrit, or, with null, keep it here.
+  gerrit?: Stage | null;
 }
 
 export type Origin = 'local' | 'prev' | 'gerrit';
@@ -340,8 +383,9 @@ export interface Placed {
 }
 
 /**
- * A remark already posted on Gerrit. Read only: qreview never writes to the
- * server, so it has no edit and no delete.
+ * A remark already posted on Gerrit. It is edited in Gerrit, never here.
+ * Over ssh, the id is made from the place, and the thread, the reply link
+ * and the state are missing.
  */
 export interface PostedComment {
   id: string;
@@ -350,7 +394,48 @@ export interface PostedComment {
   body: string;
   file: string;
   line: number | null;
+  /// The id of the remark that opens the thread: its own id when it opens it.
+  thread: string;
+  inReplyTo: string | null;
+  unresolved: boolean | null;
+  updated: string | null;
 }
+
+/** A thread of Gerrit on a change, with the replies written here. */
+export interface GerritThread {
+  /// The id of the comment that opens it, which `gerrit:<id>` names.
+  id: string;
+  patchSet: number;
+  /// The revision of that patch set.
+  commit: string;
+  file: string;
+  side: Side;
+  line: number | null;
+  /// Its newest comment on Gerrit waits for an answer.
+  unresolved: boolean;
+  /// It waits for the reader: unresolved, and its newest comment is of
+  /// somebody else.
+  waits: boolean;
+  /// A reply written here resolves it, staged or sent.
+  done: boolean;
+  comments: PostedComment[];
+  replies: Comment[];
+}
+
+/** The threads of Gerrit of one change. */
+export interface ChangeThreads {
+  key: string;
+  /// The page of the change on Gerrit.
+  url: string;
+  /// Gerrit holds the version that the change carries now.
+  pushed: boolean;
+  /// The ids of the drafts of the reader. Null without an authorization.
+  drafts: string[] | null;
+  threads: GerritThread[];
+}
+
+/// Where a remark sent to Gerrit is now. See section 5.8 of the design.
+export type SentState = 'draft' | 'published' | 'deleted';
 
 /** What Gerrit already holds, placed in the patch set being read. */
 export interface Posted {
@@ -417,4 +502,32 @@ export interface BlameRange {
   end: number;
   /// Where `start` stands in the commit that wrote it.
   origin: number;
+}
+
+/** A slow call of the server in flight, such as a query to Gerrit. */
+export interface Waiting {
+  what: string;
+  /// How long it has run, in milliseconds.
+  ms: number;
+}
+
+/** What the server waits on now. */
+export interface Activity {
+  waiting: Waiting[];
+}
+
+/** One line of the trace of the server. */
+export interface TraceLine {
+  n: number;
+  /// Seconds since the start of the run.
+  at: number;
+  /// What the work cost, in milliseconds. Null for an event.
+  ms: number | null;
+  what: string;
+}
+
+/** The lines of the trace after a number. */
+export interface TraceLines {
+  lines: TraceLine[];
+  next: number;
 }

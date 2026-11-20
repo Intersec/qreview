@@ -59,6 +59,10 @@ The only writes are `git fetch`, only when the user asks for a Gerrit patch
 set, and `<git-dir>/qreview/`, where the server says how to reach it while it
 runs (section 11).
 
+Outside the repository, the server writes to Gerrit, and only drafts, and
+only when the reader clicks **Send** (section 5.8). A draft is visible to
+the reader alone, until the reader publishes it in Gerrit.
+
 ## 2. Layout
 
 ```
@@ -629,6 +633,7 @@ type ChangeSummary = {
   unresolvedCount: number;
   isMerge: boolean;
   lines: { added: number; removed: number } | null; // against the first parent, null on a merge
+  own: boolean;            // false on the change of a colleague, section 5.9
 };
 
 type PatchSet = {
@@ -734,7 +739,7 @@ read, and one file is written.
 
 ```json
 {
-  "version": 4,
+  "version": 6,
   "key": "I8f3a...c21",
   "subject": "net: fix the retry loop",
   "reviewed": false,
@@ -770,6 +775,25 @@ read, and one file is written.
       "scope": "line",
       "body": "Should a closed socket end the loop, or retry the connect?",
       "blocked": true
+    },
+    {
+      "id": "c-01K...",
+      "parent": "gerrit:a3f1c0de_7b2e9a41",
+      "author": "agent",
+      "agentName": "Claude",
+      "patchSet": 2,
+      "commit": "af448g15...",
+      "createdAt": "2026-08-20T15:10:02Z",
+      "updatedAt": "2026-08-20T15:10:02Z",
+      "scope": "line",
+      "body": "Done. A closed socket now ends the loop.",
+      "gerrit": {
+        "state": "sent",
+        "patchSet": 2,
+        "resolve": true,
+        "id": "5e0d2b17_c4a8f3e2",
+        "sentAt": "2026-08-20T15:12:40Z"
+      }
     }
   ]
 }
@@ -779,6 +803,33 @@ Format 4 added `author`, `parent`, `done` and `blocked`, and `moves`, the
 earlier places of a remark that `qreview migrate` moved (section 5.6). Each
 one carries a default, so a file of format 3 reads as a set of remarks by
 the reader, each alone in its thread, none of them done, none of them moved.
+
+Format 5 added `gerrit`, the remarks bound for Gerrit (section 5.8), and a
+`parent` that names a thread of Gerrit as `gerrit:<id>` (section 6.8). A
+comment with no `gerrit` stays in qreview, so a file of format 4 reads as
+it did.
+
+Format 6 added `deleted`: the comments that Delete and Clean took away,
+oldest first. A comment is never erased from the disk, for a study of the
+reviews and for a restore by hand. Nothing reads `deleted`: not the page,
+not the export, not a count. Each entry holds the comment as it stood, and
+how it went:
+
+```json
+"deleted": [
+  {
+    "deletedAt": "2026-08-21T09:12:03Z",
+    "deletedBy": "reader",
+    "how": "clean",
+    "comment": { "id": "c-01H...", "...": "..." }
+  }
+]
+```
+
+`how` is `delete` or `clean`. To restore a comment, stop the server and move
+its `comment` back into `comments`, with its replies. A file with no
+deleted comment omits the field, and a file of format 5 reads as one with
+none.
 
 The versions of a change are not stored. They are read from git, and the
 `commit` of each comment says which one a remark was written against. See
@@ -864,8 +915,13 @@ be edited there: the newest version is where a review is written.
 **A previous remark is shown, and counted nowhere.** The export, the counts
 on the series, on the files and on the copy buttons all hold the current
 remarks and no others: a round that is over must not be handed to an agent
-again, or it does work that is done. The remarks Gerrit holds are counted
-nowhere either, for the same reason and by the same rule.
+again, or it does work that is done.
+
+A thread of Gerrit follows another rule. Gerrit says whether it is
+resolved, so qreview reads that fact and guesses nothing. An unresolved
+thread counts on whatever patch set it was posted, the way Gerrit counts
+it. Section 6.8 holds the rules. When REST does not answer, qreview does
+not know the state of a thread, and counts none of them.
 
 **The diff shows the remarks of the version on the screen, and no others.** A
 remark of another version speaks of code that is not there. Open the patch set
@@ -930,13 +986,21 @@ the agent writes through the commands of section 11.
 reply is a reply to the thread. A reply carries no anchor and no scope of
 its own; it stands where its thread stands. Its `commit` is the version the
 change carried when it was written. The round a thread belongs to is the
-`commit` of its remark, and section 5.4 reads that one only.
+`commit` of its remark, and section 5.4 reads that one only. A thread of
+Gerrit can take replies in qreview too, by the rules of section 6.8.
 
 **`author` is `reader` or `agent`.** The commands of section 11 send
 `"author": "agent"`; the interface sends no author, and a write without one
 is the reader's. Both hold the same session token, so this is a label and
 not a permission. The interface draws the writing of the agent in a style of
 its own.
+
+**`agentName` is the name that the agent gives itself**, on a comment of the
+agent only. The agent gives it with `qreview wait --agent <name>`, and the
+server keeps the newest one in memory. Each wait sends it, so a server that
+restarts learns it at the next wait. The server writes it on each comment of
+the agent; a body that carries one is ignored. A draft of Gerrit starts with
+it (section 6.7). Format 6 added it.
 
 **`done` is on the remark that opens the thread**, the way Gerrit has a
 Done box on a thread. The agent or the reader checks it. A done thread is
@@ -969,7 +1033,7 @@ changes and deletes remarks in peace, and a remark costs the agent nothing
 until it is asked about.
 
 **A previous thread is read, and never written on**, the rule of section
-5.4. It takes no reply and no change of `done`.
+5.4. It takes no reply and no change of `done`. A remark staged for Gerrit is the exception: it stays on its patch set after an amend, and its thread takes a reply, because the newest reply is the text that goes out (section 5.8).
 
 **A word that the agent answered is read, and never rewritten.** A remark
 or a reply of the reader has no Edit once an answer of the agent stands
@@ -979,7 +1043,8 @@ this rule, and the server does not: `author` is a label.
 
 **Deleting a remark deletes its thread.** A reply deleted alone leaves the
 thread as it was. The remark keeps its Delete after an answer, because the
-answers go with it.
+answers go with it. A deleted comment leaves `comments` for `deleted`, in
+the same file (section 5.2).
 
 ### 5.6 New versions, declared
 
@@ -1111,10 +1176,67 @@ While a question of the agent waits, the turn stays the reader's whatever
 the focus: looking at the page answers nothing. A tab among many, or a
 notification refused, still says it.
 
-**Clean** deletes for good every done thread of the change on the screen. A
+**Clean** deletes every done thread of the change on the screen. A
 thread reopened since is not done, and stays. The browser waits three
-seconds with an Undo before it asks the server, because nothing brings a
-deleted thread back.
+seconds with an Undo before it asks the server, because the page brings
+no deleted thread back. The file keeps it under `deleted` (section 5.2).
+
+### 5.8 Remarks for Gerrit
+
+A remark stays in qreview unless somebody marks it for Gerrit. A marked remark carries `gerrit`, and its `state` says where it is:
+
+| `state` | Meaning |
+|---|---|
+| `staged` | It waits for the reader to click Send |
+| `sent` | It is a draft on Gerrit, under the account of the reader |
+
+**Who marks a remark.** The reader checks **For Gerrit** in the box, or on a remark of their own. The agent writes a staged remark with `qreview comment --gerrit` or `qreview stage` (section 11). The agent never sends: only the reader clicks Send. No command of the agent sends, and the send route refuses a request that comes on the Unix socket. This is a convention and not a lock, because the agent holds the session token. The draft is the lock: a remark sent by mistake reaches nobody until the reader publishes it in Gerrit.
+
+**What goes out is the last word of the thread, and nothing else.** That is the newest reply, or the body of the remark when it has no reply. The reader often asks the agent to word the remark, and the answer is the text for the colleague. The older replies stay in qreview, so the rest of the conversation with the agent never reaches the colleague. The page tags the reply that goes out. A reply to a thread of Gerrit goes out as a reply in that thread, by the rules of section 6.8.
+
+The usual path, when the reader wants the agent to word a remark:
+
+1. The reader writes a remark and asks the agent about it.
+2. The agent answers, and the two talk in the thread.
+3. The reader asks the agent to put the remark on Gerrit.
+4. The agent runs `qreview stage <id>`. This stages the thread, and writes the text for the colleague as its newest reply. One thread is one remark on Gerrit.
+5. The reader reads it, edits it if needed, and clicks Send.
+
+A reply of the agent after that would become the text. So the agent writes no other reply in a staged thread, and runs `stage` again when the text changes.
+
+**A remark goes to the patch set it was written on.** Its `commit` must be the revision of a patch set that Gerrit holds, and `gerrit.patchSet` names that patch set. On a version that is **Local** (section 6.1), For Gerrit is disabled, and says to push the version first.
+
+**A staged or sent remark stays on its version.** `qreview migrate` (section 5.6) moves every other thread, and leaves these. A draft belongs to a patch set of Gerrit, and the new local version is not one yet.
+
+**The reader edits a staged remark, whoever wrote it.** It goes out under the name of the reader. Clearing For Gerrit makes it a plain remark again, with its author unchanged.
+
+**A staged remark is not work for the agent.** It is a message to a colleague: it is not in the export, and Fix does not count it. The Send button counts it.
+
+**Send** is a button on the change, and one on the series. It opens a dialog that lists each staged remark: the place, the first line, and the patch set. `Enter` sends, and `Escape` closes, as in the dialog of Fix (section 5.7). Each remark becomes one draft (section 6.7). A remark that Gerrit refused stays staged, and the dialog names the error. The others are sent: one failure does not hold back the rest.
+
+**A sent remark is read only in qreview.** The draft lives in Gerrit now, and the reader edits or publishes it there. The remark carries a tag, **Draft on Gerrit**, that links to the change. qreview reads the drafts and the comments of the change again at each read of the change, and then:
+
+| Gerrit holds the `id` as | What qreview shows |
+|---|---|
+| A draft | The remark, tagged Draft on Gerrit |
+| A published comment | The thread of Gerrit, in place of the remark |
+| Neither | The remark, tagged **Deleted on Gerrit**, which the reader can stage again. Without an authorization, nobody knows: the tag stays Draft on Gerrit |
+
+A comment is never lost: the local remark stays in the store in each case.
+
+**Send** shows only when a remark is staged, so a review that sends nothing looks as it always did. Without an authorization (section 6.6), Send says why. For Gerrit still works then: the reader stages now, and sets `gerrit.auth.command` before the send.
+
+### 5.9 A change of a colleague
+
+A change is the reader's own when the author email of its commit equals `git config user.email`. Any other change is the change of a colleague. On such a change:
+
+- **Fix this change** is hidden, and **Fix the series** skips it. The reader does not amend the commits of a colleague. The fix route refuses such a change, and the procedure of the agent says to skip a change whose `own` is false.
+- **Ask agent** stays. The agent helps the reader read the code and word a remark.
+- The export asks for help with a review, not for a fix (section 9). It also holds the remarks staged for Gerrit and not sent: the agent helps word them.
+
+For Gerrit starts clear in every box, as on a change of the reader: the reader decides what goes to Gerrit. The agent stages without a request on such a change, though. A remark of the reader on the change of a colleague is meant for its author, so when the agent answers it with a remark for the author, it stages that remark (`qreview stage`). Its own remarks on such a change are staged too: `qreview comment` stages them without `--gerrit`, and writes a plain remark where Gerrit does not hold the version. Nothing leaves before the reader clicks Send.
+
+Without `user.email`, every change is the reader's own.
 
 ## 6. Gerrit integration
 
@@ -1160,8 +1282,11 @@ before the user selects one.
 ### 6.3 The remarks already posted
 
 `--comments` adds to the query what reviewers have already written on each
-version. qreview shows them, read only, beside your own. It never posts,
-never replies and never votes.
+version. qreview shows them, read only, beside your own.
+
+This section is the reading over ssh. When the REST API answers (section
+6.6), section 6.8 reads the same remarks with their ids and their state,
+and replaces this reading. qreview never votes, in either case.
 
 A server that does not know an option answers nothing at all, and the patch
 sets would go with the remarks. So a query the server *refused* is asked again
@@ -1190,6 +1315,8 @@ A remark of another version speaks of code that is not on the screen, the
 rule of section 5.4. It is anchored on its own version by the rules of
 section 5.3. A version that was never fetched holds no line to hash, so its
 remarks are unplaced, and they stand at the top of their file.
+
+Read over REST, a remark with `side: PARENT` speaks of the parent of its patch set. It shows in the left column when that patch set is read against its parent, and nowhere else.
 
 Gerrit shows the commit message as `/COMMIT_MSG` under a header that qreview
 drops. The header has one line per parent, four lines for the author, the
@@ -1245,6 +1372,129 @@ queries of another.
 
 A `change:` query is no faster. On the same server, one `Change-Id` took
 18 seconds.
+
+### 6.6 The REST API and its authorization
+
+The ssh query gives no comment id, no thread link and no resolved state, and ssh cannot write a draft. Sections 5.8 and 6.8 need all four, so they use the REST API of Gerrit. Everything else stays on ssh: the query, the patch sets, the fetch and the commits of a blame.
+
+**The address.** The ssh query gives the `url` of a change, such as `https://review.example.com/c/myproject/+/12321`. The address of the API is what comes before `/c/`, or before the number in the older form `https://review.example.com/12321`. `gerrit.url` in the configuration (section 10) sets it when the server gives no `url`. An address that is not `https` is refused: the authorization would cross the network in clear.
+
+**The authorization.** The ssh key does not open REST. Each call goes to a route under `/a/`, with an `Authorization` header. qreview holds no secret, and knows no login method. A command of the reader gives the header: `gerrit.auth.command` in the configuration of the user (section 10), a program and its arguments, run with no shell.
+
+```json
+"gerrit": { "auth": { "command": ["gerrit-auth", "--profile", "work"] } }
+```
+
+The command prints one JSON object:
+
+```json
+{ "authorization": "Bearer eyJhbGciOi...", "expiresIn": 3600 }
+```
+
+| Field | Meaning |
+|---|---|
+| `authorization` | The value of the header: `Bearer <token>` for a token of OIDC, `Basic <base64 of user:password>` for an HTTP password of Gerrit |
+| `expiresIn` | Optional. The seconds that the value lasts. Without it, the value lasts for the run |
+
+The organization supplies the command, and names it in the configuration of the site (section 10), so that it reaches every reader at once. It can run a flow of OIDC with a refresh token, or ask a central service. `examples/gerrit-auth-basic.sh` asks the user name and the HTTP password of Gerrit in the terminal.
+
+**When it runs.** At the first REST call of the run, and not before: a series with no Gerrit asks nothing. The reader runs `qreview` in a terminal, so the command gets that terminal, and `QREVIEW_INTERACTIVE=1`. It may ask a user name and a password there, or open a browser for OIDC, and it has 5 minutes. Meanwhile the chip of the slow calls says that the server waits for a login in the terminal (section 11). With no terminal, the command gets no standard input and 15 seconds: it answers from what it keeps, or fails, and the page shows the first line of its error output. In both cases `QREVIEW_GERRIT_URL` holds the address of the API. The standard output of the command never reaches a message: it holds the secret.
+
+**Only the site or the user names the command.** A `.qreview.json` that sets `gerrit.auth` is refused, and the server does not start. Otherwise a repository that someone cloned would choose a program that the server runs.
+
+**Where the authorization goes.** The server runs the command at the first REST call of the run, and keeps the answer in memory. It runs it again 30 seconds before `expiresIn` ends, and once after Gerrit refuses the value in memory: the token can die early, and the reader can type a wrong password. The value reaches `curl` on standard input, as a `--config -` file, and never in the arguments, which any local user reads in `ps`. It never reaches a line of the trace, an error message, the page, the agent, the store or the configuration.
+
+**The account.** With an authorization, the server asks `GET /a/accounts/self` once, for the email and the user name of the reader. They tell the comments of the reader on Gerrit apart (section 6.8).
+
+**Without the command**, qreview asks the routes that read without `/a/`, as an anonymous reader. A server that lets anonymous readers see the project answers them, so the threads of section 6.8 need nothing to configure. Only a draft needs the authorization.
+
+**Failure.** Gerrit stays optional (section 6.4). REST turns off for the run when the command fails, when the server refuses its value twice, when `curl` is missing, or when a call times out after 5 seconds. The page then says why. The reading over ssh of section 6.3 stays, and Send is disabled. For Gerrit still works (section 5.8). A refresh runs the command again.
+
+An answer of Gerrit opens with `)]}'` on a line of its own, which qreview drops before it reads the JSON.
+
+### 6.7 Sending a draft
+
+Each staged remark becomes one draft:
+
+```sh
+PUT /a/changes/myproject~12321/revisions/<revision>/drafts
+```
+
+`<revision>` is the commit of the patch set in `gerrit.patchSet`. The body is a `CommentInput` of Gerrit:
+
+| Field | From |
+|---|---|
+| `path` | The file of the anchor. The commit message is `/COMMIT_MSG`, and a remark about the whole message is a remark on that file. A remark with no anchor is `/PATCHSET_LEVEL` |
+| `side` | `PARENT` for the `old` side, absent for `new` |
+| `parent` | On a merge, the number of the parent of the left column. Absent for the auto-merge |
+| `line` | `endLine`. Absent on a remark about a file |
+| `range` | `startLine`, `endLine`, and the characters when the remark has some. Absent on a single whole line |
+| `message` | The newest reply of the thread, or the body of the remark when it has none. If the agent wrote that text, the line `From <agentName>:`, or `From the agent:` without a name, and a blank line come first |
+| `in_reply_to` | On a reply to a thread of Gerrit, the id of the last comment of that thread when the reader sends (section 6.8). The reply takes the `path` of the comment that opens the thread, so a reply to a remark about the change goes to `/PATCHSET_LEVEL` |
+| `unresolved` | `true` on a remark. On a reply, the opposite of `gerrit.resolve` |
+
+A line of the commit message moves down by the header that Gerrit adds, the reverse of section 6.3. A remark on the left column of a diff between two patch sets has no place in Gerrit as qreview stores it, so For Gerrit is disabled there.
+
+The answer is the draft, with its `id`. qreview writes `state: "sent"`, `id` and `sentAt`, and an event `sent`.
+
+### 6.8 The threads of Gerrit
+
+With REST, qreview reads the remarks of a change with two calls:
+
+```sh
+GET /a/changes/myproject~12321/comments    # published, on every patch set
+GET /a/changes/myproject~12321/drafts      # the drafts of the reader
+```
+
+The drafts are not shown as remarks of Gerrit. A draft that qreview sent is a remark of the store, and its id says whether Gerrit still holds it as a draft (section 5.8).
+
+Each comment carries an `id`, `in_reply_to`, `unresolved`, a side, a line or a range, a patch set, an author and a date. The table of what the ssh answer misses (section 6.3) no longer applies. The placement rules of section 6.3 still hold: a remark shows on the version it was posted on.
+
+**A thread of Gerrit** is a comment and the comments that reply to it, through `in_reply_to`. It is unresolved when its last comment is unresolved, the rule of Gerrit.
+
+**An unresolved thread that waits for the reader is work.** It waits for the reader when its last comment is of somebody else: an unresolved question that the reader asked waits for the author. The reader is the account whose email is `user.email`, or the account of `accounts/self` (section 6.6), by email or user name. Such a thread counts on every patch set, the way Gerrit counts it: on the series, on the files, in the export, and in the dialog of Fix. The thread carries `waits` for it. A resolved thread is shown grey and folded, like a done thread, and counted nowhere. A thread that holds a reply staged for Send stays open, resolved or not: that reply is work left.
+
+**Apply** on a thread that waits, on a change of the reader with an agent that listens, asks the agent to fix that thread alone: the decision per comment of a reader who answers a review. The agent fixes the request at every site of the pattern in the commit, stages a reply that resolves the thread, and says in it the other sites it fixed. A reader who does not want the change writes why, and the agent stages that reason for the reviewer.
+
+A reviewer waits on such a thread, so it comes first. The list of comments opens with the threads of Gerrit that wait, change by change, and a click opens one on the patch set it was posted on. The row of a change in the series says how many wait, apart from the open remarks of the review: `· 2 Gerrit · 1 ✎`. The list of comments is the list of what is left to handle, titled **To handle**: under the threads of Gerrit, the open remarks of the review, those staged for Send included. The done remarks, the remarks sent as drafts and the previous remarks wait behind one click, so the list hides no remark. The `✎` count on the row of a change and on a file counts what this list holds there, so a remark staged for Send counts until it is sent. Copy and Fix count only the work of the agent, without the staged remarks.
+
+**A thread of Gerrit takes replies in qreview.** The reader and the agent reply as on a local thread. The store does not hold the thread, so the reply carries `parent: "gerrit:<id>"`, the id of the first comment, and a copy of the anchor of the thread on its patch set. A plain reply stays in qreview: it is the conversation of the reader with the agent. A reply For Gerrit goes out in the thread. It goes to the patch set of the thread, not to the newest version, because Gerrit keeps a thread on one patch set. `gerrit.resolve` says whether it resolves the thread.
+
+**A staged or sent reply that resolves a thread makes it done in qreview**, before Gerrit knows. Fix does not hand that thread to the agent again.
+
+**The Done box of a thread of Gerrit** stages a reply `Done` that resolves it. This is what the Done button of Gerrit writes. The reader then sends it with the rest.
+
+**Ask agent** works on a thread of Gerrit as on a local one. The `ask` event names `gerrit:<id>`.
+
+The path of the author of a change:
+
+1. The reviewers post remarks on patch set 3.
+2. The reader clicks Fix. The agent amends the commits.
+3. For each thread it fixed, the agent runs `qreview stage gerrit:<id> --resolve --body "Done"`, and declares the new version with `migrate`.
+4. The reader pushes the new patch set, then clicks Send.
+
+Gerrit wants the push before the replies, so the reviewer reads a reply with the code it speaks of. When the change has a local version newer than its newest patch set, the dialog of Send says to push first. It still sends if the reader confirms.
+
+### 6.9 Opening a change from its address
+
+```sh
+qreview https://review.example.com/c/myproject/+/12321
+qreview https://review.example.com/c/myproject/+/12321/3
+qreview https://review.example.com/12321
+```
+
+The command reviews a change of Gerrit, with no checkout and no branch:
+
+1. It reads the number of the change, and the patch set when the address has one. The newest patch set is the default.
+2. It queries Gerrit over ssh, on the coordinates of `origin` (section 6.1), for `change:12321`. The answer gives the project, the branch, and the ref and revision of each patch set.
+3. It stops when the project of the change is not the project of `origin`, and names both. A change of another project needs a clone of that project.
+4. It runs `git fetch origin <ref>` for the patch set. The command line asks for it, so this is the fetch of section 1 that the user asks for. It writes `FETCH_HEAD` and objects, and no ref.
+5. The series has the revision as its head. The base is the merge base with the branch that Gerrit names, rule 6 of section 3.1. The commits of the relation chain under the change come with the fetch.
+6. The series is not the checkout, so the work that is not committed takes no place in it (section 3.1).
+
+Gerrit is optional everywhere else, but not here: without an answer there is nothing to review. A query that fails, or finds no such change, stops the command with the error.
+
+The review runs on the server of the worktree, as any other range does (section 11). The reader runs it in the worktree of the project of the change, since the fetch goes there.
 
 ## 7. Languages and colors
 
@@ -1315,6 +1565,9 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | Method and route | What it does |
 |---|---|
 | `GET /api/session` | The repository, the first batch of the series, the tool version and the commit it was built from |
+| `GET /api/activity` | What the server waits on now: `{ "waiting": [{ "what", "ms" }] }`, the slow calls in flight, oldest first. It takes no lock of the session. See section 11 |
+| `GET /api/trace?after=<n>` | The lines of the trace after line `n`: `{ "lines": [{ "n", "at", "ms", "what" }], "next" }`. The server keeps the last 2000. See section 11 |
+| `GET /api/gerrit/status` | What the REST API allows this run: `{ "rest": "ok" \| "anonymous" \| "refused" \| "unreachable" \| "off", "reason", "base" }`. A route of its own, so the session answers without running `gerrit.auth.command`. See section 6.6 |
 | `POST /api/session/refresh` | Resolve the series again, and answer with what git holds now |
 | `POST /api/series/extend` | Load the next batch. Body: `{ "count": 5, "parent": 1 }` |
 | `POST /api/series/fix` | Ask the agent to fix every change of the series. See section 5.7 |
@@ -1328,23 +1581,26 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `GET /api/changes/:key/rendered?ps=2&base=parent&file=...` | A Markdown or AsciiDoc file of the version read, as HTML, with the marks of its diff against the base. See section 3.8 |
 | `GET /api/changes/:key/blob?ps=2&path=...` | An image in the tree of the version read, for a rendered file. Raw bytes, not JSON. See section 3.8 |
 | `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
-| `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column |
+| `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column. Over REST, each one carries the `id` of Gerrit, `thread` (the id of the remark that opens its thread), `inReplyTo`, `unresolved` and `updated`. Over ssh, the id is made from the place, `thread` is that id, and the other three are null. A remark on the `PARENT` side stands in the left column, and has no column when another version is on the left. See sections 6.3 and 6.8 |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
 | `GET /api/comments` | Every comment of the session, in reading order |
 | `GET /api/update` | Whether a newer qreview is out. Empty when nothing answers |
 | `GET /api/changes/:key/comments` | Every comment of the change, placed on the version read, and the copies of the threads that moved away from a version on the screen. See section 5.6 |
-| `POST /api/changes/:key/comments` | Create a remark, or a reply when the body names a `parent`. `"author": "agent"` writes as the agent, and a reply may carry `"done": true` or `"blocked": true`. `"ask": true` asks the agent about the thread once it is saved |
+| `POST /api/changes/:key/comments` | Create a remark, or a reply when the body names a `parent`. `"author": "agent"` writes as the agent, and a reply may carry `"done": true` or `"blocked": true`. `"ask": true` asks the agent about the thread once it is saved. `"gerrit": { "resolve": false }` stages it for Gerrit. A `parent` of `gerrit:<id>` replies to a thread of Gerrit. See sections 5.8 and 6.8 |
 | `POST /api/changes/:key/comments/:id/ask` | Ask the agent to answer the thread of a comment. See section 5.5 |
-| `PATCH /api/changes/:key/comments/:id` | Change the body, or check or clear `done` on a thread |
+| `PATCH /api/changes/:key/comments/:id` | Change the body, or check or clear `done` on a thread. `"gerrit": { "resolve": … }` stages the remark, and `"gerrit": null` takes it back. A sent remark refuses both |
+| `GET /api/gerrit/threads` | The threads of Gerrit on each change of the series that REST answers for: `[{ key, url, pushed, drafts, threads: [{ id, patchSet, commit, file, side, line, unresolved, done, comments, replies }] }]`. `pushed` says that Gerrit holds the version the change carries now. `drafts` holds the ids of the drafts of the reader, null without an authorization. `comments` are those of Gerrit, `replies` those written here, and `done` says that one of them resolves the thread. See sections 5.8 and 6.8 |
+| `POST /api/changes/:key/gerrit/send` | Send the staged remarks of the change as drafts. Body: `{ "ids": [id] }`, every staged remark when it is absent. Answers `{ "sent": [id], "failed": [{ "id", "error" }] }`. Refused on the Unix socket. See sections 5.8 and 6.7 |
+| `POST /api/series/gerrit/send` | The same for every change of the series |
 | `DELETE /api/changes/:key/comments/:id` | Delete a comment and its replies |
-| `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. See section 8.3 |
+| `GET /api/events?after=<n>` | Wait for the next writes to the store, and answer with them. The wait is held 30 seconds at most, and `wait=<ms>` holds it less: `qreview wait --timeout` passes the time it has left. With `who=agent`, `agent=<name>` names the agent for its next comments (section 5.5). See section 8.3 |
 | `POST /api/migrate` | Link a new version to its previous one and move its threads. Body: `{ "from", "to", "done": [ids], "blocked": [{ "id", "body" }] }`. See section 5.6 |
 | `POST /api/map` | Where places of one version stand in the next. Body: `{ "from", "to", "places": [{ "file", "side", "line" }] }`. Answers `{ "places": [...] }`, `null` for a file the new version deleted. See section 5.6 |
-| `POST /api/changes/:key/fix` | Ask the agent to fix the change. See section 5.7 |
+| `POST /api/changes/:key/fix?thread=gerrit:<id>` | Ask the agent to fix the change. With `thread`, the fix of that thread alone: the Apply of a thread of Gerrit. The event `fix` then names it in `id`. See sections 5.7 and 6.8 |
 | `POST /api/changes/:key/clean` | Delete the done threads of the change |
 | `POST /api/changes/:key/patchsets/fetch` | Fetch one Gerrit patch set |
-| `GET /api/export?scope=change&key=...` | The export text |
-| `GET /api/config` | The three layers, folded |
+| `GET /api/export?scope=change&key=...` | The export text. `json=true` gives the JSON of section 9 instead |
+| `GET /api/config` | The four layers, folded |
 | `PUT /api/config` | Write what the panel changed, and read them back |
 
 Two static routes sit outside `/api`: `/` serves the interface, and
@@ -1453,7 +1709,7 @@ type Task = { kind: 'fix' | 'answer'; key: string; id: string | null };
 type Event = {
   seq: number;
   kind: 'comment' | 'reply' | 'edited' | 'done' | 'deleted' | 'refresh' | 'ask'
-      | 'migrated' | 'fix' | 'clean' | 'idle';
+      | 'migrated' | 'fix' | 'clean' | 'idle' | 'sent';
   author: 'reader' | 'agent';
   key: string;             // the change, empty on a refresh, an idle,
                            //   and a fix of the series
@@ -1564,6 +1820,25 @@ Rules for the format:
   carries now. A previous round is over, and an agent that reads it again
   redoes work that is done. A line under the count says how many were left
   out.
+- An unresolved thread of Gerrit is in it, at its place (section 6.8). It
+  opens with `Remark from <name> on Gerrit:`, and a reply in it reads
+  `Reply from <name> on Gerrit:`. A thread posted on another patch set than
+  the one the export names says so after its place, `(patch set 3)`, and
+  takes its excerpt from that patch set. The opening adds one sentence:
+  "Some comments come from reviewers on Gerrit, and name them."
+- A remark staged or sent for Gerrit is not in it (section 5.8). It is a
+  message to a colleague, not work.
+- On the change of a colleague (section 5.9), the opening asks for help
+  rather than a fix: "I am reviewing this change by <author> and left the
+  comments below. Help me review it: answer each comment, and do not change
+  the code." A series of changes of colleagues only asks it once: "I am
+  reviewing this series and left the comments below. Help me review it:
+  answer each comment, and do not change the code." A series that holds
+  changes of both kinds opens with "I left the comments below on this
+  series.", and says it per change, under the heading of each one: "This
+  change is mine. Please address these comments." or "This change is by
+  <author>. Help me review it: answer each comment, and do not change the
+  code."
 
 The comments are ordered the way a reader walks the code:
 
@@ -1588,14 +1863,21 @@ type ExportJson = {
     subject: string;
     commit: string;
     patchSet: number;
+    own: boolean;          // false on the change of a colleague, section 5.9
     threads: {
-      id: string;
+      id: string;          // "gerrit:<id>" on a thread of Gerrit
       place: string;       // "src/net.blk:42", the way the Markdown says it
       side: 'old' | 'new' | null;
       line: number | null;
+      patchSet: number;    // the patch set the thread was written on
       excerpt: string;     // the excerpt of the Markdown, `>` marks included
       blocked: boolean;
-      comments: { id: string; author: 'reader' | 'agent'; body: string }[];
+      comments: {
+        id: string;
+        author: 'reader' | 'agent' | 'gerrit';
+        name: string | null; // the reviewer, on a comment of Gerrit
+        body: string;
+      }[];
     }[];
   }[];
 };
@@ -1603,16 +1885,19 @@ type ExportJson = {
 
 ## 10. Configuration
 
-Three layers, the later one wins:
+Four layers, the later one wins:
 
 1. The defaults built into the tool, including the language map.
-2. `$XDG_CONFIG_HOME/qreview/config.json`, found with the `directories` crate.
-3. `.qreview.json` at the top level of the repository, when it exists.
+2. The file that `QREVIEW_SITE_CONFIG` names, when the variable is set: the configuration of the site.
+3. `$XDG_CONFIG_HOME/qreview/config.json`, found with the `directories` crate.
+4. `.qreview.json` at the top level of the repository, when it exists.
+
+**The site.** A team that cannot write in the home of each reader sets `QREVIEW_SITE_CONFIG` in a shared shell profile, and keeps one file on a shared disk. Updating that file updates every reader, at their next run. The file holds every key a user file holds, `gerrit.auth` included: a reader controls their environment as they control their home. A user file overrides it key by key. When the variable names a file that cannot be read, such as a share that is not mounted, qreview says so on standard error and goes on without it. The panel of preferences never writes it.
 
 ```json
 {
   "languages": { "blk": "c", "pxc": "c" },
-  "gerrit": { "enabled": true, "branch": null },
+  "gerrit": { "enabled": true, "branch": null, "url": null, "auth": null },
   "series": {
     "maxCommits": 50,
     "guessMax": 10,
@@ -1632,12 +1917,16 @@ Three layers, the later one wins:
 }
 ```
 
+`gerrit.url` is the web address of the Gerrit server, for its REST API. It is needed only when the server gives no `url` in its answers (section 6.6). It holds no password, and no key of the configuration does.
+
+`gerrit.auth.command` names the program that gives the authorization of REST (section 6.6). Only the file of the site or of the user may set `gerrit.auth`: a `.qreview.json` that sets it is refused.
+
 Ten lines of context, not the three git gives: three is too few to judge a
 change.
 
 `PUT /api/config` writes the `diff` and `ui` sections into the file of the
 user, and nothing else. A language map that somebody put there by hand stays
-where it is. The answer is the three layers folded again, so it says what the
+where it is. The answer is the four layers folded again, so it says what the
 tool will really use and not what was asked for.
 
 A key nobody knows is refused, and the error names it. A configuration that
@@ -1686,6 +1975,7 @@ one of them. Losing this state costs a drag, and nothing else.
 qreview                       review the current series
 qreview <rev>                 review one commit
 qreview <revA>..<revB>        review a range
+qreview <gerrit-url>          fetch a change of Gerrit and review it, section 6.9
 qreview <rev> --prev <sha>    add a local patch set, repeatable
 qreview --base <rev>          set the base of the series
 qreview --no-gerrit           skip the Gerrit query
@@ -1703,11 +1993,13 @@ qreview skill                 print the procedure of an agent, for this release
 that runs on the repository:
 
 ```
-qreview comment <place> --body <text> [--key <id>]
+qreview comment <place> --body <text> [--key <id>] [--gerrit]
                               write a remark on the newest version
+qreview stage <id> --body <text> [--resolve]
+                              stage a thread, with its text for Gerrit as its newest reply
 qreview reply <id> --body <text> [--done] [--blocked]
                               reply to a thread
-qreview wait [--after <n>] [--timeout <s>]
+qreview wait [--agent <name>] [--after <n>] [--timeout <s>]
                               print the next requests of the reader as JSON
 qreview refresh               read the repository again, as the ⟳ button
 qreview migrate --from <old> [--to <new>] [--done <id>,...] [--blocked <id>=<text>]...
@@ -1721,7 +2013,9 @@ read from the right. `--key` names the change; without it, the change is
 the newest one of the series that touches the file. A body of `-` is read
 from standard input, so a long answer needs no quoting.
 
-`comment` and `reply` print the comment they wrote, its `id` included.
+`--gerrit` stages the remark for Gerrit (section 5.8). On the change of a colleague, `comment` stages without the flag, and falls back to a plain remark where Gerrit does not hold the version (section 5.9). `stage` writes a staged remark at the place of the thread `<id>`, for the text that the reader asked the agent to word. The thread must sit on the newest version of its change: on an older one, its place may not exist any more, and `stage` refuses and names `comment --gerrit`. When `<id>` is `gerrit:<id>`, a thread of Gerrit, it writes a staged reply in that thread, and `--resolve` resolves it (section 6.8). `reply` takes a `gerrit:<id>` too, for a reply that stays in qreview. No command sends: the reader does, in the page.
+
+`comment`, `reply` and `stage` print the comment they wrote, its `id` included.
 `wait` prints `{ "events": [...], "next": <n> }`. It returns on a request
 only: an `ask` event, never a remark being written, changed or deleted.
 Each request carries `thread`, the remark and its replies in order, empty
@@ -1762,6 +2056,8 @@ worktree, it prints that URL and stops, and opens no second tab: an agent
 that starts qreview twice gets the review that is open. Reviewing another
 range in the same worktree means stopping that server first.
 
+**The review of a change of Gerrit** (section 6.9) runs on the server of the worktree, like any range. A second `qreview <gerrit-url>` in that worktree prints the URL of the server that runs, and says to stop it first. `qreview export` asks the server that runs for the export, with `GET /api/export`, since only that server knows a series that it fetched: `json=true` gives the JSON of `export --json`. Without a server, the export reads the store.
+
 Two servers can then write one store. Each read of a change file and the
 write that follows it hold a lock on the file `lock` in the directory of
 the repository, so two writes that cross never lose one of them. A server
@@ -1772,7 +2068,9 @@ work to standard error: every git child process, every highlight pass, every
 diff parse, and every HTTP request with the status it answered. Each line
 carries the time since the process started and what the work cost, so a slow
 read is measured and not guessed. Standard output stays clean, because
-`export` writes there. The token never appears in a line.
+`export` writes there. The token never appears in a line, and neither does the authorization of Gerrit.
+
+The server keeps the last 2000 lines in memory in any case, `--trace` or not. The **Trace** window of the page, which the version in the top bar opens, shows them and the new ones as they come, without a restart. The slow calls, those that cross the network (a query of Gerrit over ssh or REST, a `git fetch`), also say when they start. While one runs for more than 300 ms, a quiet chip in the top bar names it and how long it has waited, so a slow link reads as work and not as a broken page. The requests of the Trace window and of the chip make no line.
 
 ## 12. Build and distribution
 

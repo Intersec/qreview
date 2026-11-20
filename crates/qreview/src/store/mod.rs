@@ -228,10 +228,12 @@ mod tests {
                 context: vec!["one".to_owned(), "two".to_owned()],
             }),
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: false,
             blocked: false,
             moves: Vec::new(),
+            gerrit: None,
         }
     }
 

@@ -32,15 +32,15 @@ pub async fn change(session: &Session, key: &str) -> Result<String> {
 
     let _ = writeln!(out, "## Review: {}, {}", place(session).await, head.what());
     let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "I reviewed this commit and left the comments below. Please address them."
-    );
+    let _ = writeln!(out, "{}", head.ask());
     if !head.comments.is_empty() {
         let _ = writeln!(out, "{RULE}");
     }
     if head.talks() {
         let _ = writeln!(out, "{THREADS}");
+    }
+    if head.has_gerrit() {
+        let _ = writeln!(out, "{REVIEWERS}");
     }
     let _ = writeln!(out);
     out.push_str(&head.about);
@@ -65,16 +65,12 @@ pub async fn series(session: &Session) -> Result<String> {
     for summary in session.series.changes.iter().rev() {
         // The store is asked, never a count the session cached: a comment
         // written a moment ago must be in the export.
-        let file = session.comments(&summary.key, &summary.subject)?;
         // A change whose only remarks belong to a round before this one has
         // nothing to say here, and a heading with nothing under it says less
-        // than no heading at all.
-        let live = file
-            .comments
-            .iter()
-            .any(|comment| comments::is_open(comment, &summary.commit));
-        if live {
-            reviewed.push((summary.key.clone(), file));
+        // than no heading at all. The threads of Gerrit count too.
+        let head = header(session, &summary.key).await?;
+        if !head.comments.is_empty() {
+            reviewed.push(head);
         }
     }
 
@@ -83,33 +79,48 @@ pub async fn series(session: &Session) -> Result<String> {
     }
 
     if reviewed.len() == 1 {
-        return change(session, &reviewed[0].0).await;
+        let key = reviewed[0].key.clone();
+        return change(session, &key).await;
     }
 
+    let heads = reviewed;
     let mut out = String::new();
     let _ = writeln!(
         out,
         "## Review: {}, {} commits",
         place(session).await,
-        reviewed.len()
+        heads.len()
     );
     let _ = writeln!(out);
+    // A series of one kind asks once. A mixed one asks under each heading.
+    let mixed = heads.iter().any(|h| h.own) && heads.iter().any(|h| !h.own);
     let _ = writeln!(
         out,
-        "I reviewed this series and left the comments below. Please address them."
+        "{}",
+        match (mixed, heads[0].own) {
+            (true, _) => "I left the comments below on this series.",
+            (false, true) =>
+                "I reviewed this series and left the comments below. Please address them.",
+            (false, false) =>
+                "I am reviewing this series and left the comments below. Help me review it:\n\
+                 answer each comment, and do not change the code.",
+        }
     );
     let _ = writeln!(out, "{RULE}");
 
-    let mut heads = Vec::new();
-    for (key, _) in &reviewed {
-        heads.push(header(session, key).await?);
-    }
     if heads.iter().any(Head::talks) {
         let _ = writeln!(out, "{THREADS}");
+    }
+    if heads.iter().any(Head::has_gerrit) {
+        let _ = writeln!(out, "{REVIEWERS}");
     }
     for head in &heads {
         let _ = writeln!(out);
         let _ = writeln!(out, "### {} — {}", head.name(), head.subject);
+        if mixed {
+            let _ = writeln!(out);
+            let _ = writeln!(out, "{}", head.ask_in_series());
+        }
         out.push_str(&body(session, head).await);
     }
     Ok(out)
@@ -121,6 +132,7 @@ async fn place(session: &Session) -> String {
 }
 
 struct Head {
+    key: String,
     commit: String,
     short: String,
     subject: String,
@@ -132,9 +144,53 @@ struct Head {
     /// The work that is not committed. It has no sha worth printing: the one
     /// it carries is synthetic, and a session cannot look it up.
     worktree: bool,
+    /// What Gerrit says of each thread of Gerrit among the comments, by the
+    /// id the export gives it, `gerrit:<id>`.
+    gerrit: std::collections::HashMap<String, FromGerrit>,
+    /// False on the change of a colleague, which the reader does not amend.
+    /// See section 5.9 of the design.
+    own: bool,
+    author: String,
 }
 
+/// A thread of Gerrit in the export: who opened it, on which patch set,
+/// and the replies that Gerrit holds.
+struct FromGerrit {
+    name: String,
+    patch_set: usize,
+    /// The name and the text of each reply on Gerrit, oldest first.
+    replies: Vec<(String, String)>,
+}
+
+/// Said once, when a thread of Gerrit is in the export.
+const REVIEWERS: &str = "Some comments come from reviewers on Gerrit, and name them.";
+
 impl Head {
+    /// What the opening of the export of one change asks.
+    fn ask(&self) -> String {
+        match self.own {
+            true => "I reviewed this commit and left the comments below. Please address them."
+                .to_owned(),
+            false => format!(
+                "I am reviewing this change by {} and left the comments below. Help me\n\
+                 review it: answer each comment, and do not change the code.",
+                self.author
+            ),
+        }
+    }
+
+    /// What a change asks under its heading, in a series of both kinds.
+    fn ask_in_series(&self) -> String {
+        match self.own {
+            true => "This change is mine. Please address these comments.".to_owned(),
+            false => format!(
+                "This change is by {}. Help me review it: answer each comment, and do\n\
+                 not change the code.",
+                self.author
+            ),
+        }
+    }
+
     /// What the opening line calls the thing being reviewed.
     fn what(&self) -> String {
         match self.worktree {
@@ -145,9 +201,18 @@ impl Head {
 
     /// True when a thread holds a reply.
     fn talks(&self) -> bool {
-        self.comments
-            .iter()
-            .any(|c| self.replies.contains_key(&c.id))
+        self.comments.iter().any(|c| {
+            self.replies.contains_key(&c.id)
+                || self
+                    .gerrit
+                    .get(&c.id)
+                    .is_some_and(|g| !g.replies.is_empty())
+        })
+    }
+
+    /// True when a thread of Gerrit is in it.
+    fn has_gerrit(&self) -> bool {
+        !self.gerrit.is_empty()
     }
 
     fn replies_of(&self, remark: &Comment) -> &[Comment] {
@@ -167,13 +232,10 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
     let Some(commit) = session.commit_of(key) else {
         anyhow::bail!("no change {key} in the series");
     };
-    let subject = session
-        .series
-        .changes
-        .iter()
-        .find(|c| c.key == key)
-        .map(|c| c.subject.clone())
-        .unwrap_or_default();
+    let summary = session.series.changes.iter().find(|c| c.key == key);
+    let subject = summary.map(|c| c.subject.clone()).unwrap_or_default();
+    let own = summary.is_none_or(|c| c.own);
+    let author = summary.map(|c| c.author.clone()).unwrap_or_default();
 
     let file = session.comments(key, &subject)?;
     let sets = session.patch_sets(key).await.unwrap_or_default();
@@ -192,8 +254,13 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
     let done = remarks()
         .filter(|c| c.done && comments::of_version(c, &commit))
         .count();
+    // On the change of a colleague, a remark starts staged for Gerrit, and
+    // the agent helps word it: it is still part of the review.
     let mut comments: Vec<Comment> = remarks()
-        .filter(|c| comments::is_open(c, &commit))
+        .filter(|c| {
+            comments::is_open(c, &commit)
+                || (!own && comments::is_staged(c) && !c.done && comments::of_version(c, &commit))
+        })
         .cloned()
         .collect();
     let mut replies: std::collections::HashMap<String, Vec<Comment>> =
@@ -208,6 +275,55 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
     }
     for thread in replies.values_mut() {
         thread.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    }
+
+    // The threads that wait for an answer of the reader are work, on
+    // whatever patch set they were posted. See section 6.8 of the design.
+    let mut gerrit = std::collections::HashMap::new();
+    for thread in session.gerrit_threads_of(key).await.unwrap_or_default() {
+        if !thread.waits || thread.done {
+            continue;
+        }
+        let Ok(place) = session.gerrit_thread(key, &thread.id).await else {
+            continue;
+        };
+        let Some(root) = thread.comments.iter().find(|c| c.id == thread.id) else {
+            continue;
+        };
+        let id = format!("{}{}", comments::GERRIT_PARENT, thread.id);
+        comments.push(Comment {
+            id: id.clone(),
+            patch_set: place.patch_set,
+            commit: place.commit,
+            created_at: root.updated.clone().unwrap_or_default(),
+            updated_at: root.updated.clone().unwrap_or_default(),
+            scope: place.scope,
+            body: root.body.clone(),
+            anchor: place.anchor,
+            author: Author::Reader,
+            agent_name: None,
+            parent: None,
+            done: false,
+            blocked: false,
+            moves: Vec::new(),
+            gerrit: None,
+        });
+        gerrit.insert(
+            id.clone(),
+            FromGerrit {
+                name: root.author.clone(),
+                patch_set: place.patch_set,
+                replies: thread
+                    .comments
+                    .iter()
+                    .filter(|c| c.id != thread.id)
+                    .map(|c| (c.author.clone(), c.body.clone()))
+                    .collect(),
+            },
+        );
+        if !thread.replies.is_empty() {
+            replies.insert(id, thread.replies);
+        }
     }
     comments::in_reading_order(&mut comments);
 
@@ -239,6 +355,7 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
     }
 
     Ok(Head {
+        key: key.to_owned(),
         short: short(&commit).to_owned(),
         commit,
         subject,
@@ -247,6 +364,9 @@ async fn header(session: &Session, key: &str) -> Result<Head> {
         replies,
         patch_set,
         worktree,
+        gerrit,
+        own,
+        author,
     })
 }
 
@@ -256,9 +376,19 @@ async fn body(session: &Session, head: &Head) -> String {
     let mut out = String::new();
 
     for (index, comment) in head.comments.iter().enumerate() {
-        let shown = shown(session, &head.commit, comment).await;
+        let from_gerrit = head.gerrit.get(&comment.id);
+        // A thread of Gerrit reads the patch set it was posted on.
+        let commit = match from_gerrit {
+            Some(_) => &comment.commit,
+            None => &head.commit,
+        };
+        let shown = shown(session, commit, comment).await;
+        let other_set = from_gerrit
+            .filter(|g| g.patch_set != head.patch_set)
+            .map(|g| format!(" (patch set {})", g.patch_set))
+            .unwrap_or_default();
         let _ = writeln!(out);
-        let _ = writeln!(out, "{}. {}", index + 1, shown.place);
+        let _ = writeln!(out, "{}. {}{other_set}", index + 1, shown.place);
 
         if let Some(excerpt) = &shown.excerpt {
             let _ = writeln!(out);
@@ -270,10 +400,25 @@ async fn body(session: &Session, head: &Head) -> String {
         }
 
         let _ = writeln!(out);
-        let _ = match comment.author {
-            Author::Reader => writeln!(out, "   {}", one_line(&comment.body)),
-            Author::Agent => writeln!(out, "   (written by the agent) {}", one_line(&comment.body)),
+        let _ = match (from_gerrit, comment.author) {
+            (Some(g), _) => writeln!(
+                out,
+                "   Remark from {} on Gerrit: {}",
+                g.name,
+                one_line(&comment.body)
+            ),
+            (None, Author::Reader) => writeln!(out, "   {}", one_line(&comment.body)),
+            (None, Author::Agent) => {
+                writeln!(out, "   (written by the agent) {}", one_line(&comment.body))
+            }
         };
+        for (name, body) in from_gerrit
+            .map(|g| g.replies.as_slice())
+            .unwrap_or_default()
+        {
+            let _ = writeln!(out);
+            let _ = writeln!(out, "   Reply from {name} on Gerrit: {}", one_line(body));
+        }
         for reply in head.replies_of(comment) {
             let _ = writeln!(out);
             let _ = writeln!(out, "   {}", reply_line(reply));
@@ -345,16 +490,42 @@ pub async fn json(session: &Session, key: Option<&str>) -> Result<serde_json::Va
         }
         let mut threads = Vec::new();
         for comment in &head.comments {
-            let shown = shown(session, &head.commit, comment).await;
-            let mut said = vec![serde_json::json!({
-                "id": comment.id,
-                "author": comment.author,
-                "body": comment.body,
-            })];
+            let from_gerrit = head.gerrit.get(&comment.id);
+            let commit = match from_gerrit {
+                Some(_) => &comment.commit,
+                None => &head.commit,
+            };
+            let shown = shown(session, commit, comment).await;
+            let mut said = vec![match from_gerrit {
+                Some(g) => serde_json::json!({
+                    "id": comment.id,
+                    "author": "gerrit",
+                    "name": g.name,
+                    "body": comment.body,
+                }),
+                None => serde_json::json!({
+                    "id": comment.id,
+                    "author": comment.author,
+                    "name": null,
+                    "body": comment.body,
+                }),
+            }];
+            for (name, body) in from_gerrit
+                .map(|g| g.replies.as_slice())
+                .unwrap_or_default()
+            {
+                said.push(serde_json::json!({
+                    "id": null,
+                    "author": "gerrit",
+                    "name": name,
+                    "body": body,
+                }));
+            }
             for reply in head.replies_of(comment) {
                 said.push(serde_json::json!({
                     "id": reply.id,
                     "author": reply.author,
+                    "name": null,
                     "body": reply.body,
                 }));
             }
@@ -364,6 +535,7 @@ pub async fn json(session: &Session, key: Option<&str>) -> Result<serde_json::Va
                 "place": shown.place,
                 "side": anchor.map(|a| a.side),
                 "line": anchor.and_then(|a| a.start_line),
+                "patchSet": from_gerrit.map_or(head.patch_set, |g| g.patch_set),
                 "excerpt": shown.excerpt,
                 "blocked": comments::is_blocked(head.replies_of(comment), &comment.id),
                 "comments": said,
@@ -374,6 +546,7 @@ pub async fn json(session: &Session, key: Option<&str>) -> Result<serde_json::Va
             "subject": head.subject,
             "commit": head.commit,
             "patchSet": head.patch_set,
+            "own": head.own,
             "threads": threads,
         }));
     }
@@ -629,10 +802,12 @@ mod tests {
             end_char: None,
             body: body.to_owned(),
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: None,
             blocked: false,
             ask: false,
+            gerrit: None,
         }
     }
 
@@ -652,10 +827,12 @@ mod tests {
             end_char: chars.map(|c| c.1),
             body: body.to_owned(),
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: None,
             blocked: false,
             ask: false,
+            gerrit: None,
         }
     }
 
@@ -699,10 +876,12 @@ mod tests {
                     end_char: None,
                     body: "The whole change needs a test.".to_owned(),
                     author: Author::Reader,
+                    agent_name: None,
                     parent: None,
                     done: None,
                     blocked: false,
                     ask: false,
+                    gerrit: None,
                 },
             )
             .await
@@ -810,6 +989,110 @@ mod tests {
         insta::assert_snapshot!(stable(&text));
     }
 
+    /// Two changes: one of the reader, then one of a colleague on top.
+    async fn mixed() -> Repo {
+        build_repo(&[
+            commit("base").file("a.c", "int a;\n"),
+            commit("mine").change_id("Imine").file("a.c", "int b;\n"),
+            commit("theirs")
+                .change_id("Itheirs")
+                .file("a.c", "int c;\n")
+                .author("Other Person", "other@example.com"),
+        ])
+        .await
+    }
+
+    async fn mixed_session(repo: &Repo) -> Session {
+        let base = repo.git(&["rev-parse", "HEAD~2"]).await;
+        let opts = SeriesOptions {
+            gerrit: false,
+            base: Some(base.trim().to_owned()),
+            ..SeriesOptions::new()
+        };
+        Session::with(
+            repo.path(),
+            &opts,
+            Languages::new(),
+            std::sync::Arc::new(crate::highlight::Highlighter::new()),
+            Some(Store::at(repo.path().join(".qreview-test").as_path())),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_change_of_a_colleague_asks_for_help_and_no_fix() {
+        let repo = mixed().await;
+        let session = mixed_session(&repo).await;
+        session
+            .add_comment("Itheirs", line_comment("a.c", 1, "Why c?"))
+            .await
+            .unwrap();
+
+        let text = change(&session, "Itheirs").await.unwrap();
+        assert!(
+            text.contains(
+                "I am reviewing this change by Other Person and left the comments below. Help me\n\
+                 review it: answer each comment, and do not change the code."
+            ),
+            "{text}"
+        );
+        assert!(!text.contains("Please address"), "{text}");
+
+        let json = json(&session, None).await.unwrap();
+        assert_eq!(json["changes"][0]["own"], false, "{json}");
+    }
+
+    #[tokio::test]
+    async fn a_remark_staged_on_the_change_of_a_colleague_stays_in_the_export() {
+        let repo = mixed().await;
+        let session = mixed_session(&repo).await;
+        session
+            .add_comment("Itheirs", line_comment("a.c", 1, "Why c?"))
+            .await
+            .unwrap();
+        // The page stages a remark there by default.
+        let mut file = session.store.load("Itheirs", "").unwrap();
+        file.comments[0].gerrit = Some(crate::store::model::Gerrit {
+            state: crate::store::model::Outbox::Staged,
+            patch_set: 1,
+            resolve: false,
+            id: None,
+            sent_at: None,
+        });
+        session.store.save(&file).unwrap();
+
+        let text = change(&session, "Itheirs").await.unwrap();
+        assert!(text.contains("Why c?"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_series_of_both_kinds_asks_under_each_heading() {
+        let repo = mixed().await;
+        let session = mixed_session(&repo).await;
+        for key in ["Imine", "Itheirs"] {
+            session
+                .add_comment(key, line_comment("a.c", 1, "A remark."))
+                .await
+                .unwrap();
+        }
+
+        let text = series(&session).await.unwrap();
+        assert!(
+            text.contains("I left the comments below on this series."),
+            "{text}"
+        );
+        let mine = text.find("This change is mine. Please address these comments.");
+        let theirs = text.find("This change is by Other Person. Help me review it");
+        assert!(mine.is_some() && theirs.is_some(), "{text}");
+        // Oldest first: the change of the reader comes before the other.
+        assert!(mine < theirs, "{text}");
+
+        let json = json(&session, None).await.unwrap();
+        assert_eq!(json["changes"][0]["own"], true, "{json}");
+        assert_eq!(json["changes"][1]["own"], false, "{json}");
+    }
+
     #[tokio::test]
     async fn the_json_names_each_comment_by_its_id() {
         let repo = reviewed().await;
@@ -844,6 +1127,7 @@ mod tests {
                     ..Default::default()
                 },
             )
+            .await
             .unwrap();
 
         let value = json(&session, None).await.unwrap();
@@ -905,10 +1189,12 @@ mod tests {
                     end_char: None,
                     body: "About the change.".to_owned(),
                     author: Author::Reader,
+                    agent_name: None,
                     parent: None,
                     done: None,
                     blocked: false,
                     ask: false,
+                    gerrit: None,
                 },
             )
             .await
@@ -992,10 +1278,12 @@ mod tests {
                         end_char: None,
                         body: format!("A remark on {key}."),
                         author: Author::Reader,
+                        agent_name: None,
                         parent: None,
                         done: None,
                         blocked: false,
                         ask: false,
+                        gerrit: None,
                     },
                 )
                 .await
@@ -1063,10 +1351,12 @@ mod tests {
                     end_char: None,
                     body: "This line was doing something.".to_owned(),
                     author: Author::Reader,
+                    agent_name: None,
                     parent: None,
                     done: None,
                     blocked: false,
                     ask: false,
+                    gerrit: None,
                 },
             )
             .await
@@ -1422,10 +1712,12 @@ mod tests {
                         end_char: None,
                         body: format!("A remark on {key}."),
                         author: Author::Reader,
+                        agent_name: None,
                         parent: None,
                         done: None,
                         blocked: false,
                         ask: false,
+                        gerrit: None,
                     },
                 )
                 .await
@@ -1469,5 +1761,169 @@ mod tests {
 
         let text = series(&session).await.unwrap();
         assert_eq!(text, "No comment in this series.\n");
+    }
+
+    /// The change `Iretry` as Gerrit holds it, at the commit under review,
+    /// with a thread that waits, a resolved one, and one the reader answered
+    /// with a reply that resolves it.
+    async fn on_gerrit(repo: &Repo, session: &Session) {
+        let head = repo.sha("HEAD").await;
+        let change = crate::gerrit::Change {
+            project: "myproject".to_owned(),
+            branch: "main".to_owned(),
+            id: "Iretry".to_owned(),
+            number: 12321,
+            subject: "net: fix the retry loop".to_owned(),
+            url: "https://review.example.com/c/myproject/+/12321".to_owned(),
+            status: "NEW".to_owned(),
+            patch_sets: vec![crate::gerrit::PatchSet {
+                number: 1,
+                revision: head,
+                git_ref: "refs/changes/21/12321/1".to_owned(),
+                created_on: 0,
+                kind: "REWORK".to_owned(),
+                comments: Vec::new(),
+            }],
+        };
+        let comments = serde_json::json!({
+            "src/net.blk": [
+                { "id": "g1", "patch_set": 1, "line": 4, "message": "Check the result of read().",
+                  "author": { "name": "Jane Reviewer" }, "unresolved": true,
+                  "updated": "2026-11-01 10:00:00.000000000" },
+                { "id": "g2", "in_reply_to": "g1", "patch_set": 1, "line": 4,
+                  "message": "Which result?", "author": { "name": "Test Author" },
+                  "unresolved": true, "updated": "2026-11-01 11:00:00.000000000" },
+                { "id": "g3", "patch_set": 1, "line": 1, "message": "Fine.",
+                  "author": { "name": "Jane Reviewer" }, "unresolved": false,
+                  "updated": "2026-11-01 09:00:00.000000000" },
+                { "id": "g4", "patch_set": 1, "line": 2, "message": "Say why.",
+                  "author": { "name": "Bob" }, "unresolved": true,
+                  "updated": "2026-11-01 09:30:00.000000000" }
+            ]
+        });
+        session
+            .hold_gerrit(change, crate::gerrit::threads::parse(&comments))
+            .await;
+        session
+            .add_comment(
+                "Iretry",
+                NewComment {
+                    parent: Some("gerrit:g4".to_owned()),
+                    gerrit: Some(crate::comments::Stage { resolve: true }),
+                    ..line_comment("src/net.blk", 2, "Done")
+                },
+            )
+            .await
+            .unwrap();
+        session
+            .add_comment(
+                "Iretry",
+                NewComment {
+                    parent: Some("gerrit:g1".to_owned()),
+                    author: Author::Agent,
+                    ..line_comment("src/net.blk", 4, "It returns -1 on error.")
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_threads_of_gerrit_that_wait_are_in_the_export() {
+        let repo = reviewed().await;
+        let session = session_of(&repo).await;
+        on_gerrit(&repo, &session).await;
+        session
+            .add_comment(
+                "Iretry",
+                line_comment("src/net.blk", 3, "This loop never ends."),
+            )
+            .await
+            .unwrap();
+
+        let text = change(&session, "Iretry").await.unwrap();
+        let stable = text
+            .lines()
+            .map(|line| match line.starts_with("## Review:") {
+                true => "## Review: <repo>@main, commit <hash>".to_owned(),
+                false => line.to_owned(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        insta::assert_snapshot!(stable);
+
+        let value = json(&session, Some("Iretry")).await.unwrap();
+        let threads = value["changes"][0]["threads"].as_array().unwrap();
+        let ids: Vec<&str> = threads.iter().map(|t| t["id"].as_str().unwrap()).collect();
+        // Line 3, then line 4. The resolved thread, and the one resolved
+        // here, are left out.
+        assert_eq!(ids[1], "gerrit:g1");
+        assert_eq!(ids.len(), 2);
+        let gerrit = &threads[1];
+        assert_eq!(gerrit["patchSet"], 1);
+        let who: Vec<(&str, &str)> = gerrit["comments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                (
+                    c["author"].as_str().unwrap(),
+                    c["name"].as_str().unwrap_or("-"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            who,
+            [
+                ("gerrit", "Jane Reviewer"),
+                ("gerrit", "Test Author"),
+                ("agent", "-")
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_thread_reopened_after_a_published_done_waits_again() {
+        let repo = reviewed().await;
+        let session = session_of(&repo).await;
+        on_gerrit(&repo, &session).await;
+        let done = session
+            .store
+            .load("Iretry", "")
+            .unwrap()
+            .comments
+            .into_iter()
+            .find(|c| c.parent.as_deref() == Some("gerrit:g4"))
+            .unwrap();
+        crate::comments::mark_sent(
+            &session.store,
+            "Iretry",
+            &[(done.id, Some("g5".to_owned()))],
+        )
+        .unwrap();
+
+        // The reader published the Done, and the reviewer answered.
+        let change = session.gerrit_change("Iretry").await.unwrap();
+        let comments = serde_json::json!({
+            "src/net.blk": [
+                { "id": "g4", "patch_set": 1, "line": 2, "message": "Say why.",
+                  "author": { "name": "Bob" }, "unresolved": true,
+                  "updated": "2026-11-01 09:30:00.000000000" },
+                { "id": "g5", "in_reply_to": "g4", "patch_set": 1, "line": 2,
+                  "message": "Done", "author": { "name": "Test Author" },
+                  "unresolved": false, "updated": "2026-11-02 09:00:00.000000000" },
+                { "id": "g6", "in_reply_to": "g5", "patch_set": 1, "line": 2,
+                  "message": "Still wrong.", "author": { "name": "Bob" },
+                  "unresolved": true, "updated": "2026-11-03 09:00:00.000000000" }
+            ]
+        });
+        session
+            .hold_gerrit(change, crate::gerrit::threads::parse(&comments))
+            .await;
+
+        let value = json(&session, Some("Iretry")).await.unwrap();
+        let threads = value["changes"][0]["threads"].as_array().unwrap();
+        let ids: Vec<&str> = threads.iter().map(|t| t["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["gerrit:g4"]);
     }
 }

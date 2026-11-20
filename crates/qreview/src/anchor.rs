@@ -386,10 +386,12 @@ mod tests {
             body: "b".to_owned(),
             anchor: None,
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: false,
             blocked: false,
             moves: Vec::new(),
+            gerrit: None,
         };
 
         let placed = place(&git, &comment, "HEAD", crate::diff::EMPTY_TREE).await;
@@ -429,10 +431,12 @@ mod tests {
                 context: vec!["one".to_owned(), "two".to_owned(), "three".to_owned()],
             }),
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: false,
             blocked: false,
             moves: Vec::new(),
+            gerrit: None,
         };
 
         let placed = place(&git, &comment, "HEAD", "HEAD~1").await;
@@ -478,10 +482,12 @@ mod tests {
                 context: vec!["one".to_owned(), "two".to_owned(), "three".to_owned()],
             }),
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: false,
             blocked: false,
             moves: Vec::new(),
+            gerrit: None,
         }
     }
 
@@ -559,10 +565,12 @@ mod tests {
                 context: vec!["1".to_owned()],
             }),
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: false,
             blocked: false,
             moves: Vec::new(),
+            gerrit: None,
         };
 
         let placed = place(&git, &comment, "HEAD", crate::diff::EMPTY_TREE).await;

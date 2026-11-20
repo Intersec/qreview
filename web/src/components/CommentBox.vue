@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { computed, inject, onMounted, ref, watch } from 'vue';
 import { drop, read, write } from '@/diff/drafts';
+import { THREADS } from '@/diff/threads';
 
 const props = defineProps<{
   start?: string;
@@ -9,8 +10,27 @@ const props = defineProps<{
   draft?: string;
   /// The box can save and ask the agent to answer in one go.
   askable?: boolean;
+  /// The box writes a new remark, which can go to Gerrit.
+  remark?: boolean;
+  /// The box replies to a thread of Gerrit: the reply can go out in it, and
+  /// resolve it.
+  gerritReply?: boolean;
 }>();
-const emit = defineEmits<{ save: [body: string, ask: boolean]; cancel: [] }>();
+const emit = defineEmits<{
+  save: [body: string, ask: boolean, gerrit: boolean, resolve: boolean];
+  cancel: [];
+}>();
+
+/// The For Gerrit box, on a new remark on a version that Gerrit holds, or
+/// on a reply to a thread of Gerrit, which always has its patch set there.
+const threads = inject(THREADS, null);
+const offersGerrit = computed(
+  () => props.gerritReply === true || (props.remark === true && threads?.onGerrit?.value === true),
+);
+/// Clear at first: a remark is talk with the agent until the reader says
+/// it goes to Gerrit.
+const forGerrit = ref(false);
+const resolve = ref(false);
 
 /// What the reader typed and did not save wins over the text the box starts
 /// from: an edit that a reload interrupted comes back as it was left.
@@ -56,7 +76,8 @@ function save(ask = false) {
     return;
   }
   forget();
-  emit('save', body.value, ask && props.askable === true);
+  const gerrit = offersGerrit.value && forGerrit.value;
+  emit('save', body.value, ask && props.askable === true, gerrit, gerrit && resolve.value);
 }
 
 function forget() {
@@ -92,6 +113,22 @@ function forget() {
         >.</span
       >
       <span class="spacer"></span>
+      <label
+        v-if="offersGerrit"
+        class="talk-done-box"
+        title="Send this remark to Gerrit as a draft, when you click Send"
+      >
+        <input v-model="forGerrit" type="checkbox" />
+        For Gerrit
+      </label>
+      <label
+        v-if="gerritReply && forGerrit"
+        class="talk-done-box"
+        title="Resolve the thread on Gerrit with this reply"
+      >
+        <input v-model="resolve" type="checkbox" />
+        Resolve
+      </label>
       <button
         type="button"
         class="action"

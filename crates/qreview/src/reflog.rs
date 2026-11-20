@@ -127,6 +127,8 @@ mod tests {
             is_merge: false,
             worktree: false,
             lines: None,
+            own: true,
+            email: String::new(),
         }
     }
 

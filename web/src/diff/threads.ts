@@ -4,15 +4,44 @@
 // through one context rather than through every component between them.
 
 import type { ComputedRef, InjectionKey, Ref } from 'vue';
-import type { Comment } from '@/api/types';
+import type { Comment, PostedComment, SentState } from '@/api/types';
 
 export interface Threads {
   /// The replies of a remark, in the order they were written.
   repliesOf(id: string): Comment[];
+  /// The replies of a thread of Gerrit, from Gerrit, oldest first.
+  postedRepliesOf?(thread: string): PostedComment[];
+  /// Reply to a thread of Gerrit: here only, or staged for Gerrit.
+  replyOnGerrit?(
+    thread: string,
+    body: string,
+    stage: { resolve: boolean } | null,
+    ask?: boolean,
+  ): Promise<void>;
+  /// Ask the agent about a thread of Gerrit.
+  askGerrit?(thread: string): Promise<void>;
+  /// Ask the agent to fix what a thread of Gerrit asks for.
+  applyGerrit?(thread: string): Promise<void>;
+  /// True when Apply can reach an agent: one listens and works on nothing,
+  /// and the change is the reader's own.
+  canApply?: ComputedRef<boolean>;
+  /// Check or clear the Done box of a thread of Gerrit.
+  setGerritDone?(thread: string, done: boolean): Promise<void>;
+  /// Where a remark of the change on screen, sent to Gerrit, is now.
+  sentState?(comment: Comment): SentState | null;
+  /// The page of the change on screen on Gerrit.
+  gerritUrl?: ComputedRef<string | null>;
+  /// Delete a reply written here to a thread of Gerrit.
+  remove?(id: string): Promise<void>;
   reply(id: string, body: string, ask?: boolean): Promise<void>;
   /// Ask the agent to answer the thread.
   ask(id: string): Promise<void>;
   setDone(id: string, done: boolean): Promise<void>;
+  /// Stage a remark for Gerrit, or keep it here.
+  setGerrit?(id: string, on: boolean): Promise<void>;
+  /// True when Gerrit holds the version the change carries now, so a remark
+  /// on it can go there.
+  onGerrit?: ComputedRef<boolean>;
   /// The changes, and the files of the change on the screen, that hold a
   /// thread waiting for the reader.
   blockedChanges: ComputedRef<Set<string>>;
@@ -28,6 +57,10 @@ export interface Threads {
 }
 
 export const THREADS: InjectionKey<Threads> = Symbol('threads');
+
+/// The prefix of a `parent` that names a thread of Gerrit, which the store
+/// does not hold. See section 6.8 of the design.
+export const GERRIT_PARENT = 'gerrit:';
 
 /// What the reader last asked of every done thread on the screen: folded or
 /// not. Null until the reader asks, so each card starts the way its state
@@ -65,4 +98,34 @@ export function isBlocked(replies: Comment[]): boolean {
 /// would only buy the same answer twice.
 export function awaitsAgent(remark: Comment, replies: Comment[]): boolean {
   return (replies[replies.length - 1] ?? remark).author === 'reader';
+}
+
+/// True when a thread of Gerrit is resolved: its newest comment says so,
+/// the rule of Gerrit. The ssh answer gives no state: such a thread is
+/// neither.
+export function isResolved(remark: PostedComment, replies: PostedComment[]): boolean {
+  return (replies[replies.length - 1] ?? remark).unresolved === false;
+}
+
+/// True when a reply written here resolves the thread of Gerrit: staged, or
+/// a draft on Gerrit, it makes the thread done before Gerrit knows. Once
+/// published or deleted there, Gerrit says what the thread is.
+export function resolvesHere(
+  replies: Comment[],
+  state: (reply: Comment) => SentState | null = () => null,
+): boolean {
+  return replies.some((reply) => {
+    const left = reply.gerrit?.state === 'sent' ? state(reply) : null;
+    return reply.gerrit?.resolve === true && left !== 'published' && left !== 'deleted';
+  });
+}
+
+/// The text that a staged comment sends to Gerrit: the newest reply of its
+/// thread, or its own body. The server sends the same.
+export function lastWord(staged: Comment, comments: Comment[]): string {
+  if (staged.parent !== null) {
+    return staged.body;
+  }
+  const replies = repliesBy(comments).get(staged.id) ?? [];
+  return replies[replies.length - 1]?.body ?? staged.body;
 }

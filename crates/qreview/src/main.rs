@@ -12,6 +12,7 @@ use tokio::net::TcpListener;
 use qreview::agent;
 use qreview::api::{self, AppState, auth};
 use qreview::config;
+use qreview::gerrit;
 use qreview::git::exec::Git;
 use qreview::highlight::Highlighter;
 use qreview::lang::Languages;
@@ -34,7 +35,21 @@ async fn main() -> Result<()> {
         std::process::exit(code);
     }
 
-    let root = Git::discover(&cwd).await?.root().to_path_buf();
+    let git = Git::discover(&cwd).await?;
+    let root = git.root().to_path_buf();
+
+    // `qreview <gerrit-url>`: the review of a change of Gerrit, on the
+    // server of the worktree. See section 6.9 of the design.
+    let address = cli
+        .rev
+        .as_deref()
+        .filter(|rev| cli.command.is_none() && gerrit::open::is_address(rev));
+    let target = match address {
+        Some(url) => Some(
+            gerrit::open::parse(url).with_context(|| format!("{url} names no change of Gerrit"))?,
+        ),
+        None => None,
+    };
     let home = agent::home(&cwd).await?;
 
     // An agent that starts qreview twice gets the review that is open, not
@@ -42,10 +57,18 @@ async fn main() -> Result<()> {
     if cli.command.is_none()
         && let Some(server) = agent::running(&home).await
     {
-        println!(
-            "qreview already runs on this worktree, at {}",
-            server.address().url()
-        );
+        match target {
+            // One server per worktree: it keeps the review it opened.
+            Some(target) => println!(
+                "qreview already runs on this worktree, at {}. To open change {}, stop it first",
+                server.address().url(),
+                target.number
+            ),
+            None => println!(
+                "qreview already runs on this worktree, at {}",
+                server.address().url()
+            ),
+        }
         return Ok(());
     }
     let config = config::load(&root)?;
@@ -65,6 +88,16 @@ async fn main() -> Result<()> {
     // The option only ever switches Gerrit off, never on.
     opts.gerrit = config.gerrit.enabled && !cli.no_gerrit;
     opts.worktree = config.series.worktree && !cli.no_worktree;
+    opts.gerrit_url = config.gerrit.url.clone();
+    opts.gerrit_auth = config.gerrit.auth.clone();
+    if let Some(target) = target {
+        if !opts.gerrit {
+            anyhow::bail!(
+                "a change of Gerrit needs Gerrit. Drop --no-gerrit, or set gerrit.enabled"
+            );
+        }
+        open_change(&git, target, &mut opts).await?;
+    }
 
     let mut langs = Languages::new();
     langs.extend(&config.languages);
@@ -115,6 +148,29 @@ async fn main() -> Result<()> {
     serve(cli.port, state, cli.no_open, &home).await
 }
 
+/// Fetch the change that the address names, and review it alone: the series
+/// is not the checkout. See section 6.9 of the design.
+async fn open_change(git: &Git, target: gerrit::open::Target, opts: &mut Options) -> Result<()> {
+    let coords = gerrit::coords::of_remote(git)
+        .await
+        .context("origin is not a Gerrit server over ssh, and a change of Gerrit needs one")?;
+    let found = gerrit::open::find(&coords, target).await?;
+    println!(
+        "Fetching change {}, patch set {}: {}",
+        found.change.number, found.patch_set.number, found.change.subject
+    );
+    let (head, base) = gerrit::open::fetch(git, &found).await?;
+
+    opts.rev = Some(head);
+    // `--base` still wins, as rule 1 says.
+    if opts.base.is_none() {
+        opts.base_from_gerrit = base.is_some();
+        opts.base = base;
+    }
+    opts.worktree = false;
+    Ok(())
+}
+
 /// Run a command of the agent. None when the command is another one.
 async fn agent_command(cli: &cli::Cli, cwd: &std::path::Path) -> Result<Option<i32>> {
     let print = |value: &serde_json::Value| {
@@ -125,11 +181,21 @@ async fn agent_command(cli: &cli::Cli, cwd: &std::path::Path) -> Result<Option<i
     };
 
     match &cli.command {
-        Some(cli::Command::Comment { place, body, key }) => {
+        Some(cli::Command::Comment {
+            place,
+            body,
+            key,
+            gerrit,
+        }) => {
             let client = agent::connect(cwd).await?;
             let place = agent::parse_place(place)?;
             let body = agent::body_of(body)?;
-            print(&agent::comment(&client, &place, &body, key.as_deref()).await?);
+            print(&agent::comment(&client, &place, &body, key.as_deref(), *gerrit).await?);
+        }
+        Some(cli::Command::Stage { id, body, resolve }) => {
+            let client = agent::connect(cwd).await?;
+            let body = agent::body_of(body)?;
+            print(&agent::stage(&client, id, &body, *resolve).await?);
         }
         Some(cli::Command::Reply {
             id,
@@ -141,10 +207,14 @@ async fn agent_command(cli: &cli::Cli, cwd: &std::path::Path) -> Result<Option<i
             let body = agent::body_of(body)?;
             print(&agent::reply(&client, id, &body, *done, *blocked).await?);
         }
-        Some(cli::Command::Wait { after, timeout }) => {
+        Some(cli::Command::Wait {
+            after,
+            timeout,
+            agent,
+        }) => {
             let home = agent::home(cwd).await?;
             let timeout = timeout.map(std::time::Duration::from_secs);
-            let (events, any) = agent::wait(&home, *after, timeout).await?;
+            let (events, any) = agent::wait(&home, *after, timeout, agent.as_deref()).await?;
             print(&events);
             return Ok(Some(if any { 0 } else { 1 }));
         }
@@ -159,6 +229,22 @@ async fn agent_command(cli: &cli::Cli, cwd: &std::path::Path) -> Result<Option<i
         }) => {
             let client = agent::connect(cwd).await?;
             print(&agent::migrate(&client, from, to.as_deref(), done, blocked).await?);
+        }
+        // The server holds the series under review, which may be a change
+        // of Gerrit that only it fetched. Without a server, the store
+        // answers below.
+        Some(cli::Command::Export { key, json }) => {
+            let Some(client) = agent::running(&agent::home(cwd).await?).await else {
+                return Ok(None);
+            };
+            let key = key
+                .as_deref()
+                .map(|key| format!("&scope=change&key={key}"))
+                .unwrap_or_default();
+            match json {
+                true => print(&client.get(&format!("/api/export?json=true{key}")).await?),
+                false => print!("{}", client.get_text(&format!("/api/export?{key}")).await?),
+            }
         }
         Some(cli::Command::Skill) => print!("{}", agent::SKILL),
         _ => return Ok(None),
@@ -239,7 +325,7 @@ async fn serve(port: u16, state: AppState, no_open: bool, home: &agent::Home) ->
     };
     let on_socket = unix.as_ref().map(|(_, path)| path.clone());
     let socket_task = unix.map(|(listener, _)| {
-        let app = app.clone();
+        let app = api::on_socket(app.clone());
         tokio::spawn(async move { axum::serve(listener, app).await })
     });
 
@@ -254,7 +340,7 @@ async fn serve(port: u16, state: AppState, no_open: bool, home: &agent::Home) ->
     };
     let shared_socket = shared.as_ref().map(|(_, path)| path.clone());
     let shared_task = shared.map(|(listener, _)| {
-        let app = app.clone();
+        let app = api::on_socket(app.clone());
         tokio::spawn(async move { axum::serve(listener, app).await })
     });
 

@@ -12,7 +12,9 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::git::exec::Git;
 use crate::store::Store;
-use crate::store::model::{Anchor, Author, ChangeFile, Comment, Scope, Side};
+use crate::store::model::{
+    Anchor, Author, ChangeFile, Comment, Deleted, Gerrit, Outbox, Removal, Scope, Side,
+};
 
 /// How many lines above and below the anchor are kept.
 pub const CONTEXT: usize = 3;
@@ -46,12 +48,28 @@ pub struct NewComment {
     /// On a reply, check or clear the Done box of the thread with it.
     #[serde(default)]
     pub done: Option<bool>,
+    /// The name that the agent gave in its wait. The server sets it, on a
+    /// comment of the agent only.
+    #[serde(skip)]
+    pub agent_name: Option<String>,
     /// On a reply of the agent, the thread waits for the reader.
     #[serde(default)]
     pub blocked: bool,
     /// Ask the agent to answer the thread once the comment is saved.
     #[serde(default)]
     pub ask: bool,
+    /// Stage the remark for Gerrit. See section 5.8 of the design.
+    #[serde(default)]
+    pub gerrit: Option<Stage>,
+}
+
+/// What staging a remark for Gerrit asks for.
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stage {
+    /// On a reply to a thread of Gerrit, resolve that thread.
+    #[serde(default)]
+    pub resolve: bool,
 }
 
 /// What the interface sends to change one.
@@ -66,6 +84,20 @@ pub struct EditComment {
     /// Who makes the change, for the event that tells the other party.
     #[serde(default)]
     pub author: Author,
+    /// Stage the remark for Gerrit, or, with `null`, keep it in qreview.
+    /// Absent leaves it as it is.
+    #[serde(default, deserialize_with = "present")]
+    pub gerrit: Option<Option<Stage>>,
+}
+
+/// A field that is present, even as `null`, is `Some`. Serde reads a
+/// `null` as absent otherwise, and `null` is how a remark leaves Gerrit.
+fn present<'de, D, T>(from: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::deserialize(from).map(Some)
 }
 
 /// What the change owes the series pane.
@@ -86,6 +118,33 @@ pub struct Target<'a> {
     pub key: &'a str,
     pub subject: &'a str,
     pub patch_set: usize,
+    /// The patch set of Gerrit that `rev` is, when Gerrit holds it.
+    pub on_gerrit: Option<usize>,
+    /// The thread of Gerrit that a reply with a `gerrit:` parent answers.
+    pub gerrit_thread: Option<GerritThread>,
+}
+
+/// The prefix of a `parent` that names a thread of Gerrit, which the store
+/// does not hold. See section 6.8 of the design.
+pub const GERRIT_PARENT: &str = "gerrit:";
+
+/// A thread of Gerrit, as a reply in qreview needs it.
+#[derive(Clone, Debug)]
+pub struct GerritThread {
+    /// The id of the comment of Gerrit that opens the thread.
+    pub id: String,
+    /// The patch set of Gerrit that holds the thread.
+    pub patch_set: usize,
+    /// The revision of that patch set.
+    pub commit: String,
+    pub scope: Scope,
+    /// The place of the thread, so that the reply goes to the same one.
+    pub anchor: Option<Anchor>,
+}
+
+/// The id of the thread of Gerrit that a reply answers.
+pub fn gerrit_parent(comment: &Comment) -> Option<&str> {
+    comment.parent.as_deref()?.strip_prefix(GERRIT_PARENT)
 }
 
 /// Read the review of a change.
@@ -131,6 +190,9 @@ impl Target<'_> {
             bail!("a comment with no text says nothing");
         }
 
+        if let Some(thread) = &self.gerrit_thread {
+            return self.reply_on_gerrit(thread, new);
+        }
         if new.parent.is_some() {
             let _lock = self.store.lock()?;
             let mut file = self.store.load(self.key, self.subject)?;
@@ -141,6 +203,10 @@ impl Target<'_> {
         if new.blocked {
             bail!("only a reply waits for the reader");
         }
+        let gerrit = match new.gerrit {
+            Some(stage) => Some(staged(self.on_gerrit, stage)?),
+            None => None,
+        };
 
         let now = now();
         let anchor = match new.scope {
@@ -158,10 +224,12 @@ impl Target<'_> {
             body: new.body.trim_end().to_owned(),
             anchor,
             author: new.author,
+            agent_name: new.agent_name.filter(|_| new.author == Author::Agent),
             parent: None,
             done: false,
             blocked: false,
             moves: Vec::new(),
+            gerrit,
         };
 
         // Read after the anchor: git may take a while, and the lock must
@@ -174,17 +242,63 @@ impl Target<'_> {
         Ok(comment)
     }
 
+    /// Add a reply to a thread of Gerrit. A plain one stays in qreview, the
+    /// talk of the reader with the agent. A staged one goes out in the
+    /// thread, on its patch set, at the next Send.
+    fn reply_on_gerrit(&self, thread: &GerritThread, new: NewComment) -> Result<Comment> {
+        if new.blocked && new.author != Author::Agent {
+            bail!("only the agent waits for the reader");
+        }
+        let gerrit = new.gerrit.map(|stage| Gerrit {
+            state: Outbox::Staged,
+            patch_set: thread.patch_set,
+            resolve: stage.resolve,
+            id: None,
+            sent_at: None,
+        });
+
+        let now = now();
+        let reply = Comment {
+            id: new_id(),
+            patch_set: thread.patch_set,
+            commit: thread.commit.clone(),
+            created_at: now.clone(),
+            updated_at: now,
+            scope: thread.scope,
+            body: new.body.trim_end().to_owned(),
+            anchor: thread.anchor.clone(),
+            author: new.author,
+            agent_name: new.agent_name.filter(|_| new.author == Author::Agent),
+            parent: Some(format!("{GERRIT_PARENT}{}", thread.id)),
+            done: false,
+            blocked: new.blocked,
+            moves: Vec::new(),
+            gerrit,
+        };
+
+        let _lock = self.store.lock()?;
+        let mut file = self.store.load(self.key, self.subject)?;
+        file.comments.push(reply.clone());
+        self.store.save(&file)?;
+        Ok(reply)
+    }
+
     /// Add a reply to its thread, and move the state of the thread with it.
     fn reply(&self, file: &mut ChangeFile, new: NewComment) -> Result<Comment> {
         let parent = new.parent.as_deref().unwrap_or_default();
         let at = thread_of(file, parent)?;
         let remark = &mut file.comments[at];
 
-        if !of_version(remark, self.rev) {
+        // A staged remark stays on its patch set after an amend, and its
+        // newest reply is the text it sends.
+        if !of_version(remark, self.rev) && !is_staged(remark) {
             bail!("this thread belongs to an earlier version, and its round is over");
         }
         if new.blocked && new.author != Author::Agent {
             bail!("only the agent waits for the reader");
+        }
+        if new.gerrit.is_some() {
+            bail!("a reply stays in qreview: only the remark of a thread goes to Gerrit");
         }
 
         // A reply of the reader opens the thread again: it says more
@@ -206,10 +320,12 @@ impl Target<'_> {
             body: new.body.trim_end().to_owned(),
             anchor: None,
             author: new.author,
+            agent_name: new.agent_name.filter(|_| new.author == Author::Agent),
             parent: Some(remark.id.clone()),
             done: false,
             blocked: new.blocked,
             moves: Vec::new(),
+            gerrit: None,
         };
         file.comments.push(reply.clone());
 
@@ -234,12 +350,34 @@ fn thread_of(file: &ChangeFile, id: &str) -> Result<usize> {
         .with_context(|| format!("comment {id} answers {root}, which is gone"))
 }
 
-/// Change the text of a comment, or check or clear the Done box of its
-/// thread.
+/// The start of the refusal to stage on a version that Gerrit does not hold.
+/// The agent reads it to fall back to a plain remark.
+pub const NOT_ON_GERRIT: &str = "Gerrit does not hold this version";
+
+/// The mark of a remark staged for Gerrit, on the patch set `on_gerrit`.
+fn staged(on_gerrit: Option<usize>, stage: Stage) -> Result<Gerrit> {
+    let patch_set = on_gerrit.with_context(|| {
+        format!("{NOT_ON_GERRIT}, so a remark on it cannot go there. Push it first")
+    })?;
+
+    Ok(Gerrit {
+        state: Outbox::Staged,
+        patch_set,
+        resolve: stage.resolve,
+        id: None,
+        sent_at: None,
+    })
+}
+
+/// Change the text of a comment, check or clear the Done box of its
+/// thread, or stage it for Gerrit.
+///
+/// `on_gerrit` is the patch set of Gerrit that `current` is, when Gerrit
+/// holds it.
 pub fn edit(
     store: &Store,
     key: &str,
-    current: &str,
+    (current, on_gerrit): (&str, Option<usize>),
     id: &str,
     edit: EditComment,
 ) -> Result<Comment> {
@@ -250,6 +388,42 @@ pub fn edit(
         .iter_mut()
         .find(|c| c.id == id)
         .with_context(|| format!("no comment {id}"))?;
+
+    let sent = found
+        .gerrit
+        .as_ref()
+        .is_some_and(|g| g.state == Outbox::Sent);
+    if sent && (edit.body.is_some() || edit.gerrit.is_some()) {
+        bail!("this remark is a draft on Gerrit now. Change it there");
+    }
+
+    if let Some(stage) = edit.gerrit {
+        // A reply to Gerrit is written for the thread: it can be kept here,
+        // and a new one written to send it again.
+        if gerrit_parent(found).is_some() {
+            match (stage, found.gerrit.as_mut()) {
+                // The Done box of the thread: a staged reply keeps its text,
+                // and stops resolving the thread.
+                (Some(stage), Some(staged)) => staged.resolve = stage.resolve,
+                (Some(_), None) => bail!("write a new reply to put it on Gerrit again"),
+                (None, _) => found.gerrit = None,
+            }
+            found.updated_at = now();
+            let out = found.clone();
+            store.save(&file)?;
+            return Ok(out);
+        }
+        if !found.is_remark() {
+            bail!("a reply stays in qreview: only the remark of a thread goes to Gerrit");
+        }
+        if !of_version(found, current) {
+            bail!("this thread belongs to an earlier version, and its round is over");
+        }
+        found.gerrit = match stage {
+            Some(stage) => Some(staged(on_gerrit, stage)?),
+            None => None,
+        };
+    }
 
     if let Some(done) = edit.done {
         if !found.is_remark() {
@@ -275,22 +449,100 @@ pub fn edit(
     Ok(updated)
 }
 
-/// Delete a comment. A remark goes with its replies, which answer nothing
-/// once it is gone.
-pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
+/// Forget that a remark was sent to Gerrit, when its draft is gone there.
+pub fn forget_sent(store: &Store, key: &str, id: &str) -> Result<()> {
     let _lock = store.lock()?;
     let mut file = store.load(key, "")?;
-    let before = file.comments.len();
+    if let Some(found) = file.comments.iter_mut().find(|c| c.id == id) {
+        found.gerrit = None;
+        found.updated_at = now();
+    }
+    store.save(&file)
+}
+
+/// Mark remarks sent to Gerrit, each with the id of its draft.
+pub fn mark_sent(store: &Store, key: &str, sent: &[(String, Option<String>)]) -> Result<()> {
+    if sent.is_empty() {
+        return Ok(());
+    }
+    let _lock = store.lock()?;
+    let mut file = store.load(key, "")?;
+    let now = now();
+    for comment in &mut file.comments {
+        let Some((_, id)) = sent.iter().find(|(sent, _)| *sent == comment.id) else {
+            continue;
+        };
+        if let Some(gerrit) = comment.gerrit.as_mut() {
+            gerrit.state = Outbox::Sent;
+            gerrit.id = id.clone();
+            gerrit.sent_at = Some(now.clone());
+        }
+    }
+    store.save(&file)
+}
+
+/// The comment whose text a staged comment sends to Gerrit: the newest
+/// reply of its thread, or itself. The reader often asks the agent to write
+/// the remark, and the answer is what the author of the change must read.
+pub fn last_word<'a>(comment: &'a Comment, all: &'a [Comment]) -> &'a Comment {
+    if !comment.is_remark() {
+        return comment;
+    }
+    // A reply joins the store after the comments it answers.
+    all.iter()
+        .rev()
+        .find(|c| c.parent.as_deref() == Some(comment.id.as_str()))
+        .unwrap_or(comment)
+}
+
+/// True when the remark, or the reply to a thread of Gerrit, waits for the
+/// reader to send it to Gerrit.
+pub fn is_staged(comment: &Comment) -> bool {
+    (comment.is_remark() || gerrit_parent(comment).is_some())
+        && comment
+            .gerrit
+            .as_ref()
+            .is_some_and(|g| g.state == Outbox::Staged)
+}
+
+/// Delete a comment. A remark goes with its replies, which answer nothing
+/// once it is gone. The file keeps them in `deleted`.
+pub fn delete(store: &Store, key: &str, id: &str, by: Author) -> Result<usize> {
+    let _lock = store.lock()?;
+    let mut file = store.load(key, "")?;
 
     if !file.comments.iter().any(|c| c.id == id) {
         bail!("no comment {id}");
     }
 
-    file.comments
-        .retain(|c| c.id != id && c.parent.as_deref() != Some(id));
+    let gone = set_aside(&mut file, by, Removal::Delete, |c| {
+        c.id == id || c.parent.as_deref() == Some(id)
+    });
     store.save(&file)?;
 
-    Ok(before - file.comments.len())
+    Ok(gone)
+}
+
+/// Move the comments that `takes` picks from `comments` to `deleted`.
+fn set_aside(
+    file: &mut ChangeFile,
+    by: Author,
+    how: Removal,
+    takes: impl Fn(&Comment) -> bool,
+) -> usize {
+    let at = now();
+    let (gone, kept): (Vec<Comment>, Vec<Comment>) = std::mem::take(&mut file.comments)
+        .into_iter()
+        .partition(|c| takes(c));
+    file.comments = kept;
+    let count = gone.len();
+    file.deleted.extend(gone.into_iter().map(|comment| Deleted {
+        deleted_at: at.clone(),
+        deleted_by: by,
+        how,
+        comment,
+    }));
+    count
 }
 
 /// Delete the done threads of the version under review, replies with them.
@@ -298,20 +550,21 @@ pub fn delete(store: &Store, key: &str, id: &str) -> Result<usize> {
 pub fn clean(store: &Store, key: &str, current: &str) -> Result<usize> {
     let _lock = store.lock()?;
     let mut file = store.load(key, "")?;
-    let before = file.comments.len();
     let done: Vec<String> = file
         .comments
         .iter()
-        .filter(|c| c.is_remark() && c.done && of_version(c, current))
+        // A remark for Gerrit hides its Done box: it is a message, not work.
+        .filter(|c| c.is_remark() && c.done && !c.is_for_gerrit() && of_version(c, current))
         .map(|c| c.id.clone())
         .collect();
 
-    file.comments
-        .retain(|c| !done.contains(&c.id) && !c.parent.as_ref().is_some_and(|p| done.contains(p)));
-    if file.comments.len() != before {
+    let gone = set_aside(&mut file, Author::Reader, Removal::Clean, |c| {
+        done.contains(&c.id) || c.parent.as_ref().is_some_and(|p| done.contains(p))
+    });
+    if gone > 0 {
         store.save(&file)?;
     }
-    Ok(before - file.comments.len())
+    Ok(gone)
 }
 
 /// True when the remark was written on the version being read.
@@ -400,8 +653,10 @@ fn short(sha: &str) -> &str {
 
 /// True when the comment opens a thread of this version that is not done:
 /// work the review still asks for.
+///
+/// A remark for Gerrit is a message to a colleague, and no work.
 pub fn is_open(comment: &Comment, commit: &str) -> bool {
-    comment.is_remark() && !comment.done && of_version(comment, commit)
+    comment.is_remark() && !comment.done && !comment.is_for_gerrit() && of_version(comment, commit)
 }
 
 /// True when the thread waits for the reader: its last reply is a blocked
@@ -580,6 +835,11 @@ mod tests {
 
     impl Fixture {
         fn target(&self) -> Target<'_> {
+            self.target_on(None)
+        }
+
+        /// The same, on a version that Gerrit holds as patch set `on_gerrit`.
+        fn target_on(&self, on_gerrit: Option<usize>) -> Target<'_> {
             Target {
                 store: &self.store,
                 git: &self.git,
@@ -588,6 +848,8 @@ mod tests {
                 key: "I8f3a",
                 subject: "second",
                 patch_set: 1,
+                on_gerrit,
+                gerrit_thread: None,
             }
         }
 
@@ -607,10 +869,12 @@ mod tests {
             end_char: None,
             body: body.to_owned(),
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: None,
             blocked: false,
             ask: false,
+            gerrit: None,
         }
     }
 
@@ -695,7 +959,7 @@ mod tests {
         edit(
             &f.store,
             "I8f3a",
-            &f.rev,
+            (&f.rev, None),
             &first.id,
             EditComment {
                 done: Some(true),
@@ -725,7 +989,7 @@ mod tests {
             ..EditComment::default()
         };
 
-        let error = edit(&f.store, "I8f3a", &f.rev, &answer.id, checked).unwrap_err();
+        let error = edit(&f.store, "I8f3a", (&f.rev, None), &answer.id, checked).unwrap_err();
         assert!(error.to_string().contains("Done box"), "{error}");
     }
 
@@ -795,7 +1059,7 @@ mod tests {
             done: Some(true),
             ..EditComment::default()
         };
-        assert!(edit(&f.store, "I8f3a", &amended, &first.id, checked).is_err());
+        assert!(edit(&f.store, "I8f3a", (&amended, None), &first.id, checked).is_err());
     }
 
     #[tokio::test]
@@ -813,10 +1077,32 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(delete(&f.store, "I8f3a", &first.id).unwrap(), 2);
-        assert_eq!(delete(&f.store, "I8f3a", &alone.id).unwrap(), 1);
-        let left: Vec<_> = f.file().comments.into_iter().map(|c| c.id).collect();
+        assert_eq!(
+            delete(&f.store, "I8f3a", &first.id, Author::Reader).unwrap(),
+            2
+        );
+        assert_eq!(
+            delete(&f.store, "I8f3a", &alone.id, Author::Agent).unwrap(),
+            1
+        );
+        let file = f.file();
+        let left: Vec<_> = file.comments.into_iter().map(|c| c.id).collect();
         assert_eq!(left, [other.id]);
+
+        // Kept on disk, with who took them and how.
+        let kept: Vec<_> = file
+            .deleted
+            .iter()
+            .map(|d| (d.comment.body.as_str(), d.deleted_by, d.how))
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                ("one", Author::Reader, Removal::Delete),
+                ("a", Author::Reader, Removal::Delete),
+                ("b", Author::Agent, Removal::Delete),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -844,6 +1130,14 @@ mod tests {
             2,
             "a remark and its reply"
         );
+        let kept: Vec<_> = f
+            .file()
+            .deleted
+            .into_iter()
+            .map(|d| (d.comment.id, d.how))
+            .collect();
+        assert_eq!(kept.len(), 2);
+        assert_eq!(kept[0], (gone.id.clone(), Removal::Clean));
 
         let left: Vec<_> = f
             .file()
@@ -865,5 +1159,281 @@ mod tests {
             .unwrap();
 
         assert_eq!(counts(&f.store, "I8f3a", &f.rev).total, 1);
+    }
+
+    fn staged(body: &str) -> NewComment {
+        NewComment {
+            gerrit: Some(Stage::default()),
+            ..remark(body)
+        }
+    }
+
+    fn stage(gerrit: Option<Stage>) -> EditComment {
+        EditComment {
+            gerrit: Some(gerrit),
+            ..EditComment::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn clean_keeps_a_done_remark_that_was_staged_for_gerrit() {
+        let f = fixture().await;
+        let first = f.target_on(Some(2)).add(remark("rename b")).await.unwrap();
+        let done = EditComment {
+            done: Some(true),
+            ..EditComment::default()
+        };
+        edit(&f.store, "I8f3a", (&f.rev, Some(2)), &first.id, done).unwrap();
+        let on = stage(Some(Stage::default()));
+        edit(&f.store, "I8f3a", (&f.rev, Some(2)), &first.id, on).unwrap();
+
+        assert_eq!(clean(&f.store, "I8f3a", &f.rev).unwrap(), 0);
+        assert_eq!(f.file().comments.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_remark_staged_for_gerrit_names_its_patch_set() {
+        let f = fixture().await;
+        let written = f.target_on(Some(3)).add(staged("rename b")).await.unwrap();
+
+        let gerrit = written.gerrit.unwrap();
+        assert_eq!(gerrit.state, Outbox::Staged);
+        assert_eq!(gerrit.patch_set, 3);
+        assert_eq!(f.file().comments[0].gerrit, Some(gerrit));
+    }
+
+    #[tokio::test]
+    async fn a_version_that_gerrit_does_not_hold_takes_no_remark_for_it() {
+        let f = fixture().await;
+        let error = f.target().add(staged("rename b")).await.unwrap_err();
+
+        assert!(error.to_string().contains("Push it first"), "{error}");
+        assert!(f.file().comments.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_remark_for_gerrit_is_no_work_for_the_agent() {
+        let f = fixture().await;
+        let written = f.target_on(Some(3)).add(staged("rename b")).await.unwrap();
+
+        assert!(!is_open(&written, &f.rev));
+    }
+
+    #[tokio::test]
+    async fn a_staged_thread_sends_its_newest_reply() {
+        let f = fixture().await;
+        let first = f.target_on(Some(3)).add(remark("/review")).await.unwrap();
+        let comments = f.file().comments;
+        assert_eq!(last_word(&comments[0], &comments).body, "/review");
+
+        for (author, body) in [(Author::Agent, "draft"), (Author::Agent, "final")] {
+            f.target_on(Some(3))
+                .add(reply(&first.id, author, body))
+                .await
+                .unwrap();
+        }
+        let comments = f.file().comments;
+        assert_eq!(last_word(&comments[0], &comments).body, "final");
+        assert_eq!(last_word(&comments[1], &comments).body, "draft");
+    }
+
+    #[tokio::test]
+    async fn only_a_comment_of_the_agent_keeps_the_name_of_the_agent() {
+        let f = fixture().await;
+        let named = |author| NewComment {
+            agent_name: Some("Claude".to_owned()),
+            ..reply("", author, "")
+        };
+        let first = f
+            .target_on(Some(3))
+            .add(NewComment {
+                parent: None,
+                body: "rename b".to_owned(),
+                ..remark("rename b")
+            })
+            .await
+            .unwrap();
+        let of_agent = f
+            .target_on(Some(3))
+            .add(NewComment {
+                parent: Some(first.id.clone()),
+                body: "renamed".to_owned(),
+                ..named(Author::Agent)
+            })
+            .await
+            .unwrap();
+        let of_reader = f
+            .target_on(Some(3))
+            .add(NewComment {
+                parent: Some(first.id.clone()),
+                body: "thanks".to_owned(),
+                ..named(Author::Reader)
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(of_agent.agent_name.as_deref(), Some("Claude"));
+        assert_eq!(of_reader.agent_name, None);
+    }
+
+    #[tokio::test]
+    async fn a_staged_thread_takes_a_reply_after_an_amend() {
+        let f = fixture().await;
+        let first = f.target_on(Some(3)).add(staged("/review")).await.unwrap();
+        let amended = Target {
+            rev: &f.base,
+            ..f.target_on(None)
+        };
+
+        let answer = amended
+            .add(reply(
+                &first.id,
+                Author::Agent,
+                "Name it after what it does.",
+            ))
+            .await
+            .unwrap();
+        let comments = f.file().comments;
+        assert_eq!(answer.parent.as_deref(), Some(first.id.as_str()));
+        assert_eq!(
+            last_word(&comments[0], &comments).body,
+            "Name it after what it does."
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reply_does_not_go_to_gerrit() {
+        let f = fixture().await;
+        let first = f.target_on(Some(3)).add(remark("rename b")).await.unwrap();
+        let answer = NewComment {
+            gerrit: Some(Stage::default()),
+            ..reply(&first.id, Author::Agent, "renamed")
+        };
+
+        let error = f.target_on(Some(3)).add(answer).await.unwrap_err();
+        assert!(error.to_string().contains("stays in qreview"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_remark_is_staged_and_taken_back() {
+        let f = fixture().await;
+        let first = f.target().add(remark("rename b")).await.unwrap();
+
+        let on = edit(
+            &f.store,
+            "I8f3a",
+            (&f.rev, Some(2)),
+            &first.id,
+            stage(Some(Stage::default())),
+        );
+        assert_eq!(on.unwrap().gerrit.unwrap().patch_set, 2);
+
+        let off = edit(&f.store, "I8f3a", (&f.rev, Some(2)), &first.id, stage(None));
+        assert_eq!(off.unwrap().gerrit, None);
+        assert_eq!(f.file().comments[0].gerrit, None);
+    }
+
+    #[tokio::test]
+    async fn a_draft_on_gerrit_is_changed_there_and_not_here() {
+        let f = fixture().await;
+        let first = f.target_on(Some(3)).add(staged("rename b")).await.unwrap();
+        let mut file = f.file();
+        file.comments[0].gerrit.as_mut().unwrap().state = Outbox::Sent;
+        f.store.save(&file).unwrap();
+
+        let text = EditComment {
+            body: Some("rename it".to_owned()),
+            ..EditComment::default()
+        };
+        let error = edit(&f.store, "I8f3a", (&f.rev, Some(3)), &first.id, text).unwrap_err();
+        assert!(error.to_string().contains("Change it there"), "{error}");
+        let error = edit(&f.store, "I8f3a", (&f.rev, Some(3)), &first.id, stage(None)).unwrap_err();
+        assert!(error.to_string().contains("Change it there"), "{error}");
+    }
+
+    #[test]
+    fn a_null_takes_a_remark_back_and_an_absent_field_leaves_it() {
+        let back: EditComment = serde_json::from_str(r#"{ "gerrit": null }"#).unwrap();
+        let left: EditComment = serde_json::from_str(r#"{ "body": "x" }"#).unwrap();
+        let staged: EditComment = serde_json::from_str(r#"{ "gerrit": {} }"#).unwrap();
+
+        assert!(matches!(back.gerrit, Some(None)));
+        assert!(left.gerrit.is_none());
+        assert!(matches!(
+            staged.gerrit,
+            Some(Some(Stage { resolve: false }))
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_reply_to_a_thread_of_gerrit_takes_its_place_and_its_patch_set() {
+        let f = fixture().await;
+        let thread = GerritThread {
+            id: "g1".to_owned(),
+            patch_set: 3,
+            commit: f.rev.clone(),
+            scope: Scope::Line,
+            anchor: Some(Anchor {
+                file: "a.c".to_owned(),
+                side: Side::New,
+                start_line: Some(2),
+                end_line: Some(2),
+                start_char: None,
+                end_char: None,
+                blob: None,
+                line_hash: None,
+                context: Vec::new(),
+            }),
+        };
+        let target = Target {
+            gerrit_thread: Some(thread),
+            ..f.target()
+        };
+
+        let talk = target
+            .add(reply("gerrit:g1", Author::Agent, "It stops at EOF."))
+            .await
+            .unwrap();
+        assert_eq!(talk.parent.as_deref(), Some("gerrit:g1"));
+        assert_eq!(gerrit_parent(&talk), Some("g1"));
+        assert!(talk.gerrit.is_none(), "a plain reply stays here");
+
+        let done = target
+            .add(NewComment {
+                gerrit: Some(Stage { resolve: true }),
+                ..reply("gerrit:g1", Author::Reader, "Done")
+            })
+            .await
+            .unwrap();
+        let mark = done.gerrit.clone().unwrap();
+        assert_eq!((mark.patch_set, mark.resolve), (3, true));
+        assert_eq!(done.anchor.as_ref().unwrap().start_line, Some(2));
+        assert!(is_staged(&done));
+
+        // The Done box clears the resolve, and keeps the reply staged.
+        let open = EditComment {
+            gerrit: Some(Some(Stage { resolve: false })),
+            ..EditComment::default()
+        };
+        let open = edit(&f.store, "I8f3a", (&f.rev, Some(3)), &done.id, open).unwrap();
+        assert!(is_staged(&open));
+        assert!(!open.gerrit.unwrap().resolve);
+
+        // It can be kept here, but not staged again.
+        let kept = EditComment {
+            gerrit: Some(None),
+            ..EditComment::default()
+        };
+        let back = edit(&f.store, "I8f3a", (&f.rev, None), &done.id, kept).unwrap();
+        assert!(back.gerrit.is_none());
+        let again = EditComment {
+            gerrit: Some(Some(Stage::default())),
+            ..EditComment::default()
+        };
+        let error = edit(&f.store, "I8f3a", (&f.rev, Some(3)), &done.id, again).unwrap_err();
+        assert!(error.to_string().contains("new reply"), "{error}");
+
+        // Neither is work for the agent: the thread is on Gerrit.
+        assert_eq!(counts(&f.store, "I8f3a", &f.rev).total, 0);
     }
 }

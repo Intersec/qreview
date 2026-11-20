@@ -41,6 +41,7 @@ qreview                                          # the current series
 qreview af448g1                                  # one commit
 qreview af448g1..HEAD                            # a range
 qreview af448g1 --prev 4888eaa8 --prev 774faaa9  # with older patch sets
+qreview https://review.example.com/c/myproject/+/12321  # a change of Gerrit
 qreview export                                   # the comments, as Markdown
 qreview list                                     # what this repository holds
 ```
@@ -148,7 +149,7 @@ repository on its own:
 qreview comment src/net.c:new:42 --body "The result of read is not checked."
 qreview reply c-5b72… --body "Renamed." --done
 qreview reply c-5b72… --body "Log it, or return it?" --blocked
-qreview wait                  # block until you ask, print the thread as JSON
+qreview wait --agent Claude   # block until you ask, print the thread as JSON
 qreview export --json         # the open threads, each comment with its id
 qreview migrate --from 4a91… --done c-5b72…  # after an amend, see below
 qreview refresh               # read the repository again
@@ -183,6 +184,17 @@ If the agent waits for an answer, the dialog lists those questions instead
 and sends nothing. The buttons are greyed out while no agent runs
 `qreview wait`.
 
+**A change of a colleague**, one whose author email is not your
+`user.email`, has no Fix this change, and Fix the series skips it: you
+review it, you do not amend it. Ask agent still works, and the export
+asks the agent for help with the review rather than a fix. A remark on
+such a change is for its author: when the agent answers it with a remark
+for the author, it stages that remark For Gerrit without a request. You
+read it, and click Send. Gerrit shows a draft under your name, so a
+draft that the agent wrote starts with `From <name>:`, the name that
+the agent gave in `qreview wait --agent <name>`. Without a name, it
+starts with `From the agent:`.
+
 While the agent works on a fix, the page says **Agent working…** and holds
 its writes, then shows the whole fix at once when the agent waits again. A
 remark you are typing meanwhile stays in its box, and follows its line to
@@ -196,7 +208,9 @@ until you answer when the agent asked you something.
 
 **Clean** deletes the done threads of the change, once you agree with the
 work. It lists them and asks first, then waits three seconds with an
-**Undo**.
+**Undo**. A deleted comment stays on disk: the file of its change keeps
+it under `deleted`, with when and how it went. To restore one, stop the
+server, and move its `comment` back into `comments`.
 
 If Claude Code runs commands in a sandbox, start `qreview` yourself, in
 your own terminal, and let the agent connect to it. A server started from
@@ -240,8 +254,66 @@ port, and the project from the remote URL, and the target branch from
 A line of the blame opens the change of its commit on Gerrit, when the server
 holds that commit.
 
-qreview only reads. It never votes, never comments on the server, and never
-pushes.
+### Review a change from its address
+
+```sh
+qreview https://review.example.com/c/myproject/+/12321     # the newest patch set
+qreview https://review.example.com/c/myproject/+/12321/3   # patch set 3
+```
+
+qreview asks Gerrit about the change, fetches the patch set with
+`git fetch origin <ref>`, and reviews it with no checkout and no branch.
+The base is the merge base with the branch of the change. The change must
+belong to the project of `origin`.
+
+Run it in the worktree of the project: the review runs on the server of
+that worktree, and the commands of an agent reach it as usual. If a
+server already runs there, qreview prints its URL: stop it first to open
+the change.
+
+### Send remarks to Gerrit
+
+On a version that Gerrit holds, check **For Gerrit** on a remark. The remark
+is staged: it stays in qreview, and the agent does not count it as work. Click
+**Send to Gerrit**, read the list, and press Enter. Each staged thread becomes
+one draft on Gerrit, with the newest message of the thread as its text: your
+remark when nobody answered, else the newest reply. The older replies stay in
+qreview. Only you see a draft, until you publish it in Gerrit.
+
+The agent can word a remark for you. Write the remark, click **Save & ask**,
+and talk it over in the thread. Then ask "put this on Gerrit". The agent
+stages the thread, and writes the text for the author of the change as its
+newest reply. The card tags it "for Gerrit". The agent never sends: you read
+the text, edit it if needed, and click Send.
+
+Sending needs access to the REST API of Gerrit. qreview stores no secret:
+a command gives the `Authorization` header. Name it in
+`~/.config/qreview/config.json`, or in the site file below. No other file
+may name it:
+
+```json
+"gerrit": { "auth": { "command": ["/path/to/gerrit-auth"] } }
+```
+
+The command prints `{"authorization": "Bearer …", "expiresIn": 3600}`.
+`expiresIn` is optional. A token of OIDC is `Bearer …`. An HTTP password
+of Gerrit is `Basic` and the base64 of `user:password`:
+[`examples/gerrit-auth-basic.sh`](examples/gerrit-auth-basic.sh) asks it in
+the terminal.
+
+qreview runs the command at its first call to Gerrit, in the terminal
+where you started `qreview`. There, the command may ask your password,
+or open a browser to log in. So start `qreview` yourself, in a terminal,
+when you review with Gerrit. If Gerrit refuses what the command gave,
+qreview asks once more.
+
+Without the command, qreview reads the threads of Gerrit as an anonymous
+reader, and sends nothing.
+
+When your Gerrit gives no web
+address for its changes, set `gerrit.url` in the configuration.
+
+qreview never votes, never publishes, and never pushes.
 
 ## Custom file types
 
@@ -263,6 +335,18 @@ screen.
 Personal settings go in `~/.config/qreview/config.json`. The preferences
 panel behind `,` writes that same file, so the next run starts the way you
 left it. See `examples/config.json`.
+
+A team can share settings in one file, and name it in a shell profile
+that every reader loads:
+
+```sh
+export QREVIEW_SITE_CONFIG=/shared/qreview/config.json
+```
+
+qreview reads that file first, then your own file, then `.qreview.json`.
+The later file wins, key by key. The site file is the place for a
+`gerrit.auth.command` that the whole team uses: change it there, and every
+reader runs the new command at their next start.
 
 ## Documentation
 

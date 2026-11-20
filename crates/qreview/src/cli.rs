@@ -8,7 +8,8 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// A revision, or a `revA..revB` range. The current series by default.
+    /// A revision, a `revA..revB` range, or the address of a change of
+    /// Gerrit. The current series by default.
     pub rev: Option<String>,
 
     /// The base of the series. It wins over every other rule.
@@ -70,11 +71,32 @@ pub enum Command {
         /// The change. The newest change that touches the file by default.
         #[arg(long, value_name = "CHANGE-ID")]
         key: Option<String>,
+        /// Stage the remark for Gerrit. The user sends it from the page.
+        /// On the change of a colleague, it is staged without the flag
+        /// wherever Gerrit holds the version.
+        #[arg(long)]
+        gerrit: bool,
+    },
+
+    /// Write the remark for Gerrit that the user asked for, at the place
+    /// of a thread, staged. The user sends it from the page.
+    Stage {
+        /// The id of a comment of the thread. `gerrit:<id>` names a thread
+        /// of Gerrit: the remark is then a reply in that thread.
+        id: String,
+        /// The text, for the author of the change. `-` reads it from
+        /// standard input.
+        #[arg(long)]
+        body: String,
+        /// Resolve the thread of Gerrit that the remark answers.
+        #[arg(long)]
+        resolve: bool,
     },
 
     /// Reply to a thread as the agent.
     Reply {
-        /// The id of a comment of the thread.
+        /// The id of a comment of the thread. `gerrit:<id>` names a thread
+        /// of Gerrit: the reply stays in qreview.
         id: String,
         /// The text. `-` reads it from standard input.
         #[arg(long)]
@@ -96,6 +118,10 @@ pub enum Command {
         /// Seconds to wait. No limit by default.
         #[arg(long)]
         timeout: Option<u64>,
+        /// Your name, such as `Claude`. A draft of Gerrit that you wrote
+        /// starts with `From <name>:`.
+        #[arg(long, value_name = "NAME")]
+        agent: Option<String>,
     },
 
     /// Read the repository again, as the refresh button does.

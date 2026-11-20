@@ -3,13 +3,15 @@
 //! The command line builds it, the server shares it, and the interface reads
 //! it through the API. Nothing here touches the working tree.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use std::sync::Arc;
 
 use crate::comments::{self, EditComment, NewComment, Target};
 use crate::commitmsg;
 use crate::diff;
+use crate::gerrit::rest::{self, Rest};
+use crate::gerrit::threads::{self, RestComment};
 use crate::gerrit::{self, Coordinates};
 use crate::git::blame as git_blame;
 use crate::git::commit;
@@ -26,7 +28,7 @@ use crate::rebase;
 use crate::repo;
 use crate::series::{self, Options, Plan};
 use crate::store::Store;
-use crate::store::model::{ChangeFile, Comment};
+use crate::store::model::{Author, ChangeFile, Comment};
 use crate::worktree;
 
 /// Above this many lines in one run, a context run comes back with no
@@ -72,6 +74,69 @@ pub struct Session {
     /// The file lists this run has read. Shared, so the task that reads the
     /// series ahead of the reader fills the same one.
     pub lists: Arc<diff::FileLists>,
+    /// The REST API of Gerrit, and what it allows. Resolved on first use,
+    /// and again after a refresh, which runs `gerrit.auth.command` again.
+    rest: tokio::sync::Mutex<Option<RestState>>,
+    /// The remarks of each change over REST, by the number of the change,
+    /// or `None` when REST gave nothing. Asked once per change until a
+    /// refresh.
+    gerrit_threads: tokio::sync::Mutex<std::collections::HashMap<u64, Option<Vec<RestComment>>>>,
+    /// The ids of the drafts of the reader on each change, or `None` when
+    /// REST gave nothing. Asked once per change, until a refresh or a send.
+    gerrit_drafts: tokio::sync::Mutex<std::collections::HashMap<u64, Option<Vec<String>>>>,
+    /// Bumped by each send: a list read before it is not kept after it.
+    drafts_generation: std::sync::atomic::AtomicU64,
+    /// `git config user.email`, read once. `None` makes every change the
+    /// reader's own.
+    user_email: Option<String>,
+}
+
+/// The address of the reader, or `None` when git has none.
+async fn user_email(git: &Git) -> Option<String> {
+    let email = git.text(&["config", "user.email"]).await.ok()?;
+    let email = email.trim();
+    (!email.is_empty()).then(|| email.to_owned())
+}
+
+/// What the REST API of Gerrit allows this run. See section 6.6 of the
+/// design.
+#[derive(Clone, Copy, Debug, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RestStatus {
+    /// An authorization: the run reads and sends drafts.
+    Ok,
+    /// No `gerrit.auth.command`: the run reads what an anonymous reader may.
+    Anonymous,
+    /// The server refused the authorization, or the command gave none.
+    Refused,
+    /// Nothing answered, or no address is known.
+    Unreachable,
+    /// Gerrit is off, or the remote is no Gerrit.
+    Off,
+}
+
+/// The client of the REST API, what it allows, and why not when it does
+/// not.
+#[derive(Clone, Debug)]
+pub struct RestState {
+    pub client: Option<Rest>,
+    pub status: RestStatus,
+    pub reason: Option<String>,
+}
+
+/// What a send did: the remarks that are drafts now, and the others.
+#[derive(Clone, Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sent {
+    pub sent: Vec<String>,
+    pub failed: Vec<SendFailure>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendFailure {
+    pub id: String,
+    pub error: String,
 }
 
 /// Above this size, an image is not served. A rendered file shows a figure,
@@ -203,8 +268,15 @@ impl Session {
             gerrit_answers: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             gerrit_pages: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             lists: Arc::new(diff::FileLists::default()),
+            rest: tokio::sync::Mutex::new(None),
+            gerrit_threads: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            gerrit_drafts: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            drafts_generation: std::sync::atomic::AtomicU64::new(0),
+            user_email: None,
         };
+        session.user_email = user_email(&session.git).await;
         session.make_keys_unique();
+        session.mark_own();
         session.link_versions().await;
         session.count_comments();
         session.count_patch_sets().await;
@@ -280,6 +352,7 @@ impl Session {
         self.plan = plan;
         self.extends.push(count);
         self.make_keys_unique();
+        self.mark_own();
         self.link_versions().await;
         self.count_comments();
         self.count_patch_sets().await;
@@ -335,6 +408,9 @@ impl Session {
         // now, so the answer kept for the run is thrown away.
         self.gerrit_answers.lock().await.clear();
         self.gerrit_pages.lock().await.clear();
+        *self.rest.lock().await = None;
+        self.gerrit_threads.lock().await.clear();
+        self.gerrit_drafts.lock().await.clear();
 
         for count in std::mem::take(&mut self.extends) {
             // The boundary can be gone, and then there is nothing to walk.
@@ -346,6 +422,7 @@ impl Session {
         }
 
         self.make_keys_unique();
+        self.mark_own();
         self.link_versions().await;
         self.count_comments();
         self.count_patch_sets().await;
@@ -502,7 +579,10 @@ impl Session {
             return Vec::new();
         };
 
-        gerrit::posted::of_change(&self.git, &change).await
+        match self.gerrit_threads(&change).await {
+            Some(found) => gerrit::posted::of_rest(&self.git, &change, &found).await,
+            None => gerrit::posted::of_change(&self.git, &change).await,
+        }
     }
 
     /// True when the revision is the work that is not committed.
@@ -1135,6 +1215,17 @@ impl Session {
         }
     }
 
+    /// Tell the changes of a colleague from the reader's own, section 5.9 of
+    /// the design. The work that is not committed is always the reader's.
+    fn mark_own(&mut self) {
+        let Some(mine) = &self.user_email else {
+            return;
+        };
+        for change in &mut self.series.changes {
+            change.own = change.worktree || change.email.is_empty() || &change.email == mine;
+        }
+    }
+
     /// Put the comment counts on the series.
     ///
     /// A change file that cannot be read counts as zero here. The series must
@@ -1212,13 +1303,13 @@ impl Session {
 
     /// What Gerrit knows about a change, asked once.
     async fn ask_gerrit(&self, info: &commit::CommitInfo) -> Option<gerrit::Change> {
-        let coords = self.gerrit.as_ref()?;
         let change_id = info.change_id()?;
 
         let mut answers = self.gerrit_answers.lock().await;
         if let Some(known) = answers.get(change_id) {
             return known.clone();
         }
+        let coords = self.gerrit.as_ref()?;
 
         let answer = match gerrit::query(coords, change_id, &info.hash).await {
             Ok(answer) => answer,
@@ -1270,6 +1361,440 @@ impl Session {
         self.repo.name.clone()
     }
 
+    /// The REST API of Gerrit, and what it allows. Resolved once.
+    pub async fn gerrit_rest(&self) -> RestState {
+        let mut kept = self.rest.lock().await;
+        if let Some(state) = kept.as_ref() {
+            return state.clone();
+        }
+        let state = self.resolve_rest().await;
+        *kept = Some(state.clone());
+        state
+    }
+
+    async fn resolve_rest(&self) -> RestState {
+        let Some(coords) = self.gerrit.as_ref() else {
+            return RestState {
+                client: None,
+                status: RestStatus::Off,
+                reason: Some("Gerrit is off for this run, or origin is no Gerrit".to_owned()),
+            };
+        };
+
+        // The page of a change that the ssh query already gave says where
+        // the server is, and costs no second query.
+        let known = self
+            .gerrit_answers
+            .lock()
+            .await
+            .values()
+            .flatten()
+            .find_map(|change| rest::base_of(&change.url));
+        let base = match (&self.opts.gerrit_url, known) {
+            (Some(url), _) => rest::configured(url),
+            (None, Some(base)) => Ok(base),
+            (None, None) => gerrit::rest_address(None, coords).await,
+        };
+        let base = match base {
+            Ok(base) => base,
+            Err(error) => {
+                return RestState {
+                    client: None,
+                    status: RestStatus::Unreachable,
+                    reason: Some(format!("{error:#}")),
+                };
+            }
+        };
+
+        match &self.opts.gerrit_auth {
+            Some(command) => RestState {
+                client: Some(Rest::new(
+                    &base,
+                    Some(rest::Auth::new(
+                        command.clone(),
+                        std::io::IsTerminal::is_terminal(&std::io::stdin()),
+                    )),
+                )),
+                status: RestStatus::Ok,
+                reason: None,
+            },
+            None => RestState {
+                client: Some(Rest::new(&base, None)),
+                status: RestStatus::Anonymous,
+                reason: Some(format!(
+                    "No gerrit.auth.command in the configuration of the user: \
+                     qreview reads {base} as an anonymous reader, and sends no draft"
+                )),
+            },
+        }
+    }
+
+    /// Gerrit refused the authorization, or did not answer. Nothing more is
+    /// asked this run, until a refresh.
+    async fn rest_failed(&self, error: &rest::Failed) {
+        let (status, error) = match error {
+            rest::Failed::Refused(error) => (RestStatus::Refused, error),
+            rest::Failed::Unreachable(error) => (RestStatus::Unreachable, error),
+            rest::Failed::Answer(_) => return,
+        };
+        if let Some(state) = self.rest.lock().await.as_mut() {
+            // An anonymous reader that the server turns away holds no
+            // authorization to refuse: the drafts still wait for a command.
+            if status == RestStatus::Refused && state.status == RestStatus::Anonymous {
+                return;
+            }
+            state.status = status;
+            state.reason = Some(format!("{error:#}"));
+        }
+    }
+
+    /// Hold the answers of Gerrit for a change, ssh and REST, as if the
+    /// server had given them: a test asks no network.
+    #[cfg(test)]
+    pub async fn hold_gerrit(&self, change: gerrit::Change, comments: Vec<RestComment>) {
+        self.gerrit_threads
+            .lock()
+            .await
+            .insert(change.number, Some(comments));
+        self.gerrit_answers
+            .lock()
+            .await
+            .insert(change.id.clone(), Some(change));
+    }
+
+    /// The ids of the drafts of the reader on a change. `None` without an
+    /// authorization, or when REST gives nothing: then nobody knows.
+    pub async fn gerrit_drafts(&self, change: &gerrit::Change) -> Option<Vec<String>> {
+        use std::sync::atomic::Ordering;
+
+        if let Some(known) = self.gerrit_drafts.lock().await.get(&change.number) {
+            return known.clone();
+        }
+        // A send that ends during the call makes this list old: it is then
+        // answered, and not kept.
+        let generation = self.drafts_generation.load(Ordering::SeqCst);
+        let state = self.gerrit_rest().await;
+        let client = match (state.client, state.status) {
+            (Some(client), RestStatus::Ok) => client,
+            _ => return None,
+        };
+        let route = format!(
+            "changes/{}~{}/drafts",
+            rest::encode(&change.project),
+            change.number
+        );
+        let found = match client.call("GET", &route, None).await {
+            Ok(answer) => Some(threads::parse(&answer).into_iter().map(|c| c.id).collect()),
+            Err(error) => {
+                self.rest_failed(&error).await;
+                None
+            }
+        };
+        let mut cache = self.gerrit_drafts.lock().await;
+        if self.drafts_generation.load(Ordering::SeqCst) == generation {
+            cache.insert(change.number, found.clone());
+        }
+        found
+    }
+
+    /// True when Gerrit holds the version that the change carries now, so a
+    /// reply sent now speaks of code that the reviewer can read.
+    pub async fn gerrit_pushed(&self, key: &str) -> bool {
+        let (Some(current), Some(change)) = (self.commit_of(key), self.gerrit_change(key).await)
+        else {
+            return false;
+        };
+        change.patch_sets.iter().any(|set| set.revision == current)
+    }
+
+    /// The remarks of a change over REST, with their ids and their state.
+    /// `None` when REST gives nothing: the ssh answer then stands in.
+    pub async fn gerrit_threads(&self, change: &gerrit::Change) -> Option<Vec<RestComment>> {
+        if let Some(known) = self.gerrit_threads.lock().await.get(&change.number) {
+            return known.clone();
+        }
+        let state = self.gerrit_rest().await;
+        let client = match (state.client, state.status) {
+            (Some(client), RestStatus::Ok | RestStatus::Anonymous) => client,
+            _ => return None,
+        };
+        let route = format!(
+            "changes/{}~{}/comments",
+            rest::encode(&change.project),
+            change.number
+        );
+        let found = match client.call("GET", &route, None).await {
+            Ok(answer) => Some(threads::parse(&answer)),
+            Err(error) => {
+                self.rest_failed(&error).await;
+                None
+            }
+        };
+        self.gerrit_threads
+            .lock()
+            .await
+            .insert(change.number, found.clone());
+        found
+    }
+
+    /// Send the staged remarks of a change to Gerrit, each as a draft. See
+    /// section 5.8 of the design.
+    ///
+    /// Each remark is one draft, so one that Gerrit refuses holds back no
+    /// other. `only` names the remarks to send; all the staged ones when it
+    /// is `None`.
+    pub async fn send_drafts(&self, key: &str, only: Option<&[String]>) -> Result<Sent> {
+        let state = self.gerrit_rest().await;
+        let client = match (state.client, state.status) {
+            (Some(client), RestStatus::Ok) => client,
+            _ => bail!(
+                "{}",
+                state
+                    .reason
+                    .unwrap_or_else(|| "Gerrit takes no draft from this run".to_owned())
+            ),
+        };
+        let change = self
+            .gerrit_change(key)
+            .await
+            .context("Gerrit does not know this change")?;
+        let all = self.store.load(key, "")?.comments;
+        let staged: Vec<Comment> = all
+            .iter()
+            .filter(|c| comments::is_staged(c))
+            .filter(|c| only.is_none_or(|ids| ids.contains(&c.id)))
+            .map(|c| {
+                // The draft names who wrote the text that goes out.
+                let word = comments::last_word(c, &all);
+                Comment {
+                    body: word.body.clone(),
+                    author: word.author,
+                    agent_name: word.agent_name.clone(),
+                    ..c.clone()
+                }
+            })
+            .collect();
+
+        let mut out = Sent::default();
+        let mut sent = Vec::new();
+        let mut refused: Option<String> = None;
+        for comment in staged {
+            let fail = |error: String| SendFailure {
+                id: comment.id.clone(),
+                error,
+            };
+            if let Some(error) = &refused {
+                out.failed.push(fail(error.clone()));
+                continue;
+            }
+            let number = comment.gerrit.as_ref().map_or(0, |g| g.patch_set);
+            let Some(set) = change.patch_sets.iter().find(|s| s.number == number) else {
+                out.failed
+                    .push(fail(format!("patch set {number} is not on Gerrit")));
+                continue;
+            };
+            // Every draft that left must reach `mark_sent`, or a retry
+            // sends it twice.
+            let base = match self.base_of(&set.revision, &Against::Parent).await {
+                Ok(base) => base,
+                Err(error) => {
+                    out.failed.push(fail(format!("{error:#}")));
+                    continue;
+                }
+            };
+            let in_reply_to = match comments::gerrit_parent(&comment) {
+                Some(thread) => Some(self.newest_of_thread(&change, thread).await),
+                None => None,
+            };
+            let mut body = gerrit::draft::input(
+                &self.git,
+                &comment,
+                &set.revision,
+                &base,
+                in_reply_to.as_deref(),
+            )
+            .await;
+            if let Some(thread) = comments::gerrit_parent(&comment)
+                && let Some(root) = self.root_path(&change, thread).await
+            {
+                gerrit::draft::at_root(&mut body, &root);
+            }
+            let route = format!(
+                "changes/{}~{}/revisions/{}/drafts",
+                rest::encode(&change.project),
+                change.number,
+                set.revision
+            );
+
+            match client.call("PUT", &route, Some(&body)).await {
+                Ok(answer) => {
+                    sent.push((comment.id.clone(), answer["id"].as_str().map(str::to_owned)));
+                    out.sent.push(comment.id.clone());
+                }
+                Err(failed @ (rest::Failed::Refused(_) | rest::Failed::Unreachable(_))) => {
+                    self.rest_failed(&failed).await;
+                    let error = failed.to_string();
+                    out.failed.push(fail(error.clone()));
+                    refused = Some(error);
+                }
+                Err(error) => out.failed.push(fail(error.to_string())),
+            }
+        }
+
+        comments::mark_sent(&self.store, key, &sent)?;
+        // The drafts changed: the next read asks Gerrit again.
+        let mut drafts = self.gerrit_drafts.lock().await;
+        self.drafts_generation
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        drafts.remove(&change.number);
+        Ok(out)
+    }
+
+    /// The threads of Gerrit on a change, with the replies written here.
+    /// `None` when REST gives nothing: then no thread can be answered.
+    pub async fn gerrit_threads_of(&self, key: &str) -> Option<Vec<crate::model::GerritThread>> {
+        let change = self.gerrit_change(key).await?;
+        let found = self.gerrit_threads(&change).await?;
+        let drafts = self.gerrit_drafts(&change).await;
+        let posted = gerrit::posted::of_rest(&self.git, &change, &found).await;
+        let ours: Vec<Comment> = self
+            .store
+            .load(key, "")
+            .map(|file| file.comments)
+            .unwrap_or_default();
+
+        let account = match self.gerrit_rest().await.client {
+            Some(rest) => rest.account().await,
+            None => None,
+        };
+        let same = |a: &str, b: &str| !a.is_empty() && a.eq_ignore_ascii_case(b);
+        let mine = |id: &str| {
+            found
+                .iter()
+                .find(|c| c.id == id)
+                .and_then(|c| c.author.as_ref())
+                .is_some_and(|who| {
+                    self.user_email
+                        .as_deref()
+                        .is_some_and(|email| same(&who.email, email))
+                        || account.as_ref().is_some_and(|me| {
+                            same(&who.email, &me.email) || same(&who.username, &me.username)
+                        })
+                })
+        };
+
+        let mut out: Vec<crate::model::GerritThread> = Vec::new();
+        for item in posted {
+            let wire = item.wire;
+            if let Some(thread) = out.iter_mut().find(|t| t.id == wire.thread) {
+                thread.comments.push(wire);
+                continue;
+            }
+            let side = item
+                .placeable
+                .anchor
+                .as_ref()
+                .map_or(crate::store::model::Side::New, |a| a.side);
+            out.push(crate::model::GerritThread {
+                id: wire.thread.clone(),
+                patch_set: wire.patch_set,
+                commit: item.placeable.commit,
+                file: wire.file.clone(),
+                side,
+                line: wire.line,
+                unresolved: false,
+                waits: false,
+                done: false,
+                comments: vec![wire],
+                replies: Vec::new(),
+            });
+        }
+        for thread in &mut out {
+            // In the order of the dates, which `parse` already gave.
+            thread.unresolved = thread
+                .comments
+                .last()
+                .is_some_and(|c| c.unresolved == Some(true));
+            thread.waits =
+                thread.unresolved && thread.comments.last().is_some_and(|c| !mine(&c.id));
+            thread.replies = ours
+                .iter()
+                .filter(|c| comments::gerrit_parent(c) == Some(thread.id.as_str()))
+                .cloned()
+                .collect();
+            thread
+                .replies
+                .sort_by(|a, b| a.created_at.cmp(&b.created_at));
+            // A resolving reply counts until Gerrit holds it: once
+            // published or deleted there, Gerrit says what the thread is.
+            thread.done = thread.replies.iter().any(|c| {
+                c.gerrit.as_ref().is_some_and(|g| {
+                    g.resolve
+                        && match (&g.state, g.id.as_deref()) {
+                            (crate::store::model::Outbox::Sent, Some(id)) => {
+                                !found.iter().any(|posted| posted.id == id)
+                                    && drafts.as_ref().is_none_or(|d| d.iter().any(|d| d == id))
+                            }
+                            _ => true,
+                        }
+                })
+            });
+        }
+        Some(out)
+    }
+
+    /// The file of the comment that opens a thread of Gerrit, as Gerrit
+    /// gave it.
+    async fn root_path(&self, change: &gerrit::Change, thread: &str) -> Option<String> {
+        self.gerrit_threads(change)
+            .await?
+            .into_iter()
+            .find(|c| c.id == thread)
+            .map(|c| c.path)
+    }
+
+    /// The newest comment of a thread of Gerrit, which a reply answers so
+    /// that Gerrit shows it last. The first one when REST gives nothing.
+    async fn newest_of_thread(&self, change: &gerrit::Change, thread: &str) -> String {
+        let Some(found) = self.gerrit_threads(change).await else {
+            return thread.to_owned();
+        };
+        let roots = threads::roots(&found);
+        found
+            .iter()
+            .filter(|c| roots.get(&c.id).map(String::as_str) == Some(thread))
+            .max_by(|a, b| a.updated.cmp(&b.updated))
+            .map_or_else(|| thread.to_owned(), |c| c.id.clone())
+    }
+
+    /// The changes of the series that hold a remark staged for Gerrit.
+    pub fn staged_keys(&self) -> Vec<String> {
+        self.series
+            .changes
+            .iter()
+            .filter(|change| {
+                self.store
+                    .load(&change.key, "")
+                    .is_ok_and(|file| file.comments.iter().any(comments::is_staged))
+            })
+            .map(|change| change.key.clone())
+            .collect()
+    }
+
+    /// The remarks of a change that wait for Send.
+    pub fn staged_ids(&self, key: &str) -> Vec<String> {
+        self.store
+            .load(key, "")
+            .map(|file| {
+                file.comments
+                    .into_iter()
+                    .filter(comments::is_staged)
+                    .map(|c| c.id)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// What Gerrit calls a change, when the server knows it.
     pub async fn gerrit_change(&self, key: &str) -> Option<gerrit::Change> {
         let rev = self.commit_of(key)?;
@@ -1309,6 +1834,7 @@ impl Session {
             .clone()
             .with_context(|| format!("patch set {number} is not on Gerrit"))?;
 
+        let _busy = crate::trace::wait(format!("Gerrit: git fetch {git_ref}"));
         self.git.text(&["fetch", "origin", &git_ref]).await?;
 
         let info = commit::info(&self.git, &set.commit).await?;
@@ -1379,7 +1905,7 @@ impl Session {
     /// asked for together. Every change asked about is written into the
     /// answers, the ones the server never heard of as `None`, so nothing
     /// below asks a second time.
-    async fn prime_gerrit(&self, keys: &[String]) {
+    pub async fn prime_gerrit(&self, keys: &[String]) {
         let Some(coords) = self.gerrit.as_ref() else {
             return;
         };
@@ -1472,6 +1998,14 @@ impl Session {
             }
         };
         let base = self.base_of(&rev, &Against::Parent).await?;
+        let gerrit_thread = match new
+            .parent
+            .as_deref()
+            .and_then(|p| p.strip_prefix(comments::GERRIT_PARENT))
+        {
+            Some(id) => Some(self.gerrit_thread(key, id).await?),
+            None => None,
+        };
 
         Target {
             store: &self.store,
@@ -1482,9 +2016,44 @@ impl Session {
             subject: &subject,
             // One patch set until M5 adds the rest.
             patch_set: 1,
+            // Only a stage asks Gerrit: a plain remark must not wait on it.
+            on_gerrit: match new.gerrit {
+                Some(_) => self.gerrit_patch_set(key, &rev).await,
+                None => None,
+            },
+            gerrit_thread,
         }
         .add(new)
         .await
+    }
+
+    /// The thread of Gerrit that holds the comment `id`, with its place.
+    pub async fn gerrit_thread(&self, key: &str, id: &str) -> Result<comments::GerritThread> {
+        let change = self
+            .gerrit_change(key)
+            .await
+            .context("Gerrit does not know this change")?;
+        let found = self
+            .gerrit_threads(&change)
+            .await
+            .context("Gerrit gave no thread: its REST API does not answer")?;
+        let roots = threads::roots(&found);
+        let root = roots
+            .get(id)
+            .and_then(|root| found.iter().find(|c| &c.id == root))
+            .with_context(|| format!("no thread {id} on Gerrit for this change"))?;
+
+        let placed = gerrit::posted::of_rest(&self.git, &change, std::slice::from_ref(root))
+            .await
+            .pop()
+            .with_context(|| format!("patch set {} is not on Gerrit", root.patch_set))?;
+        Ok(comments::GerritThread {
+            id: root.id.clone(),
+            patch_set: root.patch_set,
+            commit: placed.placeable.commit,
+            scope: placed.placeable.scope,
+            anchor: placed.placeable.anchor,
+        })
     }
 
     /// Mark a change read, or unread.
@@ -1504,13 +2073,61 @@ impl Session {
         Ok(())
     }
 
-    pub fn edit_comment(&self, key: &str, id: &str, edit: EditComment) -> Result<Comment> {
+    pub async fn edit_comment(&self, key: &str, id: &str, edit: EditComment) -> Result<Comment> {
         let current = self.commit_of(key).unwrap_or_default();
-        comments::edit(&self.store, key, &current, id, edit)
+        // A draft deleted on Gerrit can be staged again: it left nothing
+        // there. See section 5.8 of the design.
+        if matches!(edit.gerrit, Some(Some(_))) && self.deleted_on_gerrit(key, id).await {
+            comments::forget_sent(&self.store, key, id)?;
+        }
+        // Only a stage asks Gerrit: an edit of the text must not wait on it.
+        let on_gerrit = match edit.gerrit {
+            Some(Some(_)) => self.gerrit_patch_set(key, &current).await,
+            _ => None,
+        };
+        comments::edit(&self.store, key, (&current, on_gerrit), id, edit)
     }
 
-    pub fn delete_comment(&self, key: &str, id: &str) -> Result<usize> {
-        comments::delete(&self.store, key, id)
+    /// True when a remark was sent, and Gerrit holds it neither as a draft
+    /// nor as a published comment.
+    async fn deleted_on_gerrit(&self, key: &str, id: &str) -> bool {
+        let Ok(file) = self.store.load(key, "") else {
+            return false;
+        };
+        let Some(draft) = file
+            .comments
+            .iter()
+            .find(|c| c.id == id)
+            .and_then(|c| c.gerrit.as_ref())
+            .filter(|g| g.state == crate::store::model::Outbox::Sent)
+            .and_then(|g| g.id.clone())
+        else {
+            return false;
+        };
+        let Some(change) = self.gerrit_change(key).await else {
+            return false;
+        };
+        let (Some(drafts), Some(published)) = (
+            self.gerrit_drafts(&change).await,
+            self.gerrit_threads(&change).await,
+        ) else {
+            return false;
+        };
+        !drafts.contains(&draft) && !published.iter().any(|c| c.id == draft)
+    }
+
+    /// The patch set of Gerrit that a version of a change is, when Gerrit
+    /// holds it. A remark goes to Gerrit on that patch set.
+    pub async fn gerrit_patch_set(&self, key: &str, commit: &str) -> Option<usize> {
+        let sets = self.patch_sets(key).await.ok()?;
+
+        sets.iter()
+            .find(|set| set.commit == commit && set.gerrit_ref.is_some())
+            .map(|set| set.number)
+    }
+
+    pub fn delete_comment(&self, key: &str, id: &str, by: Author) -> Result<usize> {
+        comments::delete(&self.store, key, id, by)
     }
 
     /// The commits a merge brings in.
@@ -1825,6 +2442,27 @@ mod tests {
             kept.iter().all(|entry| entry.language.is_empty()),
             "the kept list must carry nothing a reader added: {kept:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_change_written_by_somebody_else_is_not_the_readers_own() {
+        let repo = build_repo(&[
+            commit("mine").file("a.txt", "1\n"),
+            commit("theirs")
+                .file("a.txt", "2\n")
+                .author("Other Person", "other@example.com"),
+        ])
+        .await;
+
+        let session = Session::open(repo.path(), &Options::new(), Languages::new())
+            .await
+            .unwrap();
+
+        let head = &session.series.changes[0];
+        assert_eq!(head.subject, "theirs");
+        assert!(!head.own, "{head:?}");
+        let mine = session.series.changes.iter().find(|c| c.subject == "mine");
+        assert!(mine.is_none_or(|c| c.own), "{mine:?}");
     }
 
     #[tokio::test]

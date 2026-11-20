@@ -1,13 +1,12 @@
 //! The remarks already posted on Gerrit, turned into something placeable.
 //!
-//! Read only, always. qreview never writes to the server: it votes on
-//! nothing, posts nothing and replies to nothing. What it does is show what
-//! is already there, on the line it speaks of, beside your own remarks.
-//!
-//! What the ssh answer gives, and what it does not, is in `roadmap/design.md`
-//! section 6.4. The short of it: a file, a line, an author and a text. No id,
-//! no side and no reply link.
+//! What is already there, on the line it speaks of, beside your own
+//! remarks. The REST API gives each remark with its id, its thread, its
+//! side and its state (section 6.8 of the design). The ssh answer, when
+//! REST gives nothing, holds a file, a line, an author and a text: no id,
+//! no side and no reply link (section 6.3).
 
+use super::threads::{self, Range, RestComment};
 use crate::anchor::{self, Placed};
 use crate::comments::{self, NewComment};
 use crate::commitmsg;
@@ -49,12 +48,14 @@ pub async fn of_change(git: &Git, change: &super::Change) -> Vec<Posted> {
 ///
 /// Gerrit shows a remark on the patch set it was posted on and nowhere else,
 /// and so does this: a remark of another version speaks of code that is not
-/// on the screen. `rev` is the version on the right, and `left` the version
-/// it is read against, when that is one.
+/// on the screen. `rev` is the version on the right, and `base` what it is
+/// read against. `left` is that version, when it is one: a remark on the
+/// parent side then has no column.
 pub async fn on_screen(
     git: &Git,
     found: Vec<Posted>,
     rev: &str,
+    base: &str,
     left: Option<&str>,
 ) -> (Vec<PostedComment>, Vec<Placed>) {
     let mut wire = Vec::new();
@@ -62,9 +63,14 @@ pub async fn on_screen(
     let mut left_side = Vec::new();
 
     for posted in found {
-        if posted.placeable.commit == rev {
+        let on_parent = posted
+            .placeable
+            .anchor
+            .as_ref()
+            .is_some_and(|anchor| anchor.side == Side::Old);
+        if posted.placeable.commit == rev && !(on_parent && left.is_some()) {
             right_side.push(posted.placeable);
-        } else if left == Some(posted.placeable.commit.as_str()) {
+        } else if left == Some(posted.placeable.commit.as_str()) && !on_parent {
             left_side.push(posted.placeable);
         } else {
             continue;
@@ -74,7 +80,7 @@ pub async fn on_screen(
 
     // Each remark reads the version it was posted on, whatever column that
     // version stands in.
-    let mut placed = anchor::place_all(git, &right_side, rev, rev).await;
+    let mut placed = anchor::place_all(git, &right_side, rev, base).await;
     if let Some(left) = left {
         let on_left = anchor::place_all(git, &left_side, left, left).await;
         placed.extend(on_left.into_iter().map(|p| Placed {
@@ -93,84 +99,205 @@ async fn one(
     posted: &super::InlineComment,
     revision: &str,
 ) -> Posted {
+    // The ssh answer carries no id. This one is made from the place, and it
+    // is the same on every query as long as the server says the same.
+    let id = format!("g{patch_set}-{nth}");
+    build(
+        git,
+        Remark {
+            thread: id.clone(),
+            id,
+            patch_set,
+            revision,
+            author: posted.reviewer.label(),
+            body: &posted.message,
+            path: &posted.file,
+            line: posted.line,
+            range: None,
+            on_parent: false,
+            in_reply_to: None,
+            unresolved: None,
+            updated: None,
+        },
+    )
+    .await
+}
+
+/// Every remark of a change as the REST API gives it, with its thread and
+/// its state. A remark of a patch set that Gerrit did not list is dropped:
+/// it has no revision to read.
+pub async fn of_rest(git: &Git, change: &super::Change, comments: &[RestComment]) -> Vec<Posted> {
+    let roots = threads::roots(comments);
+    let mut out = Vec::new();
+
+    for comment in comments {
+        let Some(set) = change
+            .patch_sets
+            .iter()
+            .find(|set| set.number == comment.patch_set)
+        else {
+            continue;
+        };
+        let author = comment
+            .author
+            .as_ref()
+            .map_or_else(|| "you, a draft".to_owned(), super::Person::label);
+        out.push(
+            build(
+                git,
+                Remark {
+                    id: comment.id.clone(),
+                    thread: roots[&comment.id].clone(),
+                    patch_set: set.number,
+                    revision: &set.revision,
+                    author,
+                    body: &comment.message,
+                    path: &comment.path,
+                    line: comment.line,
+                    range: comment.range,
+                    on_parent: comment.on_parent(),
+                    in_reply_to: comment.in_reply_to.clone(),
+                    unresolved: comment.unresolved,
+                    updated: Some(comment.updated.clone()),
+                },
+            )
+            .await,
+        );
+    }
+    out
+}
+
+/// A remark of Gerrit, in the coordinates of Gerrit.
+struct Remark<'a> {
+    id: String,
+    thread: String,
+    patch_set: usize,
+    revision: &'a str,
+    author: String,
+    body: &'a str,
+    path: &'a str,
+    line: Option<usize>,
+    range: Option<Range>,
+    on_parent: bool,
+    in_reply_to: Option<String>,
+    unresolved: Option<bool>,
+    updated: Option<String>,
+}
+
+async fn build(git: &Git, remark: Remark<'_>) -> Posted {
+    // A remark on the left side reads the first parent of the revision.
+    let base = match remark.on_parent {
+        true => commit::info(git, remark.revision)
+            .await
+            .ok()
+            .and_then(|info| info.parents.first().cloned()),
+        false => None,
+    };
+    let tree = base.as_deref().unwrap_or(remark.revision);
+
     // No change holds a file of that name, so a remark left there would show
     // nowhere. The message is where qreview puts a remark on the change.
-    let (file, line) = match posted.file.as_str() {
+    let (file, lines) = match remark.path {
         PATCHSET_LEVEL => (commitmsg::PATH.to_owned(), None),
-        file => (file.to_owned(), line_of(git, posted, revision).await),
+        file => (file.to_owned(), lines_of(git, &remark, tree).await),
     };
+    let line = lines.map(|l| l.1);
     let wire = PostedComment {
-        // The ssh answer carries no id. This one is made from the place, and
-        // it is the same on every query as long as the server says the same.
-        id: format!("g{patch_set}-{nth}"),
-        patch_set,
-        author: posted.reviewer.label(),
-        body: posted.message.clone(),
+        id: remark.id.clone(),
+        thread: remark.thread,
+        patch_set: remark.patch_set,
+        author: remark.author,
+        body: remark.body.to_owned(),
         file: file.clone(),
         line,
+        in_reply_to: remark.in_reply_to,
+        unresolved: remark.unresolved,
+        updated: remark.updated,
     };
 
-    let scope = match line {
+    let (start_char, end_char) = match (lines, remark.range) {
+        (Some(_), Some(range)) => (Some(range.start_character), Some(range.end_character)),
+        _ => (None, None),
+    };
+    let scope = match lines {
+        Some((start, end)) if start != end || start_char.is_some() => Scope::Range,
         Some(_) => Scope::Line,
         None => Scope::File,
+    };
+    let side = match remark.on_parent {
+        true => Side::Old,
+        false => Side::New,
     };
     let new = NewComment {
         scope,
         file: Some(file),
-        side: Some(Side::New),
-        start_line: line,
+        side: Some(side),
+        start_line: lines.map(|l| l.0),
         end_line: line,
-        start_char: None,
-        end_char: None,
-        body: posted.message.clone(),
+        start_char,
+        end_char,
+        body: remark.body.to_owned(),
         author: Author::Reader,
+        agent_name: None,
         parent: None,
         done: None,
         blocked: false,
         ask: false,
+        gerrit: None,
     };
 
     // A version that is not in this clone reads as no blob, no hash and no
     // context. That is a bare anchor, and a bare anchor is unplaced.
-    let anchor = comments::anchor_of(git, revision, "", &new).await.ok();
+    let base = base.as_deref().unwrap_or("");
+    let anchor = comments::anchor_of(git, remark.revision, base, &new)
+        .await
+        .ok();
 
     Posted {
         placeable: Comment {
             id: wire.id.clone(),
-            patch_set,
-            commit: revision.to_owned(),
+            patch_set: remark.patch_set,
+            commit: remark.revision.to_owned(),
             created_at: String::new(),
             updated_at: String::new(),
             scope,
-            body: posted.message.clone(),
+            body: remark.body.to_owned(),
             anchor,
             author: Author::Reader,
+            agent_name: None,
             parent: None,
             done: false,
             blocked: false,
             moves: Vec::new(),
+            gerrit: None,
         },
         wire,
     }
 }
 
-/// The line the remark sits on, if it sits on one.
+/// The first and the last line the remark sits on, if it sits on lines.
 ///
 /// Gerrit writes line 0 for a remark about the whole file. And it shows the
 /// message as `/COMMIT_MSG` under a header that qreview drops, so a line of
 /// the message is shifted by the length of that header.
-async fn line_of(git: &Git, posted: &super::InlineComment, revision: &str) -> Option<usize> {
-    let line = posted.line.filter(|line| *line > 0)?;
-    if !commitmsg::is(&posted.file) {
-        return Some(line);
+async fn lines_of(git: &Git, remark: &Remark<'_>, tree: &str) -> Option<(usize, usize)> {
+    let end = remark.line.filter(|line| *line > 0)?;
+    let start = remark
+        .range
+        .map_or(end, |range| range.start_line.clamp(1, end));
+    if !commitmsg::is(remark.path) {
+        return Some((start, end));
     }
 
     // A version that is not in this clone has no parents to count.
-    let parents = commit::info(git, revision).await.ok()?.parents.len();
+    let parents = commit::info(git, tree).await.ok()?.parents.len();
     // One line per parent, then the author and its date, the committer and
     // its date, and a blank line. A remark on the header is about the whole
     // message.
-    line.checked_sub(parents + 5).filter(|line| *line > 0)
+    let shift = parents + 5;
+    let end = end.checked_sub(shift).filter(|line| *line > 0)?;
+    let start = start.saturating_sub(shift).max(1);
+    Some((start, end))
 }
 
 #[cfg(test)]
@@ -245,11 +372,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_remark_of_a_version_off_the_screen_is_not_shown() {
-        let (_repo, git, _first, second, found) = two_versions().await;
+        let (_repo, git, first, second, found) = two_versions().await;
 
         // The second version against its parent: the remark of the first
         // speaks of a line that is not on the screen, and Gerrit hides it.
-        let (wire, placed) = on_screen(&git, found, &second, None).await;
+        let (wire, placed) = on_screen(&git, found, &second, &first, None).await;
 
         assert_eq!(wire.len(), 1);
         assert_eq!(wire[0].body, "and this");
@@ -264,7 +391,7 @@ mod tests {
 
         // The second version has rewritten line 2. The first is the left
         // column, and line 2 is there, where the remark was posted.
-        let (wire, placed) = on_screen(&git, found, &second, Some(&first)).await;
+        let (wire, placed) = on_screen(&git, found, &second, &first, Some(&first)).await;
 
         assert_eq!(wire.len(), 2);
         let left = placed.iter().find(|p| p.id == wire[0].id).unwrap();
@@ -482,5 +609,52 @@ mod tests {
         .await;
 
         assert_eq!(found[0].wire.line, Some(3));
+    }
+
+    #[tokio::test]
+    async fn a_remark_over_rest_keeps_its_thread_its_side_and_its_range() {
+        let repo = crate::testutil::build_repo(&[
+            crate::testutil::commit("first").file("src/net.c", "a\ncheck\nc\n"),
+            crate::testutil::commit("work").file("src/net.c", "a\nb\nint read(x);\n"),
+        ])
+        .await;
+        let git = Git::discover(repo.path()).await.unwrap();
+        let head = repo.sha("HEAD").await;
+        let parent = repo.sha("HEAD~1").await;
+        let path = format!(
+            "{}/tests/data/gerrit/rest-comments.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let text = std::fs::read_to_string(path).unwrap();
+        let comments = threads::parse(&serde_json::from_str(&text).unwrap());
+
+        let found = of_rest(&git, &change(&head, Vec::new()), &comments).await;
+        let by_id = |id: &str| found.iter().find(|p| p.wire.id == id).unwrap();
+
+        let reply = by_id("a3");
+        assert_eq!(reply.wire.thread, "a1");
+        assert_eq!(reply.wire.in_reply_to.as_deref(), Some("a2"));
+        assert_eq!(reply.wire.unresolved, Some(true));
+
+        let ranged = by_id("a1").placeable.anchor.clone().unwrap();
+        assert_eq!((ranged.start_line, ranged.end_line), (Some(3), Some(3)));
+        assert_eq!((ranged.start_char, ranged.end_char), (Some(4), Some(8)));
+        assert_eq!(by_id("a1").placeable.scope, Scope::Range);
+
+        let old = by_id("p1").placeable.anchor.clone().unwrap();
+        assert_eq!(old.side, Side::Old);
+        assert!(old.blob.is_some(), "it reads the parent");
+
+        let whole = by_id("w1");
+        assert_eq!(whole.wire.file, commitmsg::PATH);
+        assert_eq!(whole.wire.line, None);
+
+        // The remark on the parent stands in the left column, on the line
+        // that the change removed.
+        let (_, placed) = on_screen(&git, found, &head, &parent, None).await;
+        let on_parent = placed.iter().find(|p| p.id == "p1").unwrap();
+        assert_eq!(on_parent.side, Side::Old);
+        assert_eq!(on_parent.line, Some(2));
+        assert!(!on_parent.lost);
     }
 }

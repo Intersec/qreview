@@ -17,7 +17,14 @@ use serde::{Deserialize, Serialize};
 /// and the Done and blocked states, and the earlier places of a remark that
 /// a declared new version moved. A file of format 3 reads as remarks of the
 /// reader, each alone in its thread, none of them done or moved.
-pub const VERSION: u32 = 4;
+///
+/// 5 added the remarks bound for Gerrit. A comment of format 4 carries no
+/// `gerrit`, and stays in qreview.
+///
+/// 6 added the deleted comments, kept apart for a restore by hand and for
+/// a study of the reviews, and the name of the agent on its comments. A
+/// file of format 5 has no deleted comment, and no agent name.
+pub const VERSION: u32 = 6;
 
 /// Everything a review of one change holds.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -33,6 +40,30 @@ pub struct ChangeFile {
     pub reviewed: bool,
     #[serde(default)]
     pub comments: Vec<Comment>,
+    /// The comments that Delete and Clean took away, oldest first. Nothing
+    /// reads them: a comment moved back to `comments` by hand is restored.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted: Vec<Deleted>,
+}
+
+/// A comment taken away, as it stood then.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Deleted {
+    pub deleted_at: String,
+    pub deleted_by: Author,
+    pub how: Removal,
+    pub comment: Comment,
+}
+
+/// What took a comment away.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Removal {
+    /// Delete, on the comment or on the remark that opens its thread.
+    Delete,
+    /// Clean, which takes the done threads.
+    Clean,
 }
 
 impl ChangeFile {
@@ -43,6 +74,7 @@ impl ChangeFile {
             subject: subject.to_owned(),
             reviewed: false,
             comments: Vec::new(),
+            deleted: Vec::new(),
         }
     }
 }
@@ -85,6 +117,10 @@ pub struct Comment {
     pub anchor: Option<Anchor>,
     #[serde(default)]
     pub author: Author,
+    /// The name that the agent gave when it wrote the comment. A draft of
+    /// Gerrit shows it, because Gerrit names only the reader.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
     /// The remark that opens the thread, on a reply. A reply has no anchor:
     /// it stands where its thread stands.
     #[serde(default)]
@@ -100,6 +136,36 @@ pub struct Comment {
     /// oldest first. The move is recorded, never silent.
     #[serde(default)]
     pub moves: Vec<Move>,
+    /// Set when the remark goes to Gerrit. Absent on a remark that stays
+    /// in qreview, which every remark of format 4 is.
+    #[serde(default)]
+    pub gerrit: Option<Gerrit>,
+}
+
+/// A remark bound for Gerrit, and how far it went.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Gerrit {
+    pub state: Outbox,
+    /// The patch set of Gerrit that the draft goes to.
+    pub patch_set: usize,
+    /// On a reply to a thread of Gerrit, the draft resolves that thread.
+    #[serde(default)]
+    pub resolve: bool,
+    /// The id that Gerrit gave the draft.
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub sent_at: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Outbox {
+    /// It waits for the reader to click Send.
+    Staged,
+    /// It is a draft on Gerrit, under the account of the reader.
+    Sent,
 }
 
 /// One earlier place of a remark.
@@ -128,6 +194,12 @@ impl Comment {
     /// True when this comment opens a thread.
     pub fn is_remark(&self) -> bool {
         self.parent.is_none()
+    }
+
+    /// True when the remark goes to Gerrit, staged or sent. Such a remark
+    /// is a message to a colleague, not work for the agent.
+    pub fn is_for_gerrit(&self) -> bool {
+        self.gerrit.is_some()
     }
 }
 

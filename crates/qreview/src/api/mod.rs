@@ -114,6 +114,12 @@ pub fn app(state: AppState) -> Router {
         .route("/api/changes/{key}/diff", get(diff))
         .route("/api/changes/{key}/blame", get(blame))
         .route("/api/gerrit/commits", post(gerrit_commits))
+        .route("/api/gerrit/status", get(gerrit_status))
+        .route("/api/activity", get(activity))
+        .route("/api/trace", get(trace_lines))
+        .route("/api/gerrit/threads", get(gerrit_threads))
+        .route("/api/changes/{key}/gerrit/send", post(send_drafts))
+        .route("/api/series/gerrit/send", post(send_series_drafts))
         .route("/api/changes/{key}/mergelist", get(mergelist))
         .route("/api/comments", get(all_comments))
         .route("/api/events", get(events))
@@ -148,6 +154,19 @@ pub fn app(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// The way a request came in. The router of the Unix socket carries
+/// `Via::Socket`; the port carries nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Via {
+    Socket,
+}
+
+/// The router of the Unix socket: the same routes, marked, so a route that
+/// only the page may call can refuse the agent.
+pub fn on_socket(app: Router) -> Router {
+    app.layer(axum::Extension(Via::Socket))
+}
+
 /// Time the whole request, so a trace shows what the browser waited for.
 ///
 /// It sits outside the token guard: a request that fails the guard is worth
@@ -157,12 +176,17 @@ async fn timed(
     request: axum::extract::Request,
     next: middleware::Next,
 ) -> Response {
-    let started = crate::trace::start();
+    // The Trace window and the status of the page ask every second: a line
+    // for each would bury the work they show.
+    let path = request.uri().path();
+    let watching = path == "/api/trace" || path == "/api/activity";
+    let started = crate::trace::start().filter(|_| !watching);
     let what = started.map(|_| format!("{} {}", request.method(), without_token(request.uri())));
 
     // A wait on the events is held for half a minute and does no work. It
-    // must not keep the read-ahead from its quiet moment.
-    let waits = request.uri().path() == "/api/events";
+    // must not keep the read-ahead from its quiet moment, nor does a look
+    // at the trace.
+    let waits = path == "/api/events" || watching;
     let _in_hand = (!waits).then(|| InHand::new(state));
     let response = next.run(request).await;
 
@@ -838,6 +862,184 @@ async fn gerrit_commits(
     }))
 }
 
+/// What the REST API of Gerrit allows this run.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GerritStatus {
+    rest: crate::session::RestStatus,
+    /// Why it does not allow more, for the reader.
+    reason: Option<String>,
+    /// The address of the server, when one is known.
+    base: Option<String>,
+}
+
+/// What the server waits on now: the slow calls in flight, oldest first.
+/// It takes no lock of the session, so it answers while a read holds it.
+async fn activity() -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "waiting": crate::trace::waiting_now() }))
+}
+
+#[derive(Deserialize)]
+struct TraceQuery {
+    #[serde(default)]
+    after: u64,
+}
+
+/// The lines of the trace after a number, for the Trace window.
+async fn trace_lines(Query(query): Query<TraceQuery>) -> Json<serde_json::Value> {
+    let (lines, next) = crate::trace::lines_after(query.after);
+    Json(serde_json::json!({ "lines": lines, "next": next }))
+}
+
+async fn gerrit_status(State(state): State<AppState>) -> Json<GerritStatus> {
+    let session = state.session.read().await;
+    let rest = session.gerrit_rest().await;
+
+    Json(GerritStatus {
+        rest: rest.status,
+        reason: rest.reason,
+        base: rest.client.map(|c| c.base().to_owned()),
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangeThreads {
+    key: String,
+    /// The page of the change on Gerrit.
+    url: String,
+    /// Gerrit holds the version that the change carries now.
+    pushed: bool,
+    /// The ids of the drafts of the reader. Null without an authorization.
+    drafts: Option<Vec<String>>,
+    threads: Vec<crate::model::GerritThread>,
+}
+
+/// The threads of Gerrit on every change of the series that REST answers
+/// for. A change it gives nothing for is left out. See section 6.8.
+async fn gerrit_threads(State(state): State<AppState>) -> Json<Vec<ChangeThreads>> {
+    use futures_util::stream::{self, StreamExt};
+
+    let session = state.session.read().await;
+    let session = &*session;
+    // One query for every change that Gerrit was not asked about yet: one
+    // at a time, each one costs a round trip over ssh.
+    let keys: Vec<String> = session
+        .series
+        .changes
+        .iter()
+        .map(|c| c.key.clone())
+        .collect();
+    session.prime_gerrit(&keys).await;
+    // Each change still costs REST a few round trips: one after the other,
+    // a long series on a slow link waits many seconds for its first thread.
+    let calls: Vec<_> = session
+        .series
+        .changes
+        .iter()
+        .map(|change| threads_of(session, &change.key))
+        .collect();
+    let out = stream::iter(calls)
+        .buffered(GERRIT_CALLS)
+        .filter_map(|found| async move { found })
+        .collect()
+        .await;
+    Json(out)
+}
+
+/// The threads of Gerrit on one change, with its page and its drafts.
+async fn threads_of(session: &crate::session::Session, key: &str) -> Option<ChangeThreads> {
+    let threads = session.gerrit_threads_of(key).await?;
+    let answer = session.gerrit_change(key).await?;
+    Some(ChangeThreads {
+        key: key.to_owned(),
+        url: answer.url.clone(),
+        pushed: session.gerrit_pushed(key).await,
+        drafts: session.gerrit_drafts(&answer).await,
+        threads,
+    })
+}
+
+/// How many changes ask Gerrit at once.
+const GERRIT_CALLS: usize = 8;
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct SendBody {
+    /// The remarks to send. Every staged one when it is missing.
+    #[serde(default)]
+    ids: Option<Vec<String>>,
+}
+
+/// Only the reader sends to Gerrit. No command of the agent calls this,
+/// and the socket, the way in of an agent in a sandbox, is refused. The
+/// agent holds the token, so this is a convention and not a lock: the
+/// draft is the lock. See section 5.8 of the design.
+fn from_the_page(via: Option<axum::Extension<Via>>) -> Result<(), ApiError> {
+    match via {
+        Some(_) => Err(ApiError {
+            status: StatusCode::FORBIDDEN,
+            code: "reader_only",
+            message: "only the reader sends to Gerrit, from the page".to_owned(),
+        }),
+        None => Ok(()),
+    }
+}
+
+async fn send_drafts(
+    State(state): State<AppState>,
+    via: Option<axum::Extension<Via>>,
+    Path(key): Path<String>,
+    body: Option<Json<SendBody>>,
+) -> Result<Json<crate::session::Sent>, ApiError> {
+    from_the_page(via)?;
+    let ids = body.and_then(|Json(body)| body.ids);
+    let session = state.session.read().await;
+    let sent = session.send_drafts(&key, ids.as_deref()).await?;
+    for id in &sent.sent {
+        state
+            .events
+            .push(Kind::Sent, Author::Reader, &key, Some(id));
+    }
+
+    Ok(Json(sent))
+}
+
+async fn send_series_drafts(
+    State(state): State<AppState>,
+    via: Option<axum::Extension<Via>>,
+) -> Result<Json<crate::session::Sent>, ApiError> {
+    from_the_page(via)?;
+    let session = state.session.read().await;
+    let mut out = crate::session::Sent::default();
+    for key in session.staged_keys() {
+        // A change that fails holds back no other one of the series.
+        let sent = match session.send_drafts(&key, None).await {
+            Ok(sent) => sent,
+            Err(error) => crate::session::Sent {
+                sent: Vec::new(),
+                failed: session
+                    .staged_ids(&key)
+                    .into_iter()
+                    .map(|id| crate::session::SendFailure {
+                        id,
+                        error: format!("{error:#}"),
+                    })
+                    .collect(),
+            },
+        };
+        for id in &sent.sent {
+            state
+                .events
+                .push(Kind::Sent, Author::Reader, &key, Some(id));
+        }
+        out.sent.extend(sent.sent);
+        out.failed.extend(sent.failed);
+    }
+
+    Ok(Json(out))
+}
+
 /// The review of a change, and where each comment lands in the patch set
 /// being read.
 #[derive(Serialize)]
@@ -870,21 +1072,33 @@ struct ExportQuery {
     scope: Option<String>,
     #[serde(default)]
     key: Option<String>,
+    /// The JSON of `qreview export --json`, for the commands of the agent
+    /// on the server of a change of Gerrit.
+    #[serde(default)]
+    json: bool,
 }
 
 async fn export(
     State(state): State<AppState>,
     Query(query): Query<ExportQuery>,
-) -> Result<String, ApiError> {
-    let session = state.session.read().await;
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
 
-    match (query.scope.as_deref(), query.key) {
-        (Some("change"), Some(key)) => Ok(crate::export::change(&session, &key).await?),
-        (Some("change"), None) => Err(ApiError::bad_request(
-            "a change export needs the key of the change".to_owned(),
-        )),
-        _ => Ok(crate::export::series(&session).await?),
+    let session = state.session.read().await;
+    if query.json {
+        let value = crate::export::json(&session, query.key.as_deref()).await?;
+        return Ok(Json(value).into_response());
     }
+    let text = match (query.scope.as_deref(), query.key) {
+        (Some("change"), Some(key)) => crate::export::change(&session, &key).await?,
+        (Some("change"), None) => {
+            return Err(ApiError::bad_request(
+                "a change export needs the key of the change".to_owned(),
+            ));
+        }
+        _ => crate::export::series(&session).await?,
+    };
+    Ok(text.into_response())
 }
 
 async fn config(State(state): State<AppState>) -> Json<crate::config::Config> {
@@ -997,12 +1211,14 @@ async fn posted(
     let rev = target(&session, &key, view.ps).await?;
     // Only another version on the left carries remarks of its own. A parent
     // or a base of a merge is no patch set.
-    let left = match resolve_base(&session, &key, parse_base(view.base.as_deref())?).await? {
-        Against::Tree(commit) => Some(commit),
+    let against = resolve_base(&session, &key, parse_base(view.base.as_deref())?).await?;
+    let left = match &against {
+        Against::Tree(commit) => Some(commit.clone()),
         _ => None,
     };
+    let base = session.base_of(&rev, &against).await?;
     let (comments, placed) =
-        crate::gerrit::posted::on_screen(&session.git, found, &rev, left.as_deref()).await;
+        crate::gerrit::posted::on_screen(&session.git, found, &rev, &base, left.as_deref()).await;
 
     Ok(Json(Posted { comments, placed }))
 }
@@ -1042,8 +1258,11 @@ async fn all_comments(
 async fn add_comment(
     State(state): State<AppState>,
     Path(key): Path<String>,
-    Json(new): Json<NewComment>,
+    Json(mut new): Json<NewComment>,
 ) -> Result<(StatusCode, Json<Comment>), ApiError> {
+    if new.author == Author::Agent {
+        new.agent_name = state.events.agent_name();
+    }
     let session = state.session.read().await;
     let ask = new.ask;
     let comment = session.add_comment(&key, new).await?;
@@ -1074,7 +1293,7 @@ async fn edit_comment(
         Some(_) => (Kind::Done, edit.author),
         None => (Kind::Edited, edit.author),
     };
-    let comment = session.edit_comment(&key, &id, edit)?;
+    let comment = session.edit_comment(&key, &id, edit).await?;
     state.events.push(kind, author, &key, Some(&id));
 
     Ok(Json(comment))
@@ -1094,13 +1313,23 @@ async fn ask(
     Path((key, id)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
     let session = state.session.read().await;
-    let file = session.comments(&key, "")?;
-    let thread = file
-        .comments
-        .iter()
-        .find(|c| c.id == id)
-        .map(|c| c.parent.clone().unwrap_or_else(|| c.id.clone()))
-        .ok_or_else(|| ApiError::not_found(format!("no comment {id}")))?;
+    let thread = match id.strip_prefix(crate::comments::GERRIT_PARENT) {
+        // A thread of Gerrit is named by the comment that opens it.
+        Some(gerrit) => {
+            let found = session
+                .gerrit_thread(&key, gerrit)
+                .await
+                .map_err(|error| ApiError::not_found(format!("{error:#}")))?;
+            format!("{}{}", crate::comments::GERRIT_PARENT, found.id)
+        }
+        None => session
+            .comments(&key, "")?
+            .comments
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.parent.clone().unwrap_or_else(|| c.id.clone()))
+            .ok_or_else(|| ApiError::not_found(format!("no comment {id}")))?,
+    };
     drop(session);
     state
         .events
@@ -1115,13 +1344,9 @@ async fn delete_comment(
     Query(by): Query<ByQuery>,
 ) -> Result<Json<Deleted>, ApiError> {
     let session = state.session.read().await;
-    let deleted = session.delete_comment(&key, &id)?;
-    state.events.push(
-        Kind::Deleted,
-        by.author.unwrap_or_default(),
-        &key,
-        Some(&id),
-    );
+    let who = by.author.unwrap_or_default();
+    let deleted = session.delete_comment(&key, &id, who)?;
+    state.events.push(Kind::Deleted, who, &key, Some(&id));
 
     Ok(Json(Deleted { deleted }))
 }
@@ -1193,6 +1418,11 @@ struct EventsQuery {
     who: Option<String>,
     /// The `state` of the last answer that the party got.
     state: Option<String>,
+    /// How long to hold the wait, in milliseconds, when the party has less
+    /// time than the server would hold it: `qreview wait --timeout 1`.
+    wait: Option<u64>,
+    /// The name of the agent: `qreview wait --agent <name>`.
+    agent: Option<String>,
 }
 
 /// How long a wait on the events is held before it answers empty. Short
@@ -1204,12 +1434,23 @@ const EVENTS_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 /// The session lock is not held: a wait of 30 seconds must not stop a
 /// refresh.
 async fn events(State(state): State<AppState>, Query(query): Query<EventsQuery>) -> Json<Batch> {
+    if query.who.as_deref() == Some("agent")
+        && let Some(name) = &query.agent
+    {
+        state.events.agent_named(name);
+    }
     let mut agent = (query.who.as_deref() == Some("agent")).then(|| state.events.agent_waits());
     let _page = (query.who.as_deref() == Some("reader")).then(|| state.events.page_waits());
 
     let batch = state
         .events
-        .after(query.after, EVENTS_WAIT, query.state.as_deref())
+        .after(
+            query.after,
+            query.wait.map_or(EVENTS_WAIT, |ms| {
+                EVENTS_WAIT.min(std::time::Duration::from_millis(ms))
+            }),
+            query.state.as_deref(),
+        )
         .await;
     // Reached only when the agent did not hang up, which drops this future.
     if let Some(agent) = &mut agent {
@@ -1219,25 +1460,41 @@ async fn events(State(state): State<AppState>, Query(query): Query<EventsQuery>)
 }
 
 /// Ask the agent to fix the change. See section 5.7.
+#[derive(Deserialize, Default)]
+struct FixQuery {
+    /// One thread to fix, such as `gerrit:<id>`: the Apply of a thread.
+    #[serde(default)]
+    thread: Option<String>,
+}
+
 async fn fix(
     State(state): State<AppState>,
     Path(key): Path<String>,
+    Query(query): Query<FixQuery>,
 ) -> Result<StatusCode, ApiError> {
-    if state.session.read().await.commit_of(&key).is_none() {
+    let session = state.session.read().await;
+    let Some(change) = session.series.changes.iter().find(|c| c.key == key) else {
         return Err(ApiError::not_found(format!(
             "no change {key} in the series"
         )));
+    };
+    // The reader does not amend the commits of a colleague, section 5.9.
+    if !change.own {
+        return Err(ApiError::bad_request(format!(
+            "{key} is the change of a colleague. Ask the agent about a thread instead"
+        )));
     }
-    hand_fix(&state, &key)
+    drop(session);
+    hand_fix(&state, &key, query.thread.as_deref())
 }
 
 /// Ask the agent to fix every change of the series. See section 5.7.
 async fn fix_series(State(state): State<AppState>) -> Result<StatusCode, ApiError> {
     // An empty key names the whole series, as on a refresh.
-    hand_fix(&state, "")
+    hand_fix(&state, "", None)
 }
 
-fn hand_fix(state: &AppState, key: &str) -> Result<StatusCode, ApiError> {
+fn hand_fix(state: &AppState, key: &str, thread: Option<&str>) -> Result<StatusCode, ApiError> {
     if !state.events.agent_listens() {
         return Err(ApiError {
             status: StatusCode::CONFLICT,
@@ -1245,7 +1502,7 @@ fn hand_fix(state: &AppState, key: &str) -> Result<StatusCode, ApiError> {
             message: "no agent listens. Start one with `qreview wait`".to_owned(),
         });
     }
-    state.events.push(Kind::Fix, Author::Reader, key, None);
+    state.events.push(Kind::Fix, Author::Reader, key, thread);
 
     Ok(StatusCode::ACCEPTED)
 }
@@ -2210,6 +2467,38 @@ mod tests {
         .await;
 
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn the_agent_cannot_send_to_gerrit_through_the_socket() {
+        let repo = fixture().await;
+        let (status, body) = json(
+            on_socket(server(&repo).await),
+            post("/api/changes/I8f3ac21/gerrit/send", "{}"),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["error"]["code"], "reader_only");
+    }
+
+    #[tokio::test]
+    async fn a_run_without_gerrit_says_why_it_sends_nothing() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+
+        let (_, status) = json(server.clone(), get_with_cookie("/api/gerrit/status", TOKEN)).await;
+        assert_eq!(status["rest"], "off");
+
+        let (code, body) = json(server, post("/api/changes/I8f3ac21/gerrit/send", "{}")).await;
+        assert_ne!(code, StatusCode::OK);
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Gerrit is off"),
+            "{body}"
+        );
     }
 
     #[tokio::test]
@@ -3975,6 +4264,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_change_of_a_colleague_takes_no_fix() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        for change in &mut state.session.write().await.series.changes {
+            change.own = false;
+        }
+        drop(state.events.agent_waits());
+        let server = app(state.clone());
+
+        let (status, body) = json(server, post("/api/changes/I8f3ac21/fix", "")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(
+            state
+                .events
+                .after(Some(0), std::time::Duration::ZERO, None)
+                .await
+                .events
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
     async fn a_fix_of_the_series_names_no_change() {
         let repo = fixture().await;
         let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
@@ -3993,5 +4304,79 @@ mod tests {
         assert_eq!(batch["events"][0]["key"], "");
         assert_eq!(batch["task"]["kind"], "fix");
         assert_eq!(batch["task"]["key"], "");
+    }
+
+    #[tokio::test]
+    async fn apply_hands_the_agent_one_thread_to_fix() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        drop(state.events.agent_waits());
+        let server = app(state.clone());
+
+        let (status, _) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/fix?thread=gerrit:g1", ""),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+
+        let (_, batch) = json(server, get_with_cookie("/api/events?after=0", TOKEN)).await;
+        assert_eq!(batch["events"][0]["kind"], "fix");
+        assert_eq!(batch["events"][0]["key"], "I8f3ac21");
+        assert_eq!(batch["events"][0]["id"], "gerrit:g1");
+    }
+
+    #[tokio::test]
+    async fn the_name_of_the_wait_goes_on_each_comment_of_the_agent() {
+        let repo = fixture().await;
+        let server = server(&repo).await;
+        let of_agent = r#"{"scope":"line","file":"src/a.blk","side":"new","startLine":2,"body":"x","author":"agent","agentName":"Mallory"}"#;
+
+        // No name yet: a body cannot give one.
+        let (_, body) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", of_agent),
+        )
+        .await;
+        assert!(body.get("agentName").is_none());
+
+        json(
+            server.clone(),
+            get_with_cookie("/api/events?after=0&who=agent&wait=1&agent=GPT%205", TOKEN),
+        )
+        .await;
+        // A later wait without a name keeps it.
+        json(
+            server.clone(),
+            get_with_cookie("/api/events?after=0&who=agent&wait=1", TOKEN),
+        )
+        .await;
+
+        let (_, body) = json(
+            server.clone(),
+            post("/api/changes/I8f3ac21/comments", of_agent),
+        )
+        .await;
+        assert_eq!(body["agentName"], "GPT 5");
+        let (_, body) = json(server, post("/api/changes/I8f3ac21/comments", LINE_COMMENT)).await;
+        assert!(body.get("agentName").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_wait_with_a_time_limit_is_held_no_longer() {
+        let repo = fixture().await;
+        let state = AppState::new(session_of(&repo, Options::new()).await, TOKEN.to_owned());
+        let server = app(state);
+        let started = std::time::Instant::now();
+
+        let (status, batch) = json(
+            server,
+            get_with_cookie("/api/events?after=0&who=agent&wait=100", TOKEN),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(batch["events"], serde_json::json!([]));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 }

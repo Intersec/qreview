@@ -57,6 +57,17 @@ pub struct ChangeSummary {
     /// Absent on a merge, and when git could not count them.
     #[serde(default)]
     pub lines: Option<LineCount>,
+    /// The author email of the commit equals `user.email`. False on the
+    /// change of a colleague, section 5.9 of the design.
+    #[serde(default = "own_by_default")]
+    pub own: bool,
+    /// The author email of the commit, kept to decide `own`.
+    #[serde(skip)]
+    pub email: String,
+}
+
+fn own_by_default() -> bool {
+    true
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -254,7 +265,7 @@ pub struct WordSpan {
 
 /// A remark already posted on Gerrit.
 ///
-/// Read only, always: qreview never writes to the server. The ssh answer
+/// The id is the id of Gerrit when REST gives the remark. The ssh answer
 /// carries no id, so this one is made from the patch set and the place, and
 /// it is stable as long as the server answers the same thing.
 #[derive(Clone, Debug, Serialize)]
@@ -268,6 +279,40 @@ pub struct PostedComment {
     pub file: String,
     /// Absent on a remark about the whole file.
     pub line: Option<usize>,
+    /// The id of the remark that opens its thread. Its own id when it opens
+    /// one, and always over ssh, which gives no reply link.
+    pub thread: String,
+    pub in_reply_to: Option<String>,
+    /// Absent over ssh, which gives no state.
+    pub unresolved: Option<bool>,
+    /// When it was written, as Gerrit says it. Absent over ssh.
+    pub updated: Option<String>,
+}
+
+/// A thread of Gerrit on a change, with what qreview knows of it.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GerritThread {
+    /// The id of the comment that opens it, which `gerrit:<id>` names.
+    pub id: String,
+    pub patch_set: usize,
+    /// The revision of that patch set.
+    pub commit: String,
+    pub file: String,
+    pub side: crate::store::model::Side,
+    pub line: Option<usize>,
+    /// Its newest comment on Gerrit waits for an answer.
+    pub unresolved: bool,
+    /// It waits for the reader: unresolved, and its newest comment is of
+    /// somebody else. An unresolved question of the reader waits for the
+    /// author instead.
+    pub waits: bool,
+    /// A reply written here resolves it, staged or sent.
+    pub done: bool,
+    /// The comments of Gerrit, oldest first.
+    pub comments: Vec<PostedComment>,
+    /// The replies written here, oldest first.
+    pub replies: Vec<crate::store::model::Comment>,
 }
 
 /// Who wrote the lines of the file on the left of a diff.
