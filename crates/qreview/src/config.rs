@@ -1,9 +1,9 @@
-//! What the user and the repository ask for.
+//! What the site, the user and the repository ask for.
 //!
-//! Three layers, the later one wins: the defaults built into the tool, the
-//! configuration of the user, then the one of the repository. A repository
-//! that declares its own file types therefore hands the map to every reader
-//! with no setup.
+//! Four layers, the later one wins: the defaults built into the tool, the
+//! configuration of the site that `QREVIEW_SITE_CONFIG` names, the one of
+//! the user, then the one of the repository. A repository that declares its
+//! own file types therefore hands the map to every reader with no setup.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::theme::{self, Theme};
 
-/// The configuration, after the three layers are folded together.
+/// The configuration, after the four layers are folded together.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -56,7 +56,7 @@ pub struct Gerrit {
     /// change. Never a password.
     pub url: Option<String>,
     /// The command that prints the authorization for REST. Only the file
-    /// of the user may name it.
+    /// of the site or of the user may name it.
     pub auth: Option<Vec<String>>,
 }
 
@@ -278,33 +278,48 @@ impl Config {
     }
 }
 
-/// Read the two files, in order, on top of the defaults.
+/// Read the three files, in order, on top of the defaults.
 ///
 /// A file that is not there is not an error. A file that is there and is
 /// wrong is: a configuration that is silently ignored is worse than one that
 /// refuses to start, because nobody notices.
 pub fn load(repo_root: &Path) -> Result<Config> {
-    load_from(user_path(), repo_root)
+    load_from(site_path(), user_path(), repo_root)
 }
 
-fn load_from(user: Option<PathBuf>, repo_root: &Path) -> Result<Config> {
-    load_with(user, repo_root, None)
+/// The layers of `load`, from the files it is given.
+fn load_from(site: Option<PathBuf>, user: Option<PathBuf>, repo_root: &Path) -> Result<Config> {
+    load_with(site, user, repo_root, None)
 }
 
 /// `loaded` is the themes directory when the caller already read it.
-fn load_with(user: Option<PathBuf>, repo_root: &Path, loaded: Option<Loaded>) -> Result<Config> {
+fn load_with(
+    site: Option<PathBuf>,
+    user: Option<PathBuf>,
+    repo_root: &Path,
+    loaded: Option<Loaded>,
+) -> Result<Config> {
     let mut config = Config::default();
     let themes = user.as_deref().and_then(theme_dir_of);
     let repo = repo_root.join(".qreview.json");
 
-    for path in [user, Some(repo.clone())].into_iter().flatten() {
+    if let Some(site) = &site
+        && !site.is_file()
+    {
+        // A share that is not mounted must not stop a review.
+        eprintln!(
+            "qreview: {SITE_VAR} names {}, which cannot be read",
+            site.display()
+        );
+    }
+    for path in [site, user, Some(repo.clone())].into_iter().flatten() {
         if let Some(layer) = read(&path)? {
             // A repository that someone cloned must not choose a command that
             // the server runs.
             if path == repo && layer.gerrit.as_ref().is_some_and(|g| g.auth.is_some()) {
                 bail!(
-                    "{} sets gerrit.auth, which only the configuration of the user may set. \
-                     Remove it from that file",
+                    "{} sets gerrit.auth, which only the configuration of the user or of \
+                     the site may set. Remove it from that file",
                     path.display()
                 );
             }
@@ -416,13 +431,13 @@ fn read(path: &Path) -> Result<Option<Layer>> {
 }
 
 /// Write what the panel changed into the file of the user, and read the
-/// three layers back.
+/// four layers back.
 ///
 /// Only the fields the panel owns are written. A language map or a Gerrit
 /// setting the user put there by hand stays where it is.
 pub fn update(repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
     let path = user_path().context("no configuration directory for this user")?;
-    update_at(&path, repo_root, patch)
+    update_at(site_path(), &path, repo_root, patch)
 }
 
 /// A change from the panel that would leave the file unreadable, and why.
@@ -437,7 +452,12 @@ impl std::fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
-fn update_at(path: &Path, repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
+fn update_at(
+    site: Option<PathBuf>,
+    path: &Path,
+    repo_root: &Path,
+    patch: &serde_json::Value,
+) -> Result<Config> {
     let mut stored: serde_json::Value = match std::fs::read_to_string(path) {
         Ok(text) => serde_json::from_str(&text)
             .with_context(|| format!("{} is not a readable configuration", path.display()))?,
@@ -496,7 +516,17 @@ fn update_at(path: &Path, repo_root: &Path, patch: &serde_json::Value) -> Result
     std::fs::write(path, format!("{text}\n"))
         .with_context(|| format!("cannot write {}", path.display()))?;
 
-    load_with(Some(path.to_owned()), repo_root, found)
+    load_with(site, Some(path.to_owned()), repo_root, found)
+}
+
+/// The variable that names the configuration of the site: the file that a
+/// team shares, read before the one of the user.
+pub const SITE_VAR: &str = "QREVIEW_SITE_CONFIG";
+
+fn site_path() -> Option<PathBuf> {
+    std::env::var_os(SITE_VAR)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
 }
 
 fn user_path() -> Option<PathBuf> {
@@ -612,7 +642,7 @@ mod tests {
         )
         .unwrap();
 
-        let error = load_from(None, dir.path()).unwrap_err().to_string();
+        let error = load_from(None, None, dir.path()).unwrap_err().to_string();
         assert!(error.contains("gerrit.auth"), "{error}");
 
         let mut config = Config::default();
@@ -630,6 +660,53 @@ mod tests {
     }
 
     #[test]
+    fn the_site_comes_first_and_may_name_the_command_of_the_authorization() {
+        let dir = tempfile::tempdir().unwrap();
+        let site = dir.path().join("site.json");
+        let user = dir.path().join("user.json");
+        std::fs::write(
+            &site,
+            r#"{"gerrit":{"url":"https://site.example.com","auth":{"command":["site-auth"]}},"ui":{"diff":"side-by-side"}}"#,
+        )
+        .unwrap();
+        std::fs::write(&user, r#"{"gerrit":{"url":"https://review.example.com"}}"#).unwrap();
+
+        let config = load_from(Some(site), Some(user), dir.path()).unwrap();
+
+        assert_eq!(config.gerrit.auth, Some(vec!["site-auth".to_owned()]));
+        assert_eq!(config.ui.diff, "side-by-side");
+        assert_eq!(
+            config.gerrit.url.as_deref(),
+            Some("https://review.example.com"),
+            "the user wins over the site"
+        );
+    }
+
+    #[test]
+    fn a_site_file_that_is_not_there_stops_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let config = load_from(Some(dir.path().join("nothing.json")), None, dir.path()).unwrap();
+
+        assert_eq!(config, load_from(None, None, dir.path()).unwrap());
+    }
+
+    #[test]
+    fn a_theme_of_the_user_that_did_not_load_falls_back_to_the_site() {
+        let dir = tempfile::tempdir().unwrap();
+        let site = dir.path().join("site.json");
+        let user = dir.path().join("user.json");
+        std::fs::write(&site, r#"{"ui":{"theme":"dark"}}"#).unwrap();
+        std::fs::write(&user, r#"{"ui":{"theme":"gone"}}"#).unwrap();
+
+        let config = load_from(Some(site.clone()), Some(user), dir.path()).unwrap();
+
+        assert_eq!(config.ui.theme, "dark");
+        let note = config.notes.join("\n");
+        assert!(note.contains(&site.display().to_string()), "{note}");
+    }
+
+    #[test]
     fn the_repository_layer_is_read_after_the_user_one() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -639,7 +716,7 @@ mod tests {
         .unwrap();
 
         // No file of the user: the real one of the developer may hold anything.
-        let config = load_from(None, dir.path()).unwrap();
+        let config = load_from(None, None, dir.path()).unwrap();
         assert_eq!(config.languages.get("zz").map(String::as_str), Some("yaml"));
         assert_eq!(config.ui.diff, "side-by-side");
     }
@@ -652,8 +729,13 @@ mod tests {
         let before = "{\n  \"ui\": {\n    \"theme\": \"dark\"\n  }\n}\n";
         std::fs::write(&path, before).unwrap();
 
-        let error =
-            update_at(&path, repo.path(), &serde_json::json!({"ui": {"theme": 5}})).unwrap_err();
+        let error = update_at(
+            None,
+            &path,
+            repo.path(),
+            &serde_json::json!({"ui": {"theme": 5}}),
+        )
+        .unwrap_err();
 
         assert!(error.downcast_ref::<Refused>().is_some(), "{error:#}");
         assert!(error.to_string().contains("ui.theme"), "{error}");
@@ -667,6 +749,7 @@ mod tests {
         let path = home.path().join("qreview").join("config.json");
 
         let error = update_at(
+            None,
             &path,
             repo.path(),
             &serde_json::json!({"ui": {"thme": "dark"}}),
@@ -686,6 +769,7 @@ mod tests {
         let path = home.path().join("qreview").join("config.json");
 
         let config = update_at(
+            None,
             &path,
             repo.path(),
             &serde_json::json!({"diff": {"context": 5}}),
@@ -730,7 +814,7 @@ mod tests {
         }
 
         fn load(&self) -> Config {
-            load_from(Some(self.user()), self.repo.path()).unwrap()
+            load_from(None, Some(self.user()), self.repo.path()).unwrap()
         }
     }
 
@@ -889,6 +973,7 @@ mod tests {
         let setup = Setup::new("{}", None, &[]);
 
         let config = update_at(
+            None,
             &setup.user(),
             setup.repo.path(),
             &serde_json::json!({"ui": {"theme": "dracula"}}),
@@ -928,6 +1013,7 @@ mod tests {
         let setup = Setup::new(before, None, &[MIDNIGHT]);
 
         let error = update_at(
+            None,
             &setup.user(),
             setup.repo.path(),
             &serde_json::json!({"ui": {"theme": "gone"}}),
@@ -949,6 +1035,7 @@ mod tests {
         let setup = Setup::new(r#"{"ui":{"theme":"midnight"}}"#, None, &[]);
 
         let config = update_at(
+            None,
             &setup.user(),
             setup.repo.path(),
             &serde_json::json!({"diff": {"fontSize": 14}}),

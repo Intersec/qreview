@@ -1396,11 +1396,11 @@ The command prints one JSON object:
 | `authorization` | The value of the header: `Bearer <token>` for a token of OIDC, `Basic <base64 of user:password>` for an HTTP password of Gerrit |
 | `expiresIn` | Optional. The seconds that the value lasts. Without it, the value lasts for the run |
 
-The organization supplies the command. It can run a flow of OIDC with a refresh token, or ask a central service. `examples/gerrit-auth-basic.sh` asks the user name and the HTTP password of Gerrit in the terminal.
+The organization supplies the command, and names it in the configuration of the site (section 10), so that it reaches every reader at once. It can run a flow of OIDC with a refresh token, or ask a central service. `examples/gerrit-auth-basic.sh` asks the user name and the HTTP password of Gerrit in the terminal.
 
 **When it runs.** At the first REST call of the run, and not before: a series with no Gerrit asks nothing. The reader runs `qreview` in a terminal, so the command gets that terminal, and `QREVIEW_INTERACTIVE=1`. It may ask a user name and a password there, or open a browser for OIDC, and it has 5 minutes. Meanwhile the chip of the slow calls says that the server waits for a login in the terminal (section 11). With no terminal, the command gets no standard input and 15 seconds: it answers from what it keeps, or fails, and the page shows the first line of its error output. In both cases `QREVIEW_GERRIT_URL` holds the address of the API. The standard output of the command never reaches a message: it holds the secret.
 
-**Only the user names the command.** A `.qreview.json` that sets `gerrit.auth` is refused, and the server does not start. Otherwise a repository that someone cloned would choose a program that the server runs.
+**Only the site or the user names the command.** A `.qreview.json` that sets `gerrit.auth` is refused, and the server does not start. Otherwise a repository that someone cloned would choose a program that the server runs.
 
 **Where the authorization goes.** The server runs the command at the first REST call of the run, and keeps the answer in memory. It runs it again 30 seconds before `expiresIn` ends, and once after Gerrit refuses the value in memory: the token can die early, and the reader can type a wrong password. The value reaches `curl` on standard input, as a `--config -` file, and never in the arguments, which any local user reads in `ps`. It never reaches a line of the trace, an error message, the page, the agent, the store or the configuration.
 
@@ -1603,7 +1603,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `POST /api/changes/:key/clean` | Delete the done threads of the change |
 | `POST /api/changes/:key/patchsets/fetch` | Fetch one Gerrit patch set |
 | `GET /api/export?scope=change&key=...` | The export text. `json=true` gives the JSON of section 9 instead |
-| `GET /api/config` | The three layers, folded |
+| `GET /api/config` | The four layers, folded |
 | `PUT /api/config` | Write what the panel changed, and read them back |
 
 One static route sits outside `/api`: `/` serves the interface. The themes
@@ -1888,11 +1888,14 @@ type ExportJson = {
 
 ## 10. Configuration
 
-Three layers, the later one wins:
+Four layers, the later one wins:
 
 1. The defaults built into the tool, including the language map.
-2. `$XDG_CONFIG_HOME/qreview/config.json`, found with the `directories` crate.
-3. `.qreview.json` at the top level of the repository, when it exists.
+2. The file that `QREVIEW_SITE_CONFIG` names, when the variable is set: the configuration of the site.
+3. `$XDG_CONFIG_HOME/qreview/config.json`, found with the `directories` crate.
+4. `.qreview.json` at the top level of the repository, when it exists.
+
+**The site.** A team that cannot write in the home of each reader sets `QREVIEW_SITE_CONFIG` in a shared shell profile, and keeps one file on a shared disk. Updating that file updates every reader, at their next run. The file holds every key a user file holds, `gerrit.auth` included: a reader controls their environment as they control their home. A user file overrides it key by key. When the variable names a file that cannot be read, such as a share that is not mounted, qreview says so on standard error and goes on without it. The panel of preferences never writes it.
 
 ```json
 {
@@ -1919,7 +1922,7 @@ Three layers, the later one wins:
 
 `gerrit.url` is the web address of the Gerrit server, for its REST API. It is needed only when the server gives no `url` in its answers (section 6.6). It holds no password, and no key of the configuration does.
 
-`gerrit.auth.command` names the program that gives the authorization of REST (section 6.6). Only the file of the user may set `gerrit.auth`: a `.qreview.json` that sets it is refused.
+`gerrit.auth.command` names the program that gives the authorization of REST (section 6.6). Only the file of the site or of the user may set `gerrit.auth`: a `.qreview.json` that sets it is refused.
 
 Ten lines of context, not the three git gives: three is too few to judge a
 change.
@@ -1974,7 +1977,8 @@ terminal and goes on:
 - A theme file that cannot be read is left out, and the error names the
   file, the line, and what the subset allows. The other themes still load.
 - If `ui.theme` names no theme that loaded, the tool falls back one layer:
-  from `.qreview.json` to the files of the user, then to `system`. Each
+  from `.qreview.json` to the file of the user, then to the file of the
+  site, then to `system`. Each
   fallback writes an error that names the file, the value and the themes
   that loaded.
 
@@ -2006,7 +2010,7 @@ user, and nothing else. It never writes a theme file. The panel sends only
 the fields that the reader touched. A value that it shows may come from
 `.qreview.json`, or be a fallback, and a save must not copy it into the
 file of the user, where it would reach every other repository. A language map that
-somebody put there by hand stays where it is. The answer is the three
+somebody put there by hand stays where it is. The answer is the four
 layers folded again, so it says what the tool will really use and not what
 was asked for.
 
