@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { BINARY, start, type Running } from './server.ts';
+import { BINARY, inherited, start, type Running } from './server.ts';
 
 let server: Running;
 let elsewhere: string;
@@ -30,7 +30,7 @@ test('an agent with a store of its own reaches the server through the git direct
   expect(statSync(join(dir, 'agent.sock')).isSocket()).toBe(true);
 
   // A container: another store, and no address in it.
-  const env = { ...process.env, XDG_STATE_HOME: elsewhere, XDG_CONFIG_HOME: elsewhere };
+  const env = { ...inherited(), XDG_STATE_HOME: elsewhere, XDG_CONFIG_HOME: elsewhere };
   const written = JSON.parse(
     execFileSync(BINARY, ['comment', 'src/long.c', '--body', 'From the container.'], {
       cwd: server.fixture.repo,

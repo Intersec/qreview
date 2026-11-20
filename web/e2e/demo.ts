@@ -17,7 +17,7 @@ import { mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import config from '../playwright.config.ts';
-import { BINARY, spawnOn } from './server.ts';
+import { BINARY, inherited, spawnOn } from './server.ts';
 
 const OUT = join(import.meta.dirname, '.demo');
 const SIZE = { width: 1280, height: 800 };
@@ -575,7 +575,7 @@ function agent(args: string[]): string {
   return execFileSync(BINARY, args, {
     cwd: repo,
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...inherited(), ...env },
   });
 }
 
@@ -593,7 +593,7 @@ function agentWait(after?: number): Promise<Waited> & { stop(): void } {
     '300',
     ...(after === undefined ? [] : ['--after', `${after}`]),
   ];
-  const waiter = spawn(BINARY, args, { cwd: repo, env: { ...process.env, ...env } });
+  const waiter = spawn(BINARY, args, { cwd: repo, env: { ...inherited(), ...env } });
   let out = '';
   waiter.stdout.on('data', (chunk) => (out += String(chunk)));
   const done = new Promise<Waited>((resolve, reject) => {

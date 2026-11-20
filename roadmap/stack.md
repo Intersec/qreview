@@ -1310,3 +1310,15 @@ Gerrit shows each draft under the name of the reader, who sends it. The author o
 - **`From Claude:` for every agent, or `Claude` when `CLAUDECODE` is set.** qreview works with any agent, and the binary must not know one by name.
 - **`QREVIEW_AGENT` in the environment.** Each user must set it once. The procedure of the agent already runs `wait` at each turn.
 - **`--agent` on each command that writes.** The agent can forget it on one command, and that draft goes out unnamed.
+
+## 2026-11-20 — A configuration of the site, named by a variable
+
+A team deploys one `gerrit.auth.command` for every reader, and will replace it when Gerrit moves to OIDC. The team keeps the script on a shared disk, and loads a common shell profile for everyone, but cannot write in the home of each reader. qreview read only the file of the user and the file of the repository.
+
+**Decision.** `QREVIEW_SITE_CONFIG` names a configuration file, read after the defaults and before the file of the user. It holds every key that a user file holds, `gerrit.auth` included: a reader controls their environment as they control their home. A user file overrides it key by key. A file that cannot be read, such as a share that is not mounted, gives a line on standard error and stops nothing. The tests remove the variable from their environment, so a site command never runs in a test.
+
+**Rejected:**
+
+- **A variable per key, such as `QREVIEW_CONF_GERRIT_AUTH_COMMAND`.** The command is a list, which a variable holds only through a parsing of its own. Each key needs a name, and a new shared setting needs an edit of the shell profile.
+- **`XDG_CONFIG_DIRS`.** It is the standard for this, but a common profile that sets it changes where every other program looks for its configuration.
+- **A fixed path such as `/etc/qreview/config.json`.** The team cannot write there on every machine.

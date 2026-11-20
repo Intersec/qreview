@@ -287,8 +287,9 @@ newest reply. The card tags it "for Gerrit". The agent never sends: you read
 the text, edit it if needed, and click Send.
 
 Sending needs access to the REST API of Gerrit. qreview stores no secret:
-a command of yours gives the `Authorization` header. Name it in
-`~/.config/qreview/config.json`, the only file that may name it:
+a command gives the `Authorization` header. Name it in
+`~/.config/qreview/config.json`, or in the site file below. No other file
+may name it:
 
 ```json
 "gerrit": { "auth": { "command": ["/path/to/gerrit-auth"] } }
@@ -334,6 +335,18 @@ screen.
 Personal settings go in `~/.config/qreview/config.json`. The preferences
 panel behind `,` writes that same file, so the next run starts the way you
 left it. See `examples/config.json`.
+
+A team can share settings in one file, and name it in a shell profile
+that every reader loads:
+
+```sh
+export QREVIEW_SITE_CONFIG=/shared/qreview/config.json
+```
+
+qreview reads that file first, then your own file, then `.qreview.json`.
+The later file wins, key by key. The site file is the place for a
+`gerrit.auth.command` that the whole team uses: change it there, and every
+reader runs the new command at their next start.
 
 ## Documentation
 

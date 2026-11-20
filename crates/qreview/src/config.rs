@@ -1,9 +1,9 @@
-//! What the user and the repository ask for.
+//! What the site, the user and the repository ask for.
 //!
-//! Three layers, the later one wins: the defaults built into the tool, the
-//! configuration of the user, then the one of the repository. A repository
-//! that declares its own file types therefore hands the map to every reader
-//! with no setup.
+//! Four layers, the later one wins: the defaults built into the tool, the
+//! configuration of the site that `QREVIEW_SITE_CONFIG` names, the one of
+//! the user, then the one of the repository. A repository that declares its
+//! own file types therefore hands the map to every reader with no setup.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -50,7 +50,7 @@ pub struct Gerrit {
     /// change. Never a password.
     pub url: Option<String>,
     /// The command that prints the authorization for REST. Only the file
-    /// of the user may name it.
+    /// of the site or of the user may name it.
     pub auth: Option<Vec<String>>,
 }
 
@@ -261,9 +261,24 @@ impl Config {
 /// wrong is: a configuration that is silently ignored is worse than one that
 /// refuses to start, because nobody notices.
 pub fn load(repo_root: &Path) -> Result<Config> {
+    load_from(site_path().as_deref(), user_path().as_deref(), repo_root)
+}
+
+/// The layers of `load`, from the files it is given.
+fn load_from(site: Option<&Path>, user: Option<&Path>, repo_root: &Path) -> Result<Config> {
     let mut config = Config::default();
 
-    if let Some(layer) = user_path().map(|path| read(&path)).transpose()?.flatten() {
+    if let Some(site) = site {
+        match read(site)? {
+            Some(layer) => config.apply(layer),
+            // A share that is not mounted must not stop a review.
+            None => eprintln!(
+                "qreview: {SITE_VAR} names {}, which cannot be read",
+                site.display()
+            ),
+        }
+    }
+    if let Some(layer) = user.map(read).transpose()?.flatten() {
         config.apply(layer);
     }
     let path = repo_root.join(".qreview.json");
@@ -272,8 +287,8 @@ pub fn load(repo_root: &Path) -> Result<Config> {
         // the server runs.
         if layer.gerrit.as_ref().is_some_and(|g| g.auth.is_some()) {
             bail!(
-                "{} sets gerrit.auth, which only the configuration of the user may set. \
-                 Remove it from that file",
+                "{} sets gerrit.auth, which only the configuration of the user or of \
+                 the site may set. Remove it from that file",
                 path.display()
             );
         }
@@ -335,6 +350,16 @@ pub fn update(repo_root: &Path, patch: &serde_json::Value) -> Result<Config> {
         .with_context(|| format!("cannot write {}", path.display()))?;
 
     load(repo_root)
+}
+
+/// The variable that names the configuration of the site: the file that a
+/// team shares, read before the one of the user.
+pub const SITE_VAR: &str = "QREVIEW_SITE_CONFIG";
+
+fn site_path() -> Option<PathBuf> {
+    std::env::var_os(SITE_VAR)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
 }
 
 fn user_path() -> Option<PathBuf> {
@@ -441,7 +466,7 @@ mod tests {
         )
         .unwrap();
 
-        let error = load(dir.path()).unwrap_err().to_string();
+        let error = load_from(None, None, dir.path()).unwrap_err().to_string();
         assert!(error.contains("gerrit.auth"), "{error}");
 
         let mut config = Config::default();
@@ -459,6 +484,38 @@ mod tests {
     }
 
     #[test]
+    fn the_site_comes_first_and_may_name_the_command_of_the_authorization() {
+        let dir = tempfile::tempdir().unwrap();
+        let site = dir.path().join("site.json");
+        let user = dir.path().join("user.json");
+        std::fs::write(
+            &site,
+            r#"{"gerrit":{"url":"https://site.example.com","auth":{"command":["site-auth"]}},"ui":{"diff":"side-by-side"}}"#,
+        )
+        .unwrap();
+        std::fs::write(&user, r#"{"gerrit":{"url":"https://review.example.com"}}"#).unwrap();
+
+        let config = load_from(Some(&site), Some(&user), dir.path()).unwrap();
+
+        assert_eq!(config.gerrit.auth, Some(vec!["site-auth".to_owned()]));
+        assert_eq!(config.ui.diff, "side-by-side");
+        assert_eq!(
+            config.gerrit.url.as_deref(),
+            Some("https://review.example.com"),
+            "the user wins over the site"
+        );
+    }
+
+    #[test]
+    fn a_site_file_that_is_not_there_stops_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let config = load_from(Some(&dir.path().join("nothing.json")), None, dir.path()).unwrap();
+
+        assert_eq!(config, Config::default());
+    }
+
+    #[test]
     fn the_repository_layer_is_read_after_the_user_one() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -467,7 +524,7 @@ mod tests {
         )
         .unwrap();
 
-        let config = load(dir.path()).unwrap();
+        let config = load_from(None, None, dir.path()).unwrap();
         assert_eq!(config.languages.get("zz").map(String::as_str), Some("yaml"));
         assert_eq!(config.ui.diff, "side-by-side");
     }
