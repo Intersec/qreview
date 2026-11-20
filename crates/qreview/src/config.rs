@@ -597,7 +597,9 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("thme"), "{error:#}");
+        // A Refused is a 400. Any other error would be a 500.
+        assert!(error.downcast_ref::<Refused>().is_some(), "{error:#}");
+        assert!(error.to_string().contains("ui.thme: "), "{error:#}");
         assert!(!path.exists());
     }
 
