@@ -1002,6 +1002,32 @@ tr.talk td {
   font-size: 11px;
 }
 
+/* ------------------------------------------------------- the merge bar */
+
+/* Tokens, not `dark:` variants: those follow the system, not the reader's theme. */
+.merge-bar {
+  border-bottom: 1px solid var(--edge);
+  border-left: 3px solid var(--context-ink);
+  background: var(--context-bar);
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--ink);
+}
+.merge-bar h3 {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--context-ink);
+}
+.merge-bar .quiet {
+  color: var(--ink-quiet);
+}
+.merge-bar code {
+  font-family: var(--code-font);
+  font-size: 11px;
+}
+
 /* --------------------------------------------------------- the sidebar */
 
 .side {
