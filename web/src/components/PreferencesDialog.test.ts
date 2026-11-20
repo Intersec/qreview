@@ -35,19 +35,57 @@ function themeSelect(wrapper: ReturnType<typeof mount>) {
   return label!.find('select');
 }
 
-function saved(wrapper: ReturnType<typeof mount>): { ui: Record<string, string> } {
-  const events = wrapper.emitted('save') as [{ ui: Record<string, string> }][];
+interface Patch {
+  diff?: Record<string, unknown>;
+  ui?: Record<string, string>;
+}
+
+function saved(wrapper: ReturnType<typeof mount>): Patch {
+  const events = wrapper.emitted('save') as [Patch][];
   return events[0][0];
 }
 
+/// The control of a row, found by the label of the row.
+function control(wrapper: ReturnType<typeof mount>, label: string) {
+  const row = wrapper.findAll('label').find((l) => l.text().startsWith(label));
+  return row!.find('select, input');
+}
+
 describe('the preferences panel', () => {
-  it('sends no theme when the reader did not change it', async () => {
-    // The page shows system because the theme of the file did not load.
+  it('sends nothing that the reader did not touch', async () => {
+    // A value shown may come from the .qreview.json of the repository, or
+    // be a fallback. A save must not copy it into the file of the user.
     const wrapper = mount(PreferencesDialog, { props: { config: config('system') } });
 
     await wrapper.find('form').trigger('submit');
 
-    expect(saved(wrapper).ui).toEqual({ diff: 'unified' });
+    expect(saved(wrapper)).toEqual({});
+  });
+
+  it('sends only the fields that the reader touched', async () => {
+    const wrapper = mount(PreferencesDialog, { props: { config: config('system') } });
+
+    await control(wrapper, 'Context').setValue(25);
+    await control(wrapper, 'Wrap').setValue(true);
+    await control(wrapper, 'Font size').setValue('14');
+    await control(wrapper, 'Diff view').setValue('side-by-side');
+    await wrapper.find('form').trigger('submit');
+
+    expect(saved(wrapper)).toEqual({
+      diff: { context: 25, wrap: true, fontSize: 14 },
+      ui: { diff: 'side-by-side' },
+    });
+  });
+
+  it('sends a touched field even when it is back to the value shown', async () => {
+    // The reader means it: the value shown may come from the repository.
+    const wrapper = mount(PreferencesDialog, { props: { config: config('system') } });
+
+    await control(wrapper, 'Tab width').setValue('8');
+    await control(wrapper, 'Tab width').setValue('4');
+    await wrapper.find('form').trigger('submit');
+
+    expect(saved(wrapper).diff).toEqual({ tabWidth: 4 });
   });
 
   it('offers the themes of the user after the built-in ones', () => {
@@ -66,7 +104,7 @@ describe('the preferences panel', () => {
     await themeSelect(wrapper).setValue('dark');
     await wrapper.find('form').trigger('submit');
 
-    expect(saved(wrapper).ui).toEqual({ diff: 'unified', theme: 'dark' });
+    expect(saved(wrapper).ui).toEqual({ theme: 'dark' });
   });
 
   it('sends a picked theme even when it is the one shown', async () => {
@@ -77,6 +115,6 @@ describe('the preferences panel', () => {
     await themeSelect(wrapper).setValue('system');
     await wrapper.find('form').trigger('submit');
 
-    expect(saved(wrapper).ui).toEqual({ diff: 'unified', theme: 'system' });
+    expect(saved(wrapper).ui).toEqual({ theme: 'system' });
   });
 });

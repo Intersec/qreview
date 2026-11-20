@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import type { Config } from '@/api/types';
 
 const props = defineProps<{ config: Config }>();
@@ -17,18 +17,25 @@ const draft = reactive({
   theme: props.config.ui.theme,
 });
 
-/// The reader touched the theme select. The theme shown may be a fallback,
-/// or the choice of the repository: it is sent only when the reader picked
-/// one, so it never replaces what the user wrote in the file. A pick is
-/// sent even when it equals the value shown, so the reader can clear a
-/// theme that did not load.
-const themePicked = ref(false);
+/// The fields that the reader touched. Only those are sent: a value shown
+/// may come from the .qreview.json of the repository, or be a theme that
+/// did not load, and it must never replace what the user wrote in the
+/// file. A touched field is sent even when it equals the value shown, so
+/// the reader can clear a theme that did not load.
+const touched = reactive(new Set<string>());
+
+function touch(event: Event) {
+  const name = (event.target as HTMLInputElement).name;
+  if (name) {
+    touched.add(name);
+  }
+}
 
 watch(
   () => props.config,
   (fresh) => {
     Object.assign(draft, fresh.diff, { view: fresh.ui.diff, theme: fresh.ui.theme });
-    themePicked.value = false;
+    touched.clear();
   },
 );
 
@@ -38,20 +45,26 @@ const CONTEXTS = [3, 10, 25, 50];
 /// offered: the terminal says why.
 const themes = computed(() => Object.keys(props.config.ui.themes ?? {}).sort());
 
+/// The fields of the diff section, with the ones that the panel reads as text.
+const DIFF = ['context', 'wrap', 'ignoreWhitespace', 'tabWidth', 'fontSize', 'syntax'] as const;
+const NUMBERS: readonly string[] = ['context', 'tabWidth', 'fontSize'];
+
 function save() {
+  const diff: Record<string, unknown> = {};
+  for (const name of DIFF.filter((n) => touched.has(n))) {
+    diff[name] = NUMBERS.includes(name) ? Number(draft[name]) : draft[name];
+  }
+  const ui: Record<string, string> = {};
+  if (touched.has('view')) {
+    ui.diff = draft.view;
+  }
+  if (touched.has('theme')) {
+    ui.theme = draft.theme;
+  }
+  // An empty section stays out, so the file of the user gets no empty block.
   emit('save', {
-    diff: {
-      context: Number(draft.context),
-      wrap: draft.wrap,
-      ignoreWhitespace: draft.ignoreWhitespace,
-      tabWidth: Number(draft.tabWidth),
-      fontSize: Number(draft.fontSize),
-      syntax: draft.syntax,
-    },
-    ui: {
-      diff: draft.view,
-      ...(themePicked.value ? { theme: draft.theme } : {}),
-    },
+    ...(Object.keys(diff).length ? { diff } : {}),
+    ...(Object.keys(ui).length ? { ui } : {}),
   });
 }
 </script>
@@ -64,12 +77,14 @@ function save() {
       aria-modal="true"
       aria-label="Preferences"
       @submit.prevent="save"
+      @input="touch"
+      @change="touch"
     >
       <h2 class="panel-title">Preferences</h2>
 
       <label class="row">
         <span>Context</span>
-        <select v-model="draft.context" class="picker">
+        <select v-model="draft.context" name="context" class="picker">
           <option v-for="lines in CONTEXTS" :key="lines" :value="lines">{{ lines }} lines</option>
           <option :value="2000">the whole file</option>
         </select>
@@ -77,7 +92,7 @@ function save() {
 
       <label class="row">
         <span>Diff view</span>
-        <select v-model="draft.view" class="picker">
+        <select v-model="draft.view" name="view" class="picker">
           <option value="unified">unified</option>
           <option value="side-by-side">side by side</option>
         </select>
@@ -85,7 +100,7 @@ function save() {
 
       <label class="row">
         <span>Theme</span>
-        <select v-model="draft.theme" class="picker" @change="themePicked = true">
+        <select v-model="draft.theme" name="theme" class="picker">
           <option value="system">follow the system</option>
           <option value="light">light</option>
           <option value="dark">dark</option>
@@ -97,27 +112,41 @@ function save() {
 
       <label class="row">
         <span>Wrap a long line</span>
-        <input v-model="draft.wrap" type="checkbox" />
+        <input v-model="draft.wrap" name="wrap" type="checkbox" />
       </label>
 
       <label class="row">
         <span>Ignore whitespace</span>
-        <input v-model="draft.ignoreWhitespace" type="checkbox" />
+        <input v-model="draft.ignoreWhitespace" name="ignoreWhitespace" type="checkbox" />
       </label>
 
       <label class="row">
         <span>Syntax colours</span>
-        <input v-model="draft.syntax" type="checkbox" />
+        <input v-model="draft.syntax" name="syntax" type="checkbox" />
       </label>
 
       <label class="row">
         <span>Tab width</span>
-        <input v-model="draft.tabWidth" type="number" min="1" max="16" class="picker number" />
+        <input
+          v-model="draft.tabWidth"
+          name="tabWidth"
+          type="number"
+          min="1"
+          max="16"
+          class="picker number"
+        />
       </label>
 
       <label class="row">
         <span>Font size</span>
-        <input v-model="draft.fontSize" type="number" min="8" max="24" class="picker number" />
+        <input
+          v-model="draft.fontSize"
+          name="fontSize"
+          type="number"
+          min="8"
+          max="24"
+          class="picker number"
+        />
       </label>
 
       <p class="panel-note">

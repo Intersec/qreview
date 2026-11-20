@@ -1692,8 +1692,7 @@ repository. A repository cannot bring colors of its own.
 `config.json` keeps what the user wrote. `GET /api/config` answers the
 theme that the tool really uses, after the fallback. A `PUT /api/config`
 that names no loaded theme is still refused with a 400, because the panel
-offers only the themes that loaded. The panel sends `ui.theme` only when
-the reader changed it, so a fallback never replaces what the user wrote.
+offers only the themes that loaded.
 
 The themes directory is read at startup, and again at each page load and
 each save. An edited theme shows when the page is loaded again, with no
@@ -1708,7 +1707,10 @@ If `.qreview.json` names a loaded theme, it wins over the panel, as for
 repository.
 
 `PUT /api/config` writes the `diff` and `ui` sections into the file of the
-user, and nothing else. It never writes a theme file. A language map that
+user, and nothing else. It never writes a theme file. The panel sends only
+the fields that the reader touched. A value that it shows may come from
+`.qreview.json`, or be a fallback, and a save must not copy it into the
+file of the user, where it would reach every other repository. A language map that
 somebody put there by hand stays where it is. The answer is the three
 layers folded again, so it says what the tool will really use and not what
 was asked for.
