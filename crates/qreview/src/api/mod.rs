@@ -1529,14 +1529,17 @@ mod tests {
             .with_themes(Some(themes.path().to_owned()));
 
         let (_, before) = json(app(state.clone()), get_with_cookie("/api/session", TOKEN)).await;
-        assert_eq!(before["config"]["ui"]["themes"], serde_json::json!({}));
+        assert_eq!(
+            before["config"]["ui"]["themes"]["midnight"],
+            serde_json::Value::Null
+        );
 
-        let night = ":root { color-scheme: dark; --page: #000010; }";
-        std::fs::write(themes.path().join("night.css"), night).unwrap();
+        let midnight = ":root { color-scheme: dark; --page: #000010; }";
+        std::fs::write(themes.path().join("midnight.css"), midnight).unwrap();
         let (_, after) = json(app(state), get_with_cookie("/api/session", TOKEN)).await;
 
         assert_eq!(
-            after["config"]["ui"]["themes"]["night"]["colors"]["page"],
+            after["config"]["ui"]["themes"]["midnight"]["colors"]["page"],
             "#000010"
         );
     }

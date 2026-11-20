@@ -266,6 +266,17 @@ left it. See `examples/config.json`.
 
 ### Color themes
 
+qreview carries 19 themes. Pick one in the preferences panel:
+
+- `colorblind-light`, `colorblind-dark`: blue and orange for the diff, not
+  green and red.
+- `high-contrast-light`, `high-contrast-dark`.
+- `solarized-light`, `solarized-dark`, `github-light`, `github-dark`,
+  `gruvbox-light`, `gruvbox-dark`, `catppuccin-latte`, `catppuccin-mocha`,
+  `one-light`, `nord`, `dracula`, `tokyo-night`, `night`, `paper`,
+  `gerrit-dark`.
+
+To write your own theme, or to change a bundled one, add a file of your own.
 A theme is a CSS file in `~/.config/qreview/themes/`. Its file name is its
 name: `night.css` adds a theme called `night`. Pick it in the preferences,
 or set `ui.theme` in your `config.json`:
@@ -282,7 +293,10 @@ The file holds one `:root` block and comments, nothing else. Each `--token`
 takes a hex color and replaces one color of the base palette. The tokens are
 the custom properties at the top of
 [`web/src/styles/main.css`](./web/src/styles/main.css).
-[`examples/themes/`](./examples/themes/) holds two themes to start from.
+The bundled themes in
+[`crates/qreview/themes/`](./crates/qreview/themes/) are a start: copy one
+into your themes directory. A file of yours replaces the bundled theme of the
+same name.
 
 A file that breaks these rules is left out, and the terminal says which line
 is wrong. If `ui.theme` names a theme that did not load, qreview uses the one

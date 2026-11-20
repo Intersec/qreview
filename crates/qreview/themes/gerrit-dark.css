@@ -1,8 +1,9 @@
 /*
  * gerrit-dark: the colors of the dark theme of Gerrit.
  *
- * Copy this file to ~/.config/qreview/themes/ and pick "gerrit-dark" in the
- * preferences. See night.css for what a theme file may hold.
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
  *
  * The page colors are taken from a screenshot of the dark Gerrit interface.
  * The diff and syntax colors follow the Material dark palette that Gerrit

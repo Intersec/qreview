@@ -4,7 +4,7 @@
 // passes or fails here, it only makes the interface visible.
 
 import { chromium, type Page } from '@playwright/test';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import config from '../playwright.config.ts';
 import { openChange, openFile, pickTheme, useSplit } from './act.ts';
@@ -26,17 +26,13 @@ const other = await start({ dirty: true, gerrit: true });
 const moved = build();
 moved.previous = rebaseNewest(moved);
 const rebased = await start({ on: moved, prev: true });
-// A fourth one, with the example themes of the user.
-const example = (name: string) =>
-  readFileSync(join(import.meta.dirname, '..', '..', 'examples', 'themes', `${name}.css`), 'utf8');
-const themed = await start({
-  config: { ui: { theme: 'night' } },
-  themes: {
-    night: example('night'),
-    paper: example('paper'),
-    'gerrit-dark': example('gerrit-dark'),
-  },
-});
+// A fourth one, for the themes that the binary carries.
+const BUNDLED = join(import.meta.dirname, '..', '..', 'crates', 'qreview', 'themes');
+const bundled = readdirSync(BUNDLED)
+  .filter((file) => file.endsWith('.css'))
+  .map((file) => file.slice(0, -'.css'.length))
+  .sort();
+const themed = await start({ config: { ui: { theme: 'night' } } });
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
@@ -433,8 +429,8 @@ for (const scheme of ['light', 'dark'] as const) {
   await third.close();
 }
 
-// The example themes. A theme sets its own mode, so one picture each.
-for (const theme of ['night', 'paper', 'gerrit-dark']) {
+// The bundled themes. A theme sets its own mode, so one picture each.
+for (const theme of bundled) {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   await page.goto(themed.url);
   await pickTheme(page, theme);

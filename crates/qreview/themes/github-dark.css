@@ -1,0 +1,49 @@
+/*
+ * github-dark: the dark colors of GitHub.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ *
+ * The colors follow the Primer colors of GitHub, by GitHub,
+ * under the MIT license: https://github.com/primer/primitives
+ */
+:root {
+  color-scheme: dark;
+
+  /* The page and its text. */
+  --page: #0d1117;
+  --pane: #161b22;
+  --ink: #e6edf3;
+  --ink-quiet: #9198a1;
+  --ink-faint: #6e7681;
+  --edge: #30363d;
+  --edge-soft: #21262d;
+  --pick: #1c2f45;
+  --pick-edge: #58a6ff;
+  --action: #58a6ff;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #162f21;
+  --add-word: #21542e;
+  --remove-line: #371d20;
+  --remove-word: #6b2b2b;
+  --context-bar: #121d2f;
+  --context-ink: #9198a1;
+  --add-ink: #3fb950;
+  --remove-ink: #f85149;
+
+  /* The bar over a merge. */
+  --merge-bar: #211f18;
+  --merge-edge: #70551c;
+  --merge-ink: #d29922;
+
+  /* The syntax. */
+  --tok-keyword: #ff7b72;
+  --tok-string: #a5d6ff;
+  --tok-comment: #8b949e;
+  --tok-constant: #79c0ff;
+  --tok-entity: #d2a8ff;
+  --tok-support: #7ee787;
+  --tok-variable: #ffa657;
+}

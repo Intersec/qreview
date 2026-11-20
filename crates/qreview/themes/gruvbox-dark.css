@@ -1,0 +1,49 @@
+/*
+ * gruvbox-dark: the dark gruvbox palette, warm and retro.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ *
+ * The colors follow gruvbox, by Pavel Pertsev,
+ * under the MIT license: https://github.com/morhetz/gruvbox
+ */
+:root {
+  color-scheme: dark;
+
+  /* The page and its text. */
+  --page: #282828;
+  --pane: #32302f;
+  --ink: #ebdbb2;
+  --ink-quiet: #bdae93;
+  --ink-faint: #928374;
+  --edge: #4d4843;
+  --edge-soft: #3d3a37;
+  --pick: #3a413e;
+  --pick-edge: #83a598;
+  --action: #83a598;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #424228;
+  --add-word: #626327;
+  --remove-line: #4e2e2a;
+  --remove-word: #7c352d;
+  --context-bar: #413a29;
+  --context-ink: #fabd2f;
+  --add-ink: #b8bb26;
+  --remove-ink: #fb4934;
+
+  /* The bar over a merge. */
+  --merge-bar: #3d3729;
+  --merge-edge: #91722c;
+  --merge-ink: #fabd2f;
+
+  /* The syntax. */
+  --tok-keyword: #fb4934;
+  --tok-string: #b8bb26;
+  --tok-comment: #928374;
+  --tok-constant: #d3869b;
+  --tok-entity: #8ec07c;
+  --tok-support: #fe8019;
+  --tok-variable: #83a598;
+}

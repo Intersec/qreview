@@ -1669,9 +1669,16 @@ a letter or a digit. `system`, `light` and `dark` are the built-in values
 and name no file. A file larger than 64 KiB is left out. The directory is
 not read recursively, and a name that starts with a dot is skipped.
 
+**qreview carries themes.** The files of `crates/qreview/themes/` are
+embedded in the binary and parsed by the same parser at startup. A test
+parses each one, so a bundled theme that breaks the subset fails the build.
+A file of the user replaces the bundled theme of the same name as a whole,
+not token by token. If that file does not load, the bundled theme stays. A
+bundled name is not reserved: only `system`, `light` and `dark` are.
+
 `ui.theme` picks the theme: `system`, `light`, `dark`, or the name of a
-theme file. The Preferences panel lists the built-in values, then the theme
-files.
+bundled theme or a theme file. The Preferences panel lists the built-in
+values, then the theme files of the user, then the bundled themes.
 
 **A broken theme never stops the tool.** This is the one exception to the
 rule that a wrong configuration refuses to start: a theme changes only the
@@ -1685,9 +1692,9 @@ terminal and goes on:
   fallback writes an error that names the file, the value and the themes
   that loaded.
 
-A repository may name a theme in `.qreview.json`, but only a theme that the
-user holds: themes are read from the directory of the user, never from the
-repository. A repository cannot bring colors of its own.
+A repository may name a theme in `.qreview.json`, but only a bundled theme
+or a theme that the user holds: themes are read from the binary and from the
+directory of the user, never from the repository. A repository cannot bring colors of its own.
 
 `config.json` keeps what the user wrote. `GET /api/config` answers the
 theme that the tool really uses, after the fallback. A `PUT /api/config`
@@ -1698,8 +1705,10 @@ The themes directory is read at startup, and again at each page load and
 each save. An edited theme shows when the page is loaded again, with no
 restart. An error that the tool already wrote is not written again.
 
-The answers of `GET /api/session` and `/api/config` carry the loaded themes
-in `ui.themes`, as `{ name: { base, colors } }`. That key is an output
+The answers of `GET /api/session` and `/api/config` carry the bundled
+themes and the loaded themes of the user in `ui.themes`, as
+`{ name: { base, colors, bundled } }`. `bundled` is false for a file of the
+user, even when it replaces a bundled theme. That key is an output
 only: `config.json` cannot hold it.
 
 If `.qreview.json` names a loaded theme, it wins over the panel, as for

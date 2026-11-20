@@ -5,8 +5,8 @@ import type { Ui } from '@/api/types';
 import { applyTheme, mode, sheet } from './colors';
 
 const themes: Ui['themes'] = {
-  night: { base: 'dark', colors: { page: '#000010' } },
-  paper: { base: 'light', colors: {} },
+  night: { base: 'dark', colors: { page: '#000010' }, bundled: false },
+  paper: { base: 'light', colors: {}, bundled: false },
 };
 const ui = (theme: string): Ui => ({ diff: 'unified', theme, themes });
 
@@ -35,7 +35,13 @@ describe('sheet', () => {
     const shown = sheet({
       diff: 'unified',
       theme: 'night',
-      themes: { night: { base: 'dark', colors: { page: '#000010', 'tok-keyword': '#ff79c6' } } },
+      themes: {
+        night: {
+          base: 'dark',
+          colors: { page: '#000010', 'tok-keyword': '#ff79c6' },
+          bundled: false,
+        },
+      },
     });
 
     expect(shown).toBe(
@@ -57,6 +63,7 @@ describe('sheet', () => {
         night: {
           base: 'dark',
           colors: { page: 'red;} body{x:y', 'x;}a{': '#fff', ink: 'url(x)', edge: '#abc' },
+          bundled: false,
         },
       },
     });
@@ -65,7 +72,9 @@ describe('sheet', () => {
   });
 });
 
-const papers: Ui['themes'] = { paper: { base: 'light', colors: { page: '#fafaf0' } } };
+const papers: Ui['themes'] = {
+  paper: { base: 'light', colors: { page: '#fafaf0' }, bundled: false },
+};
 
 afterEach(() => {
   document.getElementById('qreview-theme')?.remove();

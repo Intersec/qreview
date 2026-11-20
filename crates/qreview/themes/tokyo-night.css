@@ -1,0 +1,49 @@
+/*
+ * tokyo-night: the Tokyo Night palette.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ *
+ * The colors follow Tokyo Night, by enkia,
+ * under the MIT license: https://github.com/enkia/tokyo-night-vscode-theme
+ */
+:root {
+  color-scheme: dark;
+
+  /* The page and its text. */
+  --page: #1a1b26;
+  --pane: #16161e;
+  --ink: #c0caf5;
+  --ink-quiet: #a9b1d6;
+  --ink-faint: #565f89;
+  --edge: #292e42;
+  --edge-soft: #1f2335;
+  --pick: #2d3650;
+  --pick-edge: #7aa2f7;
+  --action: #7aa2f7;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #323b32;
+  --add-word: #4a5b3e;
+  --remove-line: #422b39;
+  --remove-word: #723f50;
+  --context-bar: #322d2e;
+  --context-ink: #e0af68;
+  --add-ink: #9ece6a;
+  --remove-ink: #f7768e;
+
+  /* The bar over a merge. */
+  --merge-bar: #2e2a2d;
+  --merge-edge: #7d6547;
+  --merge-ink: #e0af68;
+
+  /* The syntax. */
+  --tok-keyword: #bb9af7;
+  --tok-string: #9ece6a;
+  --tok-comment: #565f89;
+  --tok-constant: #ff9e64;
+  --tok-entity: #7aa2f7;
+  --tok-support: #7dcfff;
+  --tok-variable: #f7768e;
+}

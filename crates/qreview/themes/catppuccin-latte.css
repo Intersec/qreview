@@ -1,0 +1,49 @@
+/*
+ * catppuccin-latte: the Latte flavor of Catppuccin, a soft pastel light.
+ *
+ * qreview carries this theme. To change it, copy this file to
+ * ~/.config/qreview/themes/ and edit the copy. See night.css for what a
+ * theme file may hold.
+ *
+ * The colors follow Catppuccin, by the Catppuccin organization,
+ * under the MIT license: https://github.com/catppuccin/catppuccin
+ */
+:root {
+  color-scheme: light;
+
+  /* The page and its text. */
+  --page: #eff1f5;
+  --pane: #e6e9ef;
+  --ink: #4c4f69;
+  --ink-quiet: #6c6f85;
+  --ink-faint: #8c8fa1;
+  --edge: #ccd0da;
+  --edge-soft: #dce0e8;
+  --pick: #c5d5f5;
+  --pick-edge: #1e66f5;
+  --action: #1e66f5;
+
+  /* The diff: the line, then the words that changed in it. */
+  --add-line: #d5e5d7;
+  --add-word: #b2d5ae;
+  --remove-line: #ebcfd9;
+  --remove-word: #e8b8c6;
+  --context-bar: #ede5db;
+  --context-ink: #df8e1d;
+  --add-ink: #40a02b;
+  --remove-ink: #d20f39;
+
+  /* The bar over a merge. */
+  --merge-bar: #ede7df;
+  --merge-edge: #e7c089;
+  --merge-ink: #df8e1d;
+
+  /* The syntax. */
+  --tok-keyword: #8839ef;
+  --tok-string: #40a02b;
+  --tok-comment: #8c8fa1;
+  --tok-constant: #fe640b;
+  --tok-entity: #1e66f5;
+  --tok-support: #179299;
+  --tok-variable: #e64553;
+}

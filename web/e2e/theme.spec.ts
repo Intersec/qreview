@@ -69,13 +69,19 @@ test.describe('the theme files of the user', () => {
 
     await page.goto(server.url);
     await page.getByRole('button', { name: '⚙' }).click();
-    const offered = await page
-      .getByRole('dialog')
-      .getByLabel('Theme')
-      .locator('option')
-      .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
+    const values = (selector: string) =>
+      page
+        .getByRole('dialog')
+        .getByLabel('Theme')
+        .locator(selector)
+        .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
 
-    expect(offered).toEqual(['system', 'light', 'dark', 'night', 'paper']);
+    // night and paper are bundled too: the files of the user replace them.
+    expect(await values('optgroup[label="Your themes"] option')).toEqual(['night', 'paper']);
+    const offered = await values('option');
+    expect(offered).toContain('dracula');
+    expect(offered).not.toContain('broken');
+    expect(offered.filter((v) => v === 'night')).toHaveLength(1);
   });
 
   test('a theme picked in the panel stays after a reload', async ({ page }) => {
