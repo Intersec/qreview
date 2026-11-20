@@ -6,6 +6,12 @@ empty
   1: expected `:root {`, found the end of the file
 no root
   1: expected `:root {`, found `body`
+other pseudo-class
+  1: expected `:root {`, found `:host`
+root and more
+  1: expected `:root {`, found `:root body`
+root on line 2
+  2: expected `:root {`, found `:root`
 import
   1: `@import` is not allowed in a theme
 at-rule inside

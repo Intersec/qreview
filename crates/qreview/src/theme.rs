@@ -262,6 +262,7 @@ fn found(token: Option<&Token>, end: &str) -> String {
 
 fn parse_sheet<'i>(parser: &mut Parser<'i>) -> Result<Theme, Failure> {
     let line = line_of(parser);
+    let start = parser.position();
     let first = parser.next().ok().cloned();
     if let Some(Token::AtKeyword(name)) = &first {
         return Err(fail(line, format!("`@{name}` is not allowed in a theme")));
@@ -270,14 +271,16 @@ fn parse_sheet<'i>(parser: &mut Parser<'i>) -> Result<Theme, Failure> {
         && matches!(parser.next(), Ok(Token::Ident(root)) if root.eq_ignore_ascii_case("root"))
         && matches!(parser.next(), Ok(Token::CurlyBracketBlock));
     if !opened {
-        let line = line_of(parser);
-        return Err(fail(
-            line,
-            format!(
-                "expected `:root {{`, found {}",
-                found(first.as_ref(), "file")
-            ),
-        ));
+        // Quote the text up to the token that failed: the first token
+        // alone is `:` for `:host {`, and says nothing.
+        let text = parser.slice_from(start);
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let found = if text.is_empty() {
+            "the end of the file".to_owned()
+        } else {
+            format!("`{text}`")
+        };
+        return Err(fail(line, format!("expected `:root {{`, found {found}")));
     }
 
     let theme = parser.parse_nested_block(parse_block)?;
@@ -449,6 +452,9 @@ mod tests {
         let cases = [
             ("empty", ""),
             ("no root", "body { color-scheme: dark; }"),
+            ("other pseudo-class", ":host { color-scheme: dark; }"),
+            ("root and more", ":root body { color-scheme: dark; }"),
+            ("root on line 2", "/* x */\n:root\n"),
             ("import", "@import url(x.css);"),
             ("at-rule inside", ":root {\n  @media print {}\n}"),
             (
