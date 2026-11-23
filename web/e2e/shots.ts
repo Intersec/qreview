@@ -153,6 +153,13 @@ for (const scheme of ['light', 'dark'] as const) {
   await openChange(page, /Merge branch side into main/);
   await openFile(page, 'net.blk');
   await page.screenshot({ path: join(OUT, `${scheme}-merge.png`) });
+  // The light theme chosen on a dark system: a `dark:` class would follow
+  // the system and show here.
+  if (scheme === 'dark') {
+    await page.evaluate(() => (document.documentElement.dataset.theme = 'light'));
+    await page.screenshot({ path: join(OUT, 'light-on-dark-merge.png') });
+    await page.evaluate(() => delete document.documentElement.dataset.theme);
+  }
 
   // The blame of the left side, and the tooltip of a line that the merge
   // under the series wrote.
