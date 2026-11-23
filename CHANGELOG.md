@@ -12,6 +12,110 @@ Changes that wait for a release are not written here. Each one is a file under
 
 <!-- The release script writes new versions under this line. -->
 
+## [0.20.0]
+
+### Added
+
+- **Bundled color themes** — qreview carries 19 themes to pick in the
+  preferences: colorblind and high contrast themes in light and dark,
+  Solarized, GitHub, gruvbox, Catppuccin, One Light, Nord, Dracula, Tokyo
+  Night, night, paper and gerrit-dark. A file of yours in
+  `~/.config/qreview/themes/` replaces the bundled theme of the same name.
+- **Color themes** — drop a CSS file of colors in `~/.config/qreview/themes/`
+  and pick it in the preferences, beside light and dark. A theme starts from
+  the light or the dark palette and replaces the colors it names. An edited
+  theme shows when you reload the page. A file that qreview cannot read is
+  left out, and the terminal says which line is wrong.
+- **An agent in a devcontainer** — the server also listens on a socket in
+  `.git/qreview/`, with a copy of its address, so an agent in a container
+  that shares the project reaches the server on your machine with nothing
+  to configure. The directory is private to you and goes away when the
+  server stops.
+- **`qreview stage <id>`** and **`qreview comment --gerrit`** — the agent
+  words a remark for Gerrit and stages it. Only you send it, from the page.
+- **Apply a comment of a reviewer** — a thread of Gerrit that waits now has
+  an Apply button. The agent fixes what the thread asks for, wherever the
+  same problem shows in the commit, and stages a reply that resolves the
+  thread and names the other sites it fixed.
+- **`gerrit.auth.command`** — a command of yours gives the authorization of
+  the REST API of Gerrit: a token of OIDC, or an HTTP password. It runs at
+  the first call to Gerrit, in the terminal of `qreview`, where it may ask
+  you to log in. `examples/gerrit-auth-basic.sh` asks the HTTP password.
+- **Remarks for a colleague go to Gerrit without a request** — on the
+  change of a colleague, when the agent answers your remark with a remark
+  for the author, it stages that remark for Gerrit. Its own review of
+  such a change is staged too. You still read each remark and click Send.
+- **The change of a colleague** — a change whose author email is not your
+  `user.email` has no Fix this change, and Fix the series skips it. The
+  export asks the agent for help with the review instead of a fix.
+- **What became of a draft** — a remark sent to Gerrit shows as the
+  thread of Gerrit once you publish it there, and says **deleted on
+  Gerrit** when you delete it there, so you can stage it again. Its tag
+  links to the change. Send says to push first when Gerrit does not hold
+  the newest version of the change.
+- **A draft of the agent names the agent** — the agent gives its name
+  with `qreview wait --agent <name>`. When you send a remark or a reply
+  that it wrote, its draft on Gerrit starts with `From <name>:`, so the
+  author of the change knows who wrote it.
+- **Review a change from its address** — `qreview https://review.example.com/c/myproject/+/12321`
+  fetches the change from Gerrit and reviews it with no checkout, on the
+  server of the worktree. Add a patch set number to the address to pick
+  one.
+- **Reply to a thread of Gerrit** — a reply stays in qreview, or goes out
+  in the thread with For Gerrit, and can resolve it. The Done box of a
+  thread of Gerrit stages a reply `Done` that resolves it. The agent
+  answers with `qreview reply gerrit:<id>` and
+  `qreview stage gerrit:<id> --resolve`.
+- **Send to Gerrit** — send the remarks staged for Gerrit as drafts, from a
+  dialog that lists each one. Only you see a draft until you publish it in
+  Gerrit. Needs `gerrit.auth.command`.
+- **Remarks for Gerrit** — check For Gerrit on a remark, on a version that
+  Gerrit holds, to stage it for the author of the change. If the thread has
+  replies, its newest reply goes out, so the agent can word the remark. A
+  staged remark is not work for the agent: the export and the counts leave
+  it out.
+- **Threads of Gerrit** — with the REST API, a remark of Gerrit shows its
+  replies under it, says whether it is resolved, and folds when it is. A
+  remark on the left side stands under the line it speaks of.
+- **To handle** — the list of comments is now the list of what is left to
+  handle. It opens with the threads of reviewers on Gerrit that wait for an
+  answer, and a click opens each one on its patch set. The open remarks
+  follow. The done, sent and previous remarks wait behind one click. Each
+  row of the series counts the threads of Gerrit apart, as `· 2 Gerrit`.
+- **A thread of Gerrit that waits for you is work** — an unresolved thread
+  whose newest comment is of somebody else counts on the series, on the
+  files and in Fix, the export holds it with the name of each reviewer,
+  and Ask agent works on it. Your own unresolved question waits for the
+  author, and counts nowhere.
+- **A configuration of the site** — `QREVIEW_SITE_CONFIG` names a file
+  that a team shares, read before your own configuration. It can name the
+  `gerrit.auth.command` of the whole team.
+- **What the server waits on** — while a slow call runs, such as a query of
+  Gerrit, a quiet chip in the top bar names it and how long it has waited.
+  Click it, or the version, to open the Trace window: the lines of
+  `qreview --trace`, live, without a restart.
+
+### Changed
+
+- **Delete and Clean keep the comments on disk** — a deleted comment moves
+  to `deleted` in the file of its change, with when and how it went, for a
+  restore by hand or a study of the reviews. The format of the file is now
+  6: an older qreview refuses it.
+
+### Fixed
+
+- A preference that the configuration file would refuse is no longer saved.
+  The save fails with the reason, and the file stays as it was, so the next
+  start of qreview is not blocked.
+- The bar over a merge follows the theme chosen in Preferences. It used to
+  follow only the theme of the system, so it stayed dark on a light page.
+- A save from Preferences no longer copies the settings of a repository into
+  your own file. The panel now saves only what you changed, so a context or a
+  view that one `.qreview.json` sets no longer reaches every other repository.
+- `qreview wait --timeout 1` returns after a second, as it says. The server
+  held each wait for half a minute, so the check that an agent runs to find
+  a server took 30 seconds.
+
 ## [0.19.0]
 
 ### Added
