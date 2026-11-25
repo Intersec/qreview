@@ -8,7 +8,7 @@ const themes: Ui['themes'] = {
   night: { base: 'dark', colors: { page: '#000010' }, bundled: false },
   paper: { base: 'light', colors: {}, bundled: false },
 };
-const ui = (theme: string): Ui => ({ diff: 'unified', theme, themes });
+const ui = (theme: string): Ui => ({ diff: 'unified', layout: 'classic', theme, themes });
 
 describe('mode', () => {
   it('follows the system for system', () => {
@@ -34,6 +34,7 @@ describe('sheet', () => {
   it('writes the colors of a theme under its base', () => {
     const shown = sheet({
       diff: 'unified',
+      layout: 'classic',
       theme: 'night',
       themes: {
         night: {
@@ -58,6 +59,7 @@ describe('sheet', () => {
   it('drops what the server would never send', () => {
     const shown = sheet({
       diff: 'unified',
+      layout: 'classic',
       theme: 'night',
       themes: {
         night: {
@@ -83,8 +85,8 @@ afterEach(() => {
 
 describe('applyTheme', () => {
   it('sets the mode and the colors, in one style element', () => {
-    applyTheme({ diff: 'unified', theme: 'paper', themes: papers });
-    applyTheme({ diff: 'unified', theme: 'paper', themes: papers });
+    applyTheme({ diff: 'unified', layout: 'classic', theme: 'paper', themes: papers });
+    applyTheme({ diff: 'unified', layout: 'classic', theme: 'paper', themes: papers });
 
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(document.querySelectorAll('#qreview-theme')).toHaveLength(1);
@@ -92,8 +94,8 @@ describe('applyTheme', () => {
   });
 
   it('empties the colors and follows the system again', () => {
-    applyTheme({ diff: 'unified', theme: 'paper', themes: papers });
-    applyTheme({ diff: 'unified', theme: 'system', themes: papers });
+    applyTheme({ diff: 'unified', layout: 'classic', theme: 'paper', themes: papers });
+    applyTheme({ diff: 'unified', layout: 'classic', theme: 'system', themes: papers });
 
     expect(document.documentElement.dataset.theme).toBeUndefined();
     expect(document.getElementById('qreview-theme')?.textContent).toBe('');

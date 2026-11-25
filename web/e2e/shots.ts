@@ -18,6 +18,20 @@ async function openLongFile(page: Page) {
   await openFile(page, 'long.c');
 }
 
+/// Wait for the end of each animation on the page, so a shot never
+/// catches a box that unfolds.
+async function settled(page: Page) {
+  await page.evaluate(() =>
+    Promise.allSettled(
+      document
+        .getAnimations()
+        // A spinner never ends, and a cancelled animation rejects.
+        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+        .map((animation) => animation.finished),
+    ),
+  );
+}
+
 const server = await start({ markdown: true });
 // A second repository, with work that is not committed and a Gerrit that
 // already holds remarks. Both put things on the screen the first one cannot.
@@ -33,6 +47,8 @@ const bundled = readdirSync(BUNDLED)
   .map((file) => file.slice(0, -'.css'.length))
   .sort();
 const themed = await start({ config: { ui: { theme: 'night' } } });
+// A fifth one, in the layout of the change page of Gerrit.
+const gerritLike = await start({ gerrit: true, config: { ui: { layout: 'gerrit-like' } } });
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
@@ -489,6 +505,23 @@ for (const scheme of ['light', 'dark'] as const) {
   await useSplit(third);
   await third.screenshot({ path: join(OUT, `${scheme}-rebase-split.png`) });
   await third.close();
+
+  // The Gerrit-like layout: a file open under its row, then maximized.
+  const fourth = await browser.newPage({
+    viewport: { width: 1600, height: 1000 },
+    colorScheme: scheme,
+  });
+  await fourth.goto(gerritLike.url);
+  await openChange(fourth, /net: retry the read/);
+  await fourth.locator('.file-row', { hasText: 'net.blk' }).click();
+  // Vue drops the class at the end of the unfold.
+  await fourth.locator('.unfold-box:not(.unfold-enter-active)').waitFor();
+  await fourth.screenshot({ path: join(OUT, `${scheme}-gerrit-like.png`) });
+  await fourth.getByRole('button', { name: 'Maximize' }).click();
+  await fourth.locator('.change-page').waitFor({ state: 'detached' });
+  await settled(fourth);
+  await fourth.screenshot({ path: join(OUT, `${scheme}-gerrit-like-maximized.png`) });
+  await fourth.close();
 }
 
 // The bundled themes. A theme sets its own mode, so one picture each.
@@ -505,6 +538,7 @@ for (const theme of bundled) {
 }
 
 await browser.close();
+gerritLike.stop();
 themed.stop();
 rebased.stop();
 other.stop();

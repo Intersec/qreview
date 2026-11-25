@@ -20,5 +20,6 @@ expression: ui
       },
       "bundled": false
     }
-  }
+  },
+  "layout": "classic"
 }

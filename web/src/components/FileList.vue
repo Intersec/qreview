@@ -15,6 +15,8 @@ const props = defineProps<{
   loading: boolean;
   /// How many comments sit in each file.
   inFile: Map<string, number>;
+  /// How many Gerrit remarks sit in each file of the versions on the screen.
+  postedInFile?: Map<string, number>;
 }>();
 const emit = defineEmits<{ openFile: [path: string] }>();
 
@@ -75,6 +77,14 @@ defineExpose({ focusFilter: () => box.value?.focus() });
         <span class="file-path">{{ file.name }}</span>
         <span v-if="inFile.get(file.entry.path)" class="count"
           >{{ inFile.get(file.entry.path) }} ✎</span
+        >
+        <span
+          v-if="postedInFile?.get(file.entry.path)"
+          class="posted-count"
+          :title="`${postedInFile.get(file.entry.path)} Gerrit comments on the versions on the screen`"
+          ><svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2 2h12v9H6l-3 3v-3H2z" /></svg
+          >{{ postedInFile.get(file.entry.path) }}</span
         >
         <span
           v-if="threads?.blockedFiles.value.has(file.entry.path)"

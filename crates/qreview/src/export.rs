@@ -1776,6 +1776,8 @@ mod tests {
             subject: "net: fix the retry loop".to_owned(),
             url: "https://review.example.com/c/myproject/+/12321".to_owned(),
             status: "NEW".to_owned(),
+            topic: String::new(),
+            owner: crate::gerrit::Person::default(),
             patch_sets: vec![crate::gerrit::PatchSet {
                 number: 1,
                 revision: head,

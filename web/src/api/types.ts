@@ -140,6 +140,8 @@ export interface Ui {
   theme: string;
   /// The bundled themes and the themes of the user that loaded, by name.
   themes: Record<string, Theme>;
+  /// `classic`, or `gerrit-like` for the change page of Gerrit.
+  layout: string;
 }
 
 /// A theme file of the user, as the server read and checked it.
@@ -360,8 +362,12 @@ export type Origin = 'local' | 'prev' | 'gerrit';
 export interface GerritChange {
   number: number;
   url: string;
+  project: string;
   branch: string;
   status: string;
+  /// Empty when the change has none.
+  topic: string;
+  owner: string;
 }
 
 export interface PatchSets {
@@ -379,6 +385,8 @@ export interface PatchSet {
   gerritRef?: string;
   /// False when the commit is not in this clone yet.
   available: boolean;
+  /// How many remarks Gerrit holds on this version.
+  posted: number;
 }
 
 /** Where a comment lands in the patch set being read. */

@@ -58,6 +58,9 @@ const props = defineProps<{
   /// True while the reader is on a version that is not the newest. An older
   /// version is history: it is read, never written on.
   readOnly: boolean;
+  /// The diff fills the page: the change page above it is folded away.
+  /// Absent in the classic layout, which has no change page to fold.
+  focused?: boolean;
   /// What Gerrit already holds for this change. Read only.
   posted: PostedComment[];
   /// Where a Gerrit remark lands in the patch set being read.
@@ -78,6 +81,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   'update:split': [value: boolean];
+  'update:focused': [value: boolean];
   'update:blame': [];
   'open-blame': [at: BlameLine];
   /// The commits of the blame on the lines on the screen.
@@ -1466,6 +1470,27 @@ function toggle(row: Row | null, column: Side) {
           @click="emit('update:split', !split)"
         >
           {{ split ? 'Unified' : 'Side by side' }}
+        </button>
+        <!-- A long file needs the height of the window. The change page
+             folds away above, and the same button brings it back. -->
+        <button
+          v-if="focused !== undefined"
+          type="button"
+          class="chip chip-icon"
+          :aria-pressed="focused"
+          :aria-label="focused ? 'Restore' : 'Maximize'"
+          :title="focused ? 'Restore the change page (u)' : 'Maximize the diff (u)'"
+          @click="emit('update:focused', !focused)"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              :d="
+                focused
+                  ? 'M6 2v4H2M10 2v4h4M14 10h-4v4M2 10h4v4'
+                  : 'M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4'
+              "
+            />
+          </svg>
         </button>
       </span>
     </header>

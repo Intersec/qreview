@@ -1,0 +1,325 @@
+/*
+ * The modern layout: the change page of Gerrit.
+ *
+ * Three boxes side by side (the change info, the commit message and the
+ * relation chain), then the versions, then the file table. The page scrolls
+ * as one, and the diff of the open file stands under its row. Each rule
+ * holds under `.modern` only, so the classic layout never sees it.
+ */
+.body.modern {
+  grid-template-columns: minmax(0, 1fr);
+}
+.modern .change-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  /* A length, not none, so that the fold can run to 0. */
+  max-height: 100vh;
+  overflow-y: auto;
+  background: var(--pane);
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------- the three boxes */
+
+.modern .change-head {
+  display: grid;
+  /* The message is as wide as its 72 columns, and the relation chain as
+     wide as its subjects, as on Gerrit. What is left stays empty. */
+  grid-template-columns: minmax(14rem, 18rem) max-content fit-content(48rem);
+  justify-content: start;
+  align-items: start;
+  gap: 12px;
+  padding: 8px 10px;
+}
+.modern .change-head > section {
+  min-width: 0;
+}
+.modern .box-title {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.modern .change-box dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 12px;
+  margin: 0;
+}
+.modern .change-box dt {
+  color: var(--ink-quiet);
+}
+.modern .change-box dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.modern .change-box .status {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--pick);
+  color: var(--pick-edge);
+  font-size: 11px;
+}
+.modern .change-box .status-merged {
+  background: var(--add-line);
+  color: var(--online);
+}
+.modern .change-box .status-abandoned {
+  background: var(--waiting);
+  color: var(--waiting-ink);
+}
+.modern .commit-message {
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  background: var(--page);
+}
+.modern .commit-message pre {
+  /* The whole message, with no scroll bar, as Gerrit shows it. */
+  max-width: 74ch;
+  margin: 0;
+  font-family: var(--code-font);
+  font-size: var(--code-size);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.modern .relation-chain ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  background: var(--page);
+}
+.modern .relation-chain li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px;
+  border-bottom: 1px solid var(--edge-soft);
+}
+.modern .relation-chain li:last-child {
+  border-bottom: none;
+}
+.modern .relation-chain li.is-picked {
+  background: var(--pick);
+}
+.modern .relation-chain .chain-arrow {
+  width: 1rem;
+  flex: none;
+  color: var(--pick-edge);
+  text-align: center;
+}
+.modern .relation-chain .change-row {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  color: var(--action);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.modern .relation-chain .change-facts {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  align-items: baseline;
+  padding: 0;
+  background: none;
+  color: var(--ink-quiet);
+  font-size: 11px;
+}
+.modern .relation-chain .boundary {
+  margin: 6px 0 0;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* ------------------------------------------------------------ the tabs */
+
+.modern .tabs {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--edge);
+}
+.modern .tab {
+  padding: 5px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-quiet);
+  font-size: 13px;
+  cursor: pointer;
+}
+.modern .tab[aria-selected='true'] {
+  border-bottom-color: var(--pick-edge);
+  color: var(--ink);
+}
+
+/*
+ * The file table: one row for each file, a line under each. The path is in
+ * the text font, the name of the file in the colour of a link.
+ */
+.modern .file-head,
+.modern .file-row {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr) 8rem 6rem 6rem 1.5rem;
+  gap: 8px;
+  align-items: center;
+}
+.modern .file-head {
+  padding: 6px 10px 6px 14px;
+  border-bottom: 1px solid var(--edge);
+  color: var(--ink);
+  font-size: 13px;
+}
+.modern .file-row {
+  min-height: 30px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--edge);
+  font-family: inherit;
+  font-size: 13px;
+}
+.modern .file-row:hover {
+  background: var(--edge-soft);
+}
+.modern .file-row .mark {
+  color: var(--ink-quiet);
+  font-family: var(--code-font);
+  font-size: 11px;
+}
+.modern .file-row .file-path {
+  direction: ltr;
+}
+.modern .status-box {
+  display: inline-block;
+  min-width: 1.2rem;
+  border: 1px solid var(--ink-faint);
+  border-radius: 3px;
+  text-align: center;
+  line-height: 1.4;
+}
+.modern .file-dir {
+  color: var(--ink);
+}
+.modern .file-name {
+  color: var(--action);
+}
+.modern .file-comments {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.modern .comment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border: 1px solid var(--ink-faint);
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 16px;
+}
+.modern .comment-chip svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+.modern .comment-chip.is-mine {
+  border-color: var(--action);
+  background: var(--action);
+  color: var(--page);
+}
+.modern .size-bar {
+  display: flex;
+  height: 6px;
+}
+.modern .size-added {
+  background: #1e8e3e;
+  opacity: 0.6;
+}
+.modern .size-removed {
+  background: #d93025;
+  opacity: 0.6;
+}
+.modern .file-row .stat,
+.modern .file-head .stat {
+  text-align: right;
+}
+.modern .file-row .stat .removed {
+  margin-left: 0;
+  margin-right: 8px;
+}
+.modern .row-chevron {
+  display: block;
+  width: 16px;
+  height: 16px;
+  justify-self: end;
+  fill: none;
+  stroke: var(--ink-quiet);
+  stroke-width: 1.6;
+}
+
+/* The window under the banner, so the diff scrolls in its own box and its
+   cursor and its jumps work as on the whole page. */
+.modern .inline-diff {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  /* As tall as the diff, and half the window at most, so the rows under
+     it stay in sight. */
+  max-height: 50vh;
+  border-top: 1px solid var(--edge);
+  border-bottom: 2px solid var(--edge);
+  background: var(--page);
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------ the transitions */
+
+/* The change page folds away when the diff takes the whole page. */
+.modern .fold-enter-active,
+.modern .fold-leave-active {
+  overflow: hidden;
+  transition:
+    max-height 220ms ease,
+    opacity 180ms ease;
+}
+.modern .fold-enter-from,
+.modern .fold-leave-to {
+  max-height: 0 !important;
+  opacity: 0;
+}
+
+/* The diff under its row unfolds and folds back, as a row of Gerrit does. */
+.modern .unfold-enter-active,
+.modern .unfold-leave-active {
+  overflow: hidden;
+  transition:
+    max-height 260ms ease,
+    opacity 200ms ease;
+}
+.modern .unfold-enter-from,
+.modern .unfold-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+.modern .unfold-enter-to,
+.modern .unfold-leave-from {
+  max-height: 50vh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modern .fold-enter-active,
+  .modern .fold-leave-active,
+  .modern .unfold-enter-active,
+  .modern .unfold-leave-active {
+    transition: none;
+  }
+}

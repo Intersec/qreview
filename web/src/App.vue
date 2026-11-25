@@ -16,7 +16,13 @@ import LoadingVeil from './components/LoadingVeil.vue';
 import MergeBar from './components/MergeBar.vue';
 import PaneSplit from './components/PaneSplit.vue';
 import PatchSetBar from './components/PatchSetBar.vue';
+import ChangeInfo from './components/ChangeInfo.vue';
 import SidePane from './components/SidePane.vue';
+import CommentList from './components/CommentList.vue';
+import ChangeBox from './components/modern/ChangeBox.vue';
+import CommitMessage from './components/modern/CommitMessage.vue';
+import FileTable from './components/modern/FileTable.vue';
+import RelationChain from './components/modern/RelationChain.vue';
 import { useReview, type Remark } from './stores/review';
 import { THREADS } from './diff/threads';
 import { any as anyDraft } from './diff/drafts';
@@ -46,6 +52,7 @@ const {
   gerritReading,
   batchSize,
   inFile,
+  postedInFile,
   release,
   version,
   build,
@@ -54,6 +61,7 @@ const {
   onMerge,
   mergeList,
   split,
+  modern,
   wrap,
   blameLines,
   blameBusy,
@@ -318,6 +326,22 @@ function goToFile(path: string) {
   return goTo(at && { ...at, file: path }, review.openFile(path));
 }
 
+/// A row of the file table opens its diff under it, and closes it when it
+/// is the open one, the way a row of Gerrit expands.
+async function toggleFile(path: string) {
+  if (path !== filePath.value) {
+    await goToFile(path);
+    // The row comes to the top, so its diff is on the screen under it.
+    await nextTick();
+    document
+      .querySelector('.file-row.is-picked')
+      ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return;
+  }
+  const at = place.value;
+  return goTo(at && { ...at, file: undefined }, Promise.resolve(review.closeFile()));
+}
+
 function goToVersion(ps: number | undefined, base: string | undefined) {
   const at = place.value;
   return goTo(at && { ...at, ps, base }, review.openPatchSet(ps, base));
@@ -334,12 +358,19 @@ type Target = Remark & {
 /// version that shows the remark, then the lines it covers.
 async function goToComment(key: string, remark: Target) {
   const anchor = remark.anchor;
+  // In the modern layout the diff stands under its row in the file table,
+  // so that tab must be the one on the screen.
+  tab.value = 'files';
   const move = review.openRemark(key, remark);
   await goTo({ change: key, file: anchor?.file || undefined }, move);
 
   // The lines of another file are not the lines of the remark.
   if (!anchor || !(await move)) {
     return;
+  }
+  if (modern.value) {
+    await nextTick();
+    document.querySelector('.file-row.is-picked')?.scrollIntoView({ block: 'start' });
   }
   // The diff may stand the remark away from its anchor: a remark of the
   // version on the left stands in the old column, and a remark that moved
@@ -400,8 +431,48 @@ const helping = ref(false);
 const diffView = ref<InstanceType<typeof DiffView> | null>(null);
 const side = ref(localStorage.getItem('qreview.side') !== 'hidden');
 
-/// How wide the series pane is. The browser keeps it, not the configuration
-/// file: it belongs to this screen, not to the tool.
+/// What the diff view is given, wherever it stands: under its row, or on
+/// the whole page.
+const diffBinds = computed(() => ({
+  changeKey: changeKey.value ?? '',
+  draftsMoved: draftsMoved.value,
+  diff: diff.value!,
+  split: split.value,
+  wrap: wrap.value,
+  comments: comments.value,
+  stranded: stranded.value,
+  paths: paths.value,
+  currentSha: currentSha.value,
+  sets: patchSets.value,
+  placement: review.placement,
+  posted: review.postedRoots,
+  postedPlacement: review.postedPlacement,
+  postedStranded: postedStranded.value,
+  readOnly: readingOlder.value,
+  // The classic layout has no change page to fold, so no Maximize.
+  focused: modern.value ? !side.value : undefined,
+  loadLines: review.loadLines,
+  blame: blameLines.value,
+  blameBusy: blameBusy.value,
+  blameTarget: review.blameTarget,
+  loadRendered: review.loadRendered,
+  imageUrl: review.imageUrl,
+}));
+
+const diffOn = {
+  'update:focused': () => toggleSide(),
+  'update:split': (value: boolean) => review.setSplit(value),
+  'update:blame': () => review.toggleBlame(),
+  'open-blame': (at: BlameLine) => goToBlame(at),
+  'blame-shown': (commits: string[]) => review.findOnGerrit(commits),
+  add: review.addComment,
+  edit: (id: string, body: string) => review.editComment(id, { body }),
+  remove: review.deleteComment,
+};
+
+/// How wide the series pane of the classic layout is. The browser keeps
+/// it, not the configuration file: it belongs to this screen, not to the
+/// tool.
 const SIDE_MIN = 130;
 const sideWidth = ref(Number(localStorage.getItem('qreview.side.width')) || 272);
 
@@ -414,6 +485,13 @@ function keepWidth() {
   localStorage.setItem('qreview.side.width', String(Math.round(sideWidth.value)));
 }
 const pane = ref<InstanceType<typeof SidePane> | null>(null);
+
+/// How tall the list of comments is in its tab.
+const LIST_HEIGHT = 420;
+
+/// The tab under the change page, as Gerrit has Files and Comments.
+const tab = ref<'files' | 'comments'>('files');
+const fileTable = ref<InstanceType<typeof FileTable> | null>(null);
 
 function toggleSide() {
   side.value = !side.value;
@@ -541,7 +619,12 @@ function onKey(event: KeyboardEvent) {
       if (!side.value) {
         toggleSide();
       }
-      pane.value?.focusFilter();
+      if (modern.value) {
+        tab.value = 'files';
+        void nextTick(() => fileTable.value?.focusFilter());
+      } else {
+        pane.value?.focusFilter();
+      }
       break;
     default:
       return;
@@ -647,7 +730,7 @@ onBeforeUnmount(() => {
         type="button"
         class="side-toggle"
         :aria-pressed="side"
-        title="Show or hide the series ( [ )"
+        :title="modern ? 'Show or hide the change page ( u )' : 'Show or hide the series ( u )'"
         @click="toggleSide"
       >
         {{ side ? '«' : '»' }}
@@ -811,8 +894,129 @@ onBeforeUnmount(() => {
        and the banner above already gives it. -->
     <p v-if="error && !stopped" role="alert" class="error">{{ error }}</p>
 
+    <main v-if="series && modern" class="body modern">
+      <section class="work">
+        <ChangeBar
+          :change="change"
+          :files="files"
+          :file-path="filePath"
+          :gerrit="gerrit"
+          @step="stepFile"
+        />
+        <!-- The change page of Gerrit: what the server knows, the message
+             and the relation chain on top, then the versions and the files.
+             The page scrolls as one, and the diff opens under its row. -->
+        <Transition name="fold">
+          <div v-if="side" class="change-page">
+            <div class="change-head">
+              <ChangeBox :gerrit="gerrit" :sets="patchSets" :change="change" />
+              <CommitMessage :change-key="changeKey" :patch-set="patchSet" />
+              <RelationChain
+                :series="series"
+                :selected="changeKey"
+                :busy="busy"
+                :batch="batchSize"
+                :counts="listedCount"
+                :gerrit-counts="gerritCounts"
+                @open-change="goToChange"
+                @mark="review.markChange"
+                @more="(count?: number) => review.loadMore(count)"
+              />
+            </div>
+            <PatchSetBar
+              :sets="patchSets"
+              :current="patchSet"
+              :against="against"
+              :gerrit="gerrit"
+              :parents="change?.parents ?? []"
+              @open="goToVersion"
+              @fetch="review.fetchPatchSet"
+            />
+            <MergeBar
+              v-if="onMerge"
+              :base="against"
+              :list="mergeList"
+              @show-list="review.loadMergeList()"
+            />
+            <div class="tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                class="tab"
+                :aria-selected="tab === 'files'"
+                @click="tab = 'files'"
+              >
+                Files
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="tab"
+                :aria-selected="tab === 'comments'"
+                @click="tab = 'comments'"
+              >
+                Comments <span class="quiet">({{ total }})</span>
+              </button>
+            </div>
+            <FileTable
+              v-if="tab === 'files'"
+              ref="fileTable"
+              :files="files"
+              :file-path="filePath"
+              :loading="loadingFiles"
+              :in-file="inFile"
+              :posted-in-file="postedInFile"
+              :open-ready="diff !== null && diff.path === filePath"
+              @open-file="toggleFile"
+            >
+              <template #open>
+                <div class="inline-diff">
+                  <DiffView
+                    v-if="diff"
+                    ref="diffView"
+                    class="grow"
+                    v-bind="diffBinds"
+                    v-on="diffOn"
+                  />
+                  <LoadingVeil :when="loadingDiff" label="Reading the file" />
+                </div>
+              </template>
+            </FileTable>
+            <CommentList
+              v-else-if="
+                gerritReading ||
+                gerritWaiting.length > 0 ||
+                written.some((change) => change.comments.length > 0)
+              "
+              :height="LIST_HEIGHT"
+              :written="written"
+              :gerrit="gerritWaiting"
+              :gerrit-reading="gerritReading"
+              :open-key="changeKey"
+              @go="goToComment"
+            />
+            <p v-else class="note">No comments yet.</p>
+            <p v-if="files.length === 0 && !loadingFiles" class="note">
+              This change touches no file.
+            </p>
+          </div>
+        </Transition>
+        <!-- Maximized: the file alone, on the whole page under the banner. -->
+        <div v-if="!side" class="diff-slot">
+          <DiffView v-if="diff" ref="diffView" class="grow" v-bind="diffBinds" v-on="diffOn" />
+          <p v-else class="note">
+            {{
+              files.length === 0 ? 'This change touches no file.' : 'Pick a file to read its diff.'
+            }}
+          </p>
+          <LoadingVeil :when="loadingDiff || loadingFiles" label="Reading the file" />
+        </div>
+      </section>
+    </main>
+    <!-- The classic layout: the series pane on the left, one diff on the
+         right. -->
     <main
-      v-if="series"
+      v-else-if="series"
       class="body"
       :class="side ? '' : 'no-side'"
       :style="side ? { gridTemplateColumns: `${sideWidth}px 6px minmax(0, 1fr)` } : undefined"
@@ -833,6 +1037,7 @@ onBeforeUnmount(() => {
         :gerrit-reading="gerritReading"
         :written="written"
         :in-file="inFile"
+        :posted-in-file="postedInFile"
         @open-change="goToChange"
         @open-file="goToFile"
         @go="goToComment"
@@ -856,6 +1061,7 @@ onBeforeUnmount(() => {
           :gerrit="gerrit"
           @step="stepFile"
         />
+        <ChangeInfo :gerrit="gerrit" :sets="patchSets" />
         <PatchSetBar
           :sets="patchSets"
           :current="patchSet"
@@ -872,39 +1078,7 @@ onBeforeUnmount(() => {
           @show-list="review.loadMergeList()"
         />
         <div class="diff-slot">
-          <DiffView
-            v-if="diff"
-            ref="diffView"
-            class="grow"
-            :change-key="changeKey ?? ''"
-            :drafts-moved="draftsMoved"
-            :diff="diff"
-            :split="split"
-            :wrap="wrap"
-            :comments="comments"
-            :stranded="stranded"
-            :paths="paths"
-            :current-sha="currentSha"
-            :sets="patchSets"
-            :placement="review.placement"
-            :posted="review.postedRoots"
-            :posted-placement="review.postedPlacement"
-            :posted-stranded="postedStranded"
-            :read-only="readingOlder"
-            :load-lines="review.loadLines"
-            :blame="blameLines"
-            :blame-busy="blameBusy"
-            :blame-target="review.blameTarget"
-            :load-rendered="review.loadRendered"
-            :image-url="review.imageUrl"
-            @update:split="review.setSplit"
-            @update:blame="review.toggleBlame"
-            @open-blame="goToBlame"
-            @blame-shown="review.findOnGerrit"
-            @add="review.addComment"
-            @edit="(id, body) => review.editComment(id, { body })"
-            @remove="review.deleteComment"
-          />
+          <DiffView v-if="diff" ref="diffView" class="grow" v-bind="diffBinds" v-on="diffOn" />
           <p v-else class="note">
             {{
               files.length === 0 ? 'This change touches no file.' : 'Pick a file to read its diff.'

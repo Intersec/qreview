@@ -15,6 +15,7 @@ function config(theme: string): Config {
     series: { maxCommits: 50, guessMax: 10, batchSize: 5, integrationBranch: null },
     ui: {
       diff: 'unified',
+      layout: 'classic',
       theme,
       themes: {
         midnight: { base: 'dark', colors: {}, bundled: false },

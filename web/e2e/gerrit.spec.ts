@@ -23,15 +23,14 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the change carries the number the server gave it', async ({ page }) => {
-  const bar = page.locator('.patch-bar');
+  const info = page.locator('.change-info');
 
-  await expect(bar).toContainText('Gerrit change');
-  await expect(bar.getByRole('link', { name: '12321' })).toHaveAttribute(
+  await expect(info.getByRole('link', { name: '12321' })).toHaveAttribute(
     'href',
     'https://review.example.com/c/myproject/+/12321',
   );
-  await expect(bar).toContainText('on main');
-  await expect(bar).toContainText('NEW');
+  await expect(info).toContainText('myproject | main');
+  await expect(info).toContainText('Active');
 });
 
 test('every version says whether the server has it, and whether we do', async ({ page }) => {
@@ -40,9 +39,9 @@ test('every version says whether the server has it, and whether we do', async ({
   await expect(options).toHaveCount(2);
   // The server knows both, so both carry the number the server gave. One of
   // them is not in this clone yet, and the other is.
-  await expect(options.nth(0)).toContainText('Patch set 1');
+  await expect(options.nth(0)).toContainText('Patchset 1');
   await expect(options.nth(0)).toContainText('not fetched');
-  await expect(options.nth(1)).toContainText('Patch set 2');
+  await expect(options.nth(1)).toContainText('Patchset 2');
   await expect(options.nth(1)).not.toContainText('not fetched');
 });
 
@@ -61,7 +60,7 @@ test('the version being reviewed is the last one in the list', async ({ page }) 
   // the picker opens on.
   const options = page.locator('#read-set option');
 
-  await expect(options.nth(1)).toContainText('Patch set 2');
+  await expect(options.nth(1)).toContainText('Patchset 2');
   await expect(page.locator('#read-set')).toHaveValue('2');
 
   // Every version says when it was pushed or written, the server's included.

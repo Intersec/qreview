@@ -138,6 +138,8 @@ export const useReview = defineStore('review', () => {
   /// the next run starts the same way and the command line agrees.
   const config = ref<Config | null>(null);
   const split = computed(() => config.value?.ui.diff === 'side-by-side');
+  /// The change page of Gerrit, rather than the series pane and one diff.
+  const modern = computed(() => config.value?.ui.layout === 'gerrit-like');
   const wrap = computed(() => config.value?.diff.wrap ?? false);
   const ignoreWs = computed(() => config.value?.diff.ignoreWhitespace ?? false);
   const mergeList = ref<MergeListItem[]>([]);
@@ -274,6 +276,15 @@ export const useReview = defineStore('review', () => {
       if (file) {
         counts.set(file, (counts.get(file) ?? 0) + 1);
       }
+    }
+    return counts;
+  });
+
+  /// How many Gerrit remarks sit in each file of the versions on the screen.
+  const postedInFile = computed(() => {
+    const counts = new Map<string, number>();
+    for (const remark of posted.value.comments) {
+      counts.set(remark.file, (counts.get(remark.file) ?? 0) + 1);
     }
     return counts;
   });
@@ -456,8 +467,12 @@ export const useReview = defineStore('review', () => {
         return;
       }
 
+      // In the modern layout no file opens by itself: the file table shows
+      // the whole list, as Gerrit does, and the reader opens a row. A place
+      // that names a file, such as a link or a jump to a comment, still
+      // opens it.
       const wanted = prefer ? files.value.find((f) => f.path === prefer && !f.binary) : undefined;
-      const first = wanted ?? files.value.find((f) => !f.binary);
+      const first = wanted ?? (modern.value ? undefined : files.value.find((f) => !f.binary));
       if (first) {
         await openFile(first.path);
       }
@@ -516,6 +531,12 @@ export const useReview = defineStore('review', () => {
         diff.value = read;
       }
     });
+  }
+
+  /// Close the diff that is open. The file table then shows no diff.
+  function closeFile() {
+    filePath.value = null;
+    diff.value = null;
   }
 
   async function loadMergeList() {
@@ -1438,6 +1459,9 @@ export const useReview = defineStore('review', () => {
     gerritReading,
     batchSize,
     inFile,
+    postedInFile,
+    closeFile,
+    modern,
     place,
     loadingFiles,
     loadingDiff,

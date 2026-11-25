@@ -15,6 +15,7 @@ const draft = reactive({
   syntax: props.config.diff.syntax,
   view: props.config.ui.diff,
   theme: props.config.ui.theme,
+  layout: props.config.ui.layout,
 });
 
 /// The fields that the reader touched. Only those are sent: a value shown
@@ -34,7 +35,11 @@ function touch(event: Event) {
 watch(
   () => props.config,
   (fresh) => {
-    Object.assign(draft, fresh.diff, { view: fresh.ui.diff, theme: fresh.ui.theme });
+    Object.assign(draft, fresh.diff, {
+      view: fresh.ui.diff,
+      theme: fresh.ui.theme,
+      layout: fresh.ui.layout,
+    });
     touched.clear();
   },
 );
@@ -69,6 +74,9 @@ function save() {
   if (touched.has('theme')) {
     ui.theme = draft.theme;
   }
+  if (touched.has('layout')) {
+    ui.layout = draft.layout;
+  }
   // An empty section stays out, so the file of the user gets no empty block.
   emit('save', {
     ...(Object.keys(diff).length ? { diff } : {}),
@@ -95,6 +103,14 @@ function save() {
         <select v-model="draft.context" name="context" class="picker">
           <option v-for="lines in CONTEXTS" :key="lines" :value="lines">{{ lines }} lines</option>
           <option :value="2000">the whole file</option>
+        </select>
+      </label>
+
+      <label class="row">
+        <span>Layout</span>
+        <select v-model="draft.layout" name="layout" class="picker">
+          <option value="classic">classic</option>
+          <option value="gerrit-like">Gerrit-like</option>
         </select>
       </label>
 

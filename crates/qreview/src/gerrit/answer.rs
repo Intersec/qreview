@@ -18,6 +18,11 @@ pub struct Change {
     pub url: String,
     #[serde(default)]
     pub status: String,
+    /// Empty when the change has none.
+    #[serde(default)]
+    pub topic: String,
+    #[serde(default)]
+    pub owner: Person,
     #[serde(default, rename = "patchSets")]
     pub patch_sets: Vec<PatchSet>,
 }
@@ -117,9 +122,21 @@ mod tests {
         assert_eq!(change.project, "myproject");
         assert_eq!(change.branch, "rel-3.0");
         assert_eq!(change.status, "NEW");
+        assert_eq!(change.owner.label(), "A Developer");
+        assert_eq!(change.topic, "", "a change with no topic reads as none");
         assert_eq!(change.patch_sets.len(), 3);
         assert_eq!(change.patch_sets[2].number, 3);
         assert_eq!(change.patch_sets[2].git_ref, "refs/changes/21/12321/3");
+    }
+
+    #[test]
+    fn the_topic_and_the_owner_of_a_change_are_read() {
+        let line = r#"{"project":"p","branch":"main","id":"I1","number":1,"subject":"s","topic":"net-retry","owner":{"name":"Ada","username":"ada"}}"#;
+
+        let changes = parse(line);
+
+        assert_eq!(changes[0].topic, "net-retry");
+        assert_eq!(changes[0].owner.label(), "Ada");
     }
 
     /// One query carries the whole series, so one answer carries every
