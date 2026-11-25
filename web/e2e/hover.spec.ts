@@ -71,13 +71,46 @@ test('a longer name that contains it is left alone', async ({ page }) => {
   await expect(page.locator('td.code-cell[data-kind="remove"] .same-word')).toHaveCount(0);
 });
 
-test('the light goes out when the pointer leaves the code', async ({ page }) => {
+test('the light stays when the pointer leaves the code', async ({ page }) => {
+  await openFile(page, 'doc.h');
+  await hover(page, 1, 'pointer');
+  await expect(page.locator('.same-word')).toHaveCount(4);
+
+  // The reader moves away to scroll to the other places. They must still be
+  // lit when the reader gets there.
+  const bar = (await page.locator('.file-bar').boundingBox())!;
+  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
+
+  await expect(page.locator('.same-word')).toHaveCount(4);
+});
+
+test('a word that the pointer only crosses does not take the light', async ({ page }) => {
+  await openFile(page, 'doc.h');
+  await hover(page, 1, 'pointer');
+  await expect(page.locator('.same-word')).toHaveCount(4);
+
+  // The pointer passes over `field` on its way out of the code.
+  await hover(page, 1, 'field');
+  const bar = (await page.locator('.file-bar').boundingBox())!;
+  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
+
+  // Longer than the delay: the light is still on `pointer`.
+  await page.waitForTimeout(500);
+  await expect(page.locator('.same-word')).toHaveCount(4);
+  expect(await page.locator('.same-word').first().textContent()).toBe('pointer');
+
+  // A pointer that rests on `field` moves the light to it.
+  await hover(page, 1, 'field');
+  await expect(page.locator('.same-word').first()).toHaveText('field');
+});
+
+test('a click puts the light out', async ({ page }) => {
   await openFile(page, 'doc.h');
   await hover(page, 1, 'pointer');
   await expect(page.locator('.same-word')).not.toHaveCount(0);
 
-  const bar = (await page.locator('.file-bar').boundingBox())!;
-  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
+  await page.mouse.down();
+  await page.mouse.up();
 
   await expect(page.locator('.same-word')).toHaveCount(0);
 });
@@ -86,11 +119,11 @@ test('a number is not a name', async ({ page }) => {
   await openFile(page, 'long.c');
 
   // The same line, and the same pointer: only the word under it differs.
-  await hover(page, 12, 'line');
-  await expect(page.locator('.same-word')).not.toHaveCount(0);
-
   await hover(page, 12, '12');
   await expect(page.locator('.same-word')).toHaveCount(0);
+
+  await hover(page, 12, 'line');
+  await expect(page.locator('.same-word')).not.toHaveCount(0);
 });
 
 /// Drag a selection from the middle of one cell to the middle of another.

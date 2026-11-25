@@ -187,13 +187,43 @@ function onDown(event: MouseEvent) {
   // The word marks split a line into spans, and the selection hangs from
   // those spans. Put the line back together before the drag starts, so the
   // pieces under the selection stay the same until the reader drops it.
+  hover(null);
   hovered.value = null;
 }
 
-/// The word the pointer is on. Every row of the file lights it wherever it
-/// stands, so a reader follows a name without a click and without a search.
+/// The word the pointer was last on. Every row of the file lights it
+/// wherever it stands, so a reader follows a name without a click and
+/// without a search. It stays lit when the pointer leaves, so the reader can
+/// scroll to the other places, the way Gerrit does. A click puts it out.
 const hovered = ref<string | null>(null);
 provide(HOVERED, hovered);
+
+/// How long the pointer rests on a word before it lights. A pointer that
+/// only crosses words on its way must not move the light, as in Gerrit.
+const HOVER_DELAY_MS = 200;
+
+/// The word that lights once the pointer has rested on it long enough.
+let pending: { word: string; timer: ReturnType<typeof setTimeout> } | null = null;
+
+/// Ask for a word to light after the delay, or, with null, drop the request.
+function hover(word: string | null) {
+  if (pending?.word === word) {
+    return;
+  }
+  if (pending) {
+    clearTimeout(pending.timer);
+    pending = null;
+  }
+  if (word === null || word === hovered.value) {
+    return;
+  }
+  const timer = setTimeout(() => {
+    pending = null;
+    hovered.value = word;
+  }, HOVER_DELAY_MS);
+  pending = { word, timer };
+}
+onBeforeUnmount(() => hover(null));
 
 /// What `e` and `E` asked of the done threads of this file.
 const foldDone = ref<FoldDone | null>(null);
@@ -377,6 +407,7 @@ watch(
     opened.clear();
     left.clear();
     // The rows under the pointer are not the ones it was read from.
+    hover(null);
     hovered.value = null;
 
     const moved = props.draftsMoved !== seenMoves || props.changeKey !== seenKey;
@@ -1175,6 +1206,10 @@ function charOffset(cell: HTMLElement, node: Node, offset: number): number {
 }
 
 /// Follow the pointer over the code, and light the word it stands on.
+///
+/// A pointer on no word keeps the light: the reader is on the way to the
+/// scroll bar or the wheel, not choosing a new word. A new word lights only
+/// once the pointer rests on it.
 function onMove(event: MouseEvent) {
   // Not while a button is down: the reader is dragging a selection, and a
   // word that lights under the drag fights what is being picked.
@@ -1199,7 +1234,7 @@ function onMove(event: MouseEvent) {
     !on.classList.contains('no-newline') &&
     on.closest('td.code-cell[data-line]') !== null;
 
-  hovered.value = onCode ? wordUnder(event.clientX, event.clientY) : null;
+  hover(onCode ? wordUnder(event.clientX, event.clientY) : null);
 }
 
 /// The word at a point of the window, or null when the point is on none.
@@ -1515,7 +1550,7 @@ function toggle(row: Row | null, column: Side) {
           @mousedown="onDown"
           @mouseup="onSelect"
           @mousemove="onMove"
-          @mouseleave="hovered = null"
+          @mouseleave="hover(null)"
         >
           <table v-if="split" class="code" :class="[wraps ? '' : 'nowrap', only]">
             <colgroup>
