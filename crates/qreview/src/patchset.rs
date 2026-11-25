@@ -37,6 +37,10 @@ pub struct PatchSet {
     pub gerrit_ref: Option<String>,
     /// False when the commit is not in this clone yet. Fetch it first.
     pub available: bool,
+    /// How many remarks Gerrit holds on this version. Zero for a version
+    /// the server never saw.
+    #[serde(default)]
+    pub posted: usize,
 }
 
 /// The patch sets of a change: the older versions, then the local commit.
@@ -108,6 +112,7 @@ fn entry(info: CommitInfo, origin: Origin, gerrit_ref: Option<String>) -> PatchS
         subject: info.subject,
         gerrit_ref,
         available: true,
+        posted: 0,
     }
 }
 
@@ -141,6 +146,7 @@ pub fn merge_gerrit(local: Vec<PatchSet>, remote: &[crate::gerrit::PatchSet]) ->
             subject: String::new(),
             gerrit_ref: Some(set.git_ref.clone()),
             available: false,
+            posted: set.comments.len(),
         })
         .collect();
 
@@ -153,6 +159,7 @@ pub fn merge_gerrit(local: Vec<PatchSet>, remote: &[crate::gerrit::PatchSet]) ->
             Some(known) => {
                 set.number = known.number;
                 set.gerrit_ref = known.gerrit_ref.clone();
+                set.posted = known.posted;
                 *known = set;
             }
             None => {
@@ -301,6 +308,7 @@ mod tests {
             subject: "mine".to_owned(),
             gerrit_ref: None,
             available: true,
+            posted: 0,
         }];
 
         let merged = merge_gerrit(local, &[remote(1, "aaa"), remote(2, "bbb")]);
@@ -311,6 +319,38 @@ mod tests {
         assert!(!merged[0].available, "a pushed version is not here yet");
         assert_eq!(merged[2].number, 3, "the local commit comes after them");
         assert_eq!(merged[2].origin, Origin::Local);
+    }
+
+    /// The count is what the patch set bar and the change info read. A
+    /// version that Gerrit has keeps its count, here or not.
+    #[test]
+    fn every_version_counts_the_remarks_gerrit_holds_on_it() {
+        let local = vec![PatchSet {
+            number: 1,
+            commit: "bbb".to_owned(),
+            parent: None,
+            origin: Origin::Local,
+            created_at: String::new(),
+            subject: "mine".to_owned(),
+            gerrit_ref: None,
+            available: true,
+            posted: 0,
+        }];
+        let remark = crate::gerrit::InlineComment {
+            file: "src/net.c".to_owned(),
+            line: Some(3),
+            reviewer: crate::gerrit::Person::default(),
+            message: "why?".to_owned(),
+        };
+        let mut first = remote(1, "aaa");
+        first.comments = vec![remark.clone(), remark.clone()];
+        let mut second = remote(2, "bbb");
+        second.comments = vec![remark];
+
+        let merged = merge_gerrit(local, &[first, second]);
+
+        let counts: Vec<usize> = merged.iter().map(|set| set.posted).collect();
+        assert_eq!(counts, [2, 1]);
     }
 
     #[test]
@@ -324,6 +364,7 @@ mod tests {
             subject: "mine".to_owned(),
             gerrit_ref: None,
             available: true,
+            posted: 0,
         }];
 
         let merged = merge_gerrit(local, &[remote(1, "aaa"), remote(2, "bbb")]);
@@ -356,6 +397,7 @@ mod tests {
             subject: "work".to_owned(),
             gerrit_ref: None,
             available: true,
+            posted: 0,
         }
     }
 
@@ -423,6 +465,7 @@ mod tests {
             subject: "mine".to_owned(),
             gerrit_ref: None,
             available: true,
+            posted: 0,
         }];
 
         assert_eq!(merge_gerrit(local.clone(), &[]), local);

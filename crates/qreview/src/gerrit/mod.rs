@@ -280,6 +280,8 @@ mod tests {
             subject: "a change".to_owned(),
             url: String::new(),
             status: status.to_owned(),
+            topic: String::new(),
+            owner: Person::default(),
             patch_sets: vec![PatchSet {
                 number: 1,
                 revision: revision.to_owned(),

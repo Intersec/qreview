@@ -1428,3 +1428,41 @@ A team deploys one `gerrit.auth.command` for every reader, and will replace it w
 - **A variable per key, such as `QREVIEW_CONF_GERRIT_AUTH_COMMAND`.** The command is a list, which a variable holds only through a parsing of its own. Each key needs a name, and a new shared setting needs an edit of the shell profile.
 - **`XDG_CONFIG_DIRS`.** It is the standard for this, but a common profile that sets it changes where every other program looks for its configuration.
 - **A fixed path such as `/etc/qreview/config.json`.** The team cannot write there on every machine.
+
+## 2026-11-23 — The page shows the change the way Gerrit does
+
+A reader of a rebased series opened the local version and saw no Gerrit remark. The remarks were on patch set 1, and the page did not say so. The patch set sat in a dropdown under the name `Local`.
+
+**Decision.** Four changes to the page, with the layout of the change page of Gerrit:
+
+- A Change Info block shows the number with its link, the status and the owner. It also shows the repository and branch, the topic, and the count of the remarks.
+- The patch sets are called `Patchset N`, the Gerrit word, and each one carries the count of its remarks.
+- If an older version holds remarks and the version on the right holds none, the patch set bar names that version. It offers to read the right one against it.
+- Each file in the list shows the count of the Gerrit remarks on the versions on the screen.
+
+The API gets two read-only fields, both read from the ssh answer that qreview already has. No new query is sent:
+
+- `posted` on each patch set of `GET /api/changes/:key/patchsets`.
+- `project`, `topic` and `owner` on the `gerrit` block of the same answer.
+
+Nothing is removed or renamed. Nothing in the storage format or the export moves.
+
+## 2026-11-24 — A Gerrit-like layout, as an option
+
+A reader who comes from Gerrit knows its change page. qreview shows the series in a sidebar and opens the first file at once. That reader must learn a second layout.
+
+**Decision.** `ui.layout` picks the layout: `classic`, the default, or `gerrit-like`. The Preferences panel shows the same names. The classic layout does not change. The Gerrit-like layout follows the change page of Gerrit:
+
+- Three boxes at the top: the Change Info, the whole commit message, and the relation chain.
+- The patch set bar, then two tabs: Files and Comments.
+- A file table with the columns of Gerrit. No file opens by itself. A click on a row opens its diff under the row, and a second click closes it.
+- The Maximize button, an icon in the bar of the file, or `u`, folds the change page away. The diff then takes the window.
+- A click on a remark in the Comments tab opens its file under its row and shows the remark.
+
+The panel writes `ui.layout` to `config.json`, as it writes `ui.diff`. A release from before the key refuses a `config.json` that holds it. A user who runs such a release beside this build keeps the layout out of `config.json`, or sets it in `.qreview.json`. Nothing in the storage format, the API routes or the export moves.
+
+**Rejected:**
+
+- **The Gerrit-like layout in place of the classic one.** It removes the sidebar that current readers use.
+- **A file of its own, such as `layout.json`, or a lenient `config-experimental.json`.** An older release could read `config.json` again. But each needs its own reader, and the second one makes an exception to the rule that a key nobody knows is refused. The cost falls only on a user who runs two versions at the same time.
+- **The browser storage, as for `qreview.side`.** The choice would follow the browser, not the user, and the panel would save one preference unlike the others.

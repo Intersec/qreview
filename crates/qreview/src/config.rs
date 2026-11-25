@@ -85,6 +85,8 @@ pub struct Ui {
     /// The `ui.theme` of each file that sets one, the first file first.
     #[serde(skip)]
     pub choices: Vec<Choice>,
+    /// `classic`, or `gerrit-like` for the change page of Gerrit.
+    pub layout: String,
 }
 
 /// The `ui.theme` that one file asks for.
@@ -132,6 +134,7 @@ impl Default for Config {
                 theme: "system".to_owned(),
                 themes: BTreeMap::new(),
                 choices: Vec::new(),
+                layout: "classic".to_owned(),
             },
             diff: Diff {
                 // Three lines is what git gives, and it is too few to judge
@@ -209,6 +212,7 @@ pub struct SeriesLayer {
 pub struct UiLayer {
     pub diff: Option<String>,
     pub theme: Option<String>,
+    pub layout: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
@@ -258,6 +262,7 @@ impl Config {
         if let Some(ui) = layer.ui {
             // ui.theme is picked by resolve_theme, from the choices.
             self.ui.diff = ui.diff.unwrap_or_else(|| self.ui.diff.clone());
+            self.ui.layout = ui.layout.unwrap_or_else(|| self.ui.layout.clone());
         }
         if let Some(diff) = layer.diff {
             self.diff.context = diff.context.unwrap_or(self.diff.context).clamp(0, 2000);
@@ -345,6 +350,9 @@ fn load_with(
     }
     Ok(config)
 }
+
+/// The values of `ui.layout`.
+const LAYOUTS: [&str; 2] = ["classic", "gerrit-like"];
 
 impl Config {
     /// Take the themes read from `dir`, and pick the theme to use.
@@ -485,6 +493,12 @@ fn update_at(
                 target.insert(name.clone(), value.clone());
             }
         }
+    }
+
+    if let Some(layout) = patch.pointer("/ui/layout")
+        && !layout.as_str().is_some_and(|name| LAYOUTS.contains(&name))
+    {
+        return Err(Refused(format!("ui.layout is {}", LAYOUTS.join(" or "))).into());
     }
 
     // Read the result before writing it: a file that the next start
@@ -1045,6 +1059,33 @@ mod tests {
         assert_eq!(config.ui.theme, "system");
         let stored = std::fs::read_to_string(setup.user()).unwrap();
         assert!(stored.contains(r#""theme": "midnight""#), "{stored}");
+    }
+
+    #[test]
+    fn the_layout_is_saved_with_the_other_preferences() {
+        let setup = Setup::new("{}", None, &[]);
+        let patch =
+            serde_json::json!({ "ui": { "layout": "gerrit-like", "diff": "side-by-side" } });
+
+        let config = update_at(None, &setup.user(), setup.repo.path(), &patch).unwrap();
+
+        assert_eq!(config.ui.layout, "gerrit-like");
+        assert_eq!(config.ui.diff, "side-by-side");
+        assert_eq!(setup.load().ui.layout, "gerrit-like");
+    }
+
+    #[test]
+    fn a_layout_nobody_knows_is_refused() {
+        let setup = Setup::new("{}", None, &[]);
+        let patch = serde_json::json!({ "ui": { "layout": "modern" } });
+
+        let error = update_at(None, &setup.user(), setup.repo.path(), &patch).unwrap_err();
+        assert!(
+            error.to_string().contains("classic or gerrit-like"),
+            "{error}"
+        );
+        let stored = std::fs::read_to_string(setup.user()).unwrap();
+        assert!(!stored.contains("layout"), "{stored}");
     }
 
     #[test]

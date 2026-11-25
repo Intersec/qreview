@@ -733,8 +733,12 @@ struct PatchSets {
 struct GerritChange {
     number: u64,
     url: String,
+    project: String,
     branch: String,
     status: String,
+    /// Empty when the change has none.
+    topic: String,
+    owner: String,
 }
 
 async fn patchsets(
@@ -748,9 +752,12 @@ async fn patchsets(
         .await
         .map(|change| GerritChange {
             number: change.number,
+            owner: change.owner.label(),
             url: change.url,
+            project: change.project,
             branch: change.branch,
             status: change.status,
+            topic: change.topic,
         });
 
     Ok(Json(PatchSets { sets, gerrit }))

@@ -218,6 +218,19 @@ body {
 .chip:hover {
   background: var(--edge-soft);
 }
+/* An icon in place of a word, as tall as the text of a chip. */
+.chip-icon {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 5px;
+}
+.chip-icon svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
 .chip:disabled {
   opacity: 0.45;
 }
@@ -2137,4 +2150,79 @@ button.version:hover {
 .trace-what {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/*
+ * What Gerrit knows of the change, laid out as its Change Info: a label in
+ * the quiet ink, then the value. One line, which wraps on a narrow window.
+ */
+.change-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+  flex: none;
+  margin: 0;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--edge-soft);
+  background: var(--page);
+  font-size: 12px;
+}
+.change-info > div {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.change-info dt {
+  color: var(--ink-quiet);
+}
+.change-info dd {
+  margin: 0;
+  color: var(--ink);
+}
+.change-info .status {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--pick);
+  color: var(--pick-edge);
+  font-size: 11px;
+}
+.change-info .status-merged {
+  background: var(--add-line);
+  color: var(--online);
+}
+.change-info .status-abandoned {
+  background: var(--waiting);
+  color: var(--waiting-ink);
+}
+
+/* The remarks of another version: where they are, and the way to them. */
+.elsewhere {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid var(--draft-edge);
+  border-radius: 3px;
+  background: var(--draft);
+  color: var(--context-ink);
+}
+
+/* The Gerrit remarks of a file, beside its own comments, as Gerrit marks them. */
+.posted-count {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--agent-edge);
+  border-radius: 8px;
+  background: var(--agent);
+  color: var(--pick-edge);
+  font-family: var(--ui-font, inherit);
+  font-size: 10px;
+}
+.posted-count svg {
+  width: 10px;
+  height: 10px;
+  fill: currentColor;
 }

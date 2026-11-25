@@ -643,6 +643,7 @@ type PatchSet = {
   origin: 'local' | 'prev' | 'gerrit';
   createdAt: string;       // ISO 8601
   gerritRef?: string;      // refs/changes/NN/CCCC/P
+  posted: number;          // the remarks Gerrit holds on this version, 0 when it has none
 };
 
 type FileDiff = {
@@ -1311,6 +1312,11 @@ Gerrit shows it:
 | The patch set on the left | The left column, on its line |
 | Neither | Not in this diff |
 
+So a reader of a newer version sees none of the remarks of an older one. Each
+patch set carries the count of its remarks. If an older version holds remarks
+and the version on the right holds none, the patch set bar names that version.
+It offers to read the right one against it.
+
 A remark of another version speaks of code that is not on the screen, the
 rule of section 5.4. It is anchored on its own version by the rules of
 section 5.3. A version that was never fetched holds no line to hash, so its
@@ -1583,7 +1589,7 @@ All routes are under `/api`, all answers but a blob are JSON, all errors carry
 | `GET /api/changes/:key/lines?file=...&from=1&to=400` | A run of lines the diff left out, so the reader can open the context. A run of more than 2000 lines carries no syntax spans |
 | `GET /api/changes/:key/rendered?ps=2&base=parent&file=...` | A Markdown or AsciiDoc file of the version read, as HTML, with the marks of its diff against the base. See section 3.8 |
 | `GET /api/changes/:key/blob?ps=2&path=...` | An image in the tree of the version read, for a rendered file. Raw bytes, not JSON. See section 3.8 |
-| `GET /api/changes/:key/patchsets` | The versions of the change, oldest first |
+| `GET /api/changes/:key/patchsets` | The versions of the change, oldest first, and the change on Gerrit: its number, URL, project, branch, status, topic and owner |
 | `GET /api/changes/:key/posted?ps=2&base=ps:1` | The remarks already on Gerrit on the two versions read, each placed in its column. Over REST, each one carries the `id` of Gerrit, `thread` (the id of the remark that opens its thread), `inReplyTo`, `unresolved` and `updated`. Over ssh, the id is made from the place, `thread` is that id, and the other three are null. A remark on the `PARENT` side stands in the left column, and has no column when another version is on the left. See sections 6.3 and 6.8 |
 | `GET /api/changes/:key/mergelist` | The commits a merge brings in |
 | `GET /api/comments` | Every comment of the session, in reading order |
@@ -1907,7 +1913,7 @@ Four layers, the later one wins:
     "batchSize": 5,
     "integrationBranch": null
   },
-  "ui": { "diff": "unified", "theme": "system" },
+  "ui": { "diff": "unified", "theme": "system", "layout": "classic" },
   "update": { "url": "https://api.github.com/…/releases/latest", "token": null },
   "diff": {
     "context": 10,
@@ -2005,6 +2011,10 @@ If `.qreview.json` names a loaded theme, it wins over the panel, as for
 `ui.diff`. The choice of the panel is saved, but it does not show in that
 repository.
 
+`ui.layout` picks the layout of the page: `classic`, the default, or
+`gerrit-like`, which follows the change page of Gerrit. A save refuses any
+other value.
+
 `PUT /api/config` writes the `diff` and `ui` sections into the file of the
 user, and nothing else. It never writes a theme file. The panel sends only
 the fields that the reader touched. A value that it shows may come from
@@ -2044,7 +2054,7 @@ configuration file never sees it:
 
 | Key | What it holds |
 |---|---|
-| `qreview.side` | The series pane is shown or hidden |
+| `qreview.side` | The series pane is shown or hidden. In the `gerrit-like` layout, the change page above the files |
 | `qreview.side.width` | How wide the series pane is |
 | `qreview.comments.height` | How tall the list of comments is |
 | `qreview.blame` | The blame column is on or off |

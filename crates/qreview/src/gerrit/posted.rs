@@ -331,6 +331,8 @@ mod tests {
             subject: "work".to_owned(),
             url: String::new(),
             status: "NEW".to_owned(),
+            topic: String::new(),
+            owner: Person::default(),
             patch_sets: sets
                 .into_iter()
                 .enumerate()

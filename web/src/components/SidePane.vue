@@ -30,6 +30,8 @@ defineProps<{
   written: ChangeComments[];
   /// How many comments sit in each file of the change being read.
   inFile: Map<string, number>;
+  /// How many Gerrit remarks sit in each file of the versions on the screen.
+  postedInFile?: Map<string, number>;
 }>();
 /// Absent where no review provides it, as in a test of this pane alone.
 const threads = inject(THREADS, null);
@@ -148,6 +150,7 @@ defineExpose({ focusFilter: () => inChange.value[0]?.focusFilter() });
             :file-path="filePath"
             :loading="loadingFiles"
             :in-file="inFile"
+            :posted-in-file="postedInFile"
             @open-file="emit('openFile', $event)"
           />
         </li>

@@ -49,11 +49,25 @@ const rebased = computed(
 /// reads the same on every version says nothing at all.
 function label(set: PatchSet): string {
   const when = set.createdAt ? set.createdAt.slice(0, 10) : '';
-  const name = props.gerrit && !set.gerritRef ? 'Local' : `Patch set ${set.number}`;
+  const name = props.gerrit && !set.gerritRef ? 'Local' : `Patchset ${set.number}`;
   const where = set.available ? '' : ' · not fetched';
+  const remarks = set.posted ? ` · ${set.posted} ${set.posted === 1 ? 'comment' : 'comments'}` : '';
 
-  return `${name} | ${set.commit.slice(0, 7)} ${when}${where}`;
+  return `${name} | ${set.commit.slice(0, 7)} ${when}${where}${remarks}`;
 }
+
+/// The newest other version that holds Gerrit remarks, when the version on
+/// the screen holds none. A remark shows only on its own version, so the
+/// reader of a newer one sees nothing and must be told where they are.
+const elsewhere = computed(() => {
+  if (!target.value || target.value.posted) {
+    return undefined;
+  }
+  const older = props.sets.filter((s) => s.number !== reading.value && s.posted > 0);
+  return older[older.length - 1];
+});
+
+const showing = computed(() => elsewhere.value && props.against === `ps:${elsewhere.value.number}`);
 
 function pickBase(value: string) {
   emit('open', reading.value, value === 'parent' ? undefined : value);
@@ -111,17 +125,25 @@ function pickTarget(value: string) {
       </option>
     </select>
 
-    <span v-if="gerrit" class="quiet">
-      Gerrit change
-      <a :href="gerrit.url" target="_blank" rel="noreferrer">{{ gerrit.number }}</a>
-      on {{ gerrit.branch }} · {{ gerrit.status }}
-    </span>
-
     <span v-if="rebased" class="rebased">
       These two versions sit on different bases. Lines
       <span class="rebase-swatch rebase-swatch-add">added</span> or
       <span class="rebase-swatch rebase-swatch-remove">removed</span> in these colours came with the
       rebase. A file with nothing else is not listed.
+    </span>
+
+    <span v-if="elsewhere && !showing" class="elsewhere">
+      {{ elsewhere.posted }} Gerrit {{ elsewhere.posted === 1 ? 'comment is' : 'comments are' }} on
+      Patchset {{ elsewhere.number }}, and none on this version.
+      <button
+        type="button"
+        class="chip"
+        :disabled="!elsewhere.available"
+        :title="elsewhere.available ? '' : 'Fetch this patch set first'"
+        @click="emit('open', reading, `ps:${elsewhere.number}`)"
+      >
+        Compare with Patchset {{ elsewhere.number }}
+      </button>
     </span>
   </div>
 </template>
